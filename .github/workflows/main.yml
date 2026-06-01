@@ -20,11 +20,11 @@ jobs:
         mkdir -p app/src/main/assets
         mkdir -p gradle/wrapper
 
-        # 复制模型和词表 (请确保这两个文件在你的 Git 仓库根目录下)
+        # 复制模型和词表
         cp dededi_mobile.ptl app/src/main/assets/
         cp student_vocab.json app/src/main/assets/
 
-        # 【新增】生成 gradle.properties，强制开启 AndroidX 支持（不加这个极易报错）
+        # 生成 gradle.properties
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
         android.enableJetifier=true
@@ -104,7 +104,7 @@ jobs:
         </LinearLayout>
         EOF
 
-        # 6. 生成 MainActivity.java
+        # 6. 生成 MainActivity.java (已彻底修复 Direct Buffer 内存共享机制)
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.Context;
@@ -124,6 +124,8 @@ jobs:
         import java.io.FileOutputStream;
         import java.io.InputStream;
         import java.nio.charset.StandardCharsets;
+        import java.nio.ByteBuffer;
+        import java.nio.ByteOrder;
         import java.nio.LongBuffer;
         import java.util.HashMap;
         import java.util.Iterator;
@@ -177,7 +179,11 @@ jobs:
                     long unkId = vocab.containsKey("[UNK]") ? vocab.get("[UNK]") : 1;
                     long maskId = vocab.containsKey("[MASK]") ? vocab.get("[MASK]") : 2;
                     
-                    LongBuffer inputBuffer = LongBuffer.allocate(text.length());
+                    // 【核心修正】通过 allocateDirect 申请直连 C++ 的底层内存，并指定字节序
+                    ByteBuffer byteBuffer = ByteBuffer.allocateDirect(text.length() * 8); // 1个Long占8字节
+                    byteBuffer.order(ByteOrder.nativeOrder());
+                    LongBuffer inputBuffer = byteBuffer.asLongBuffer();
+                    
                     for (int i = 0; i < text.length(); i++) {
                         String ch = String.valueOf(text.charAt(i));
                         if (ch.equals("的") || ch.equals("地") || ch.equals("得")) {
@@ -272,7 +278,6 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # 【核心改动】如果编译失败，将最后100行错误日志强行写入手机端可见的 GitHub Summary 页面
     - name: Build APK
       run: |
         ./gradlew assembleDebug --stacktrace --console=plain > build_output.log 2>&1 || {
