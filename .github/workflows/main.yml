@@ -20,7 +20,7 @@ jobs:
         mkdir -p app/src/main/assets
         mkdir -p gradle/wrapper
 
-        # 复制你的模型和词表
+        # 复制你的模型和词表 (请确保这两个文件在你的 Git 仓库根目录下)
         cp dededi_mobile.ptl app/src/main/assets/
         cp student_vocab.json app/src/main/assets/
 
@@ -36,7 +36,7 @@ jobs:
         # 2. 生成 settings.gradle
         echo "include ':app'" > settings.gradle
 
-        # 3. 生成 app/build.gradle (改用 apply plugin 避免找不到插件报错)
+        # 3. 生成 app/build.gradle
         cat << 'EOF' > app/build.gradle
         apply plugin: 'com.android.application'
         android {
@@ -93,7 +93,7 @@ jobs:
         </LinearLayout>
         EOF
 
-        # 6. 生成 MainActivity.java
+        # 6. 生成 MainActivity.java (已修复 Long 数组传递给 PyTorch 的编译隐患)
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.Context;
@@ -113,6 +113,7 @@ jobs:
         import java.io.FileOutputStream;
         import java.io.InputStream;
         import java.nio.charset.StandardCharsets;
+        import java.nio.LongBuffer;
         import java.util.HashMap;
         import java.util.Iterator;
         import java.util.Map;
@@ -164,16 +165,20 @@ jobs:
                 try {
                     long unkId = vocab.containsKey("[UNK]") ? vocab.get("[UNK]") : 1;
                     long maskId = vocab.containsKey("[MASK]") ? vocab.get("[MASK]") : 2;
-                    long[] inputIds = new long[text.length()];
+                    
+                    // 使用 LongBuffer 代替普通的 long[] 以适配 PyTorch Tensor 接口
+                    LongBuffer inputBuffer = LongBuffer.allocate(text.length());
                     for (int i = 0; i < text.length(); i++) {
                         String ch = String.valueOf(text.charAt(i));
                         if (ch.equals("的") || ch.equals("地") || ch.equals("得")) {
-                            inputIds[i] = maskId;
+                            inputBuffer.put(maskId);
                         } else {
-                            inputIds[i] = vocab.containsKey(ch) ? vocab.get(ch) : unkId;
+                            inputBuffer.put(vocab.containsKey(ch) ? vocab.get(ch) : unkId);
                         }
                     }
-                    Tensor inputTensor = Tensor.fromBlob(inputIds, new long[]{1, text.length()});
+                    inputBuffer.rewind(); // 重置指针回到缓冲区头部
+                    
+                    Tensor inputTensor = Tensor.fromBlob(inputBuffer, new long[]{1, text.length()});
                     Tensor outputTensor = module.forward(IValue.from(inputTensor)).toTensor();
                     float[] scores = outputTensor.getDataAsFloatArray();
                     
@@ -217,7 +222,7 @@ jobs:
                     String finalRes = "<b>🎉 检查完毕！共为您更正 <font color='#E53935'>" + changeCount + "</font> 处。</b><br><br>" + resultHtml.toString();
                     outputText.setText(Html.fromHtml(finalRes, Html.FROM_HTML_MODE_COMPACT));
                 } catch (Exception e) {
-                    outputText.setText("推理出错，可能是句子太长了: " + e.getMessage());
+                    outputText.setText("推理出错: " + e.getMessage());
                 }
             }
 
@@ -236,12 +241,12 @@ jobs:
         }
         EOF
 
-        # 7. 下载 Gradle Wrapper 核心文件 (避免因环境缺少 gradle 指令导致失败)
+        # 7. 下载 Gradle Wrapper 核心文件
         wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -O gradle/wrapper/gradle-wrapper.jar
         wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradlew -O gradlew
         chmod +x gradlew
 
-        # 8. 生成 wrapper 配置文件 (指定 Gradle 7.5.1 以适配 AGP 7.4.2)
+        # 8. 生成 wrapper 配置文件
         cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
         distributionBase=GRADLE_USER_HOME
         distributionPath=wrapper/dists
@@ -257,8 +262,9 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    # 开启高级排查模式，并将日志强制格式化为普通文本，防止关键报错被刷掉
     - name: Build APK
-      run: ./gradlew assembleDebug
+      run: ./gradlew assembleDebug --stacktrace --console=plain
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
