@@ -94,13 +94,20 @@ jobs:
             android:layout_width="match_parent" android:layout_height="match_parent"
             android:orientation="vertical" android:padding="14dp" android:background="#F8F9FA">
             
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
-                      android:text="“的地得”纠错AI" android:textSize="20sp" android:textStyle="bold" android:layout_marginBottom="12dp" android:textColor="#1A1A1A"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:layout_marginBottom="12dp" android:gravity="center_vertical">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                          android:text=""的地得"纠错AI" android:textSize="20sp" android:textStyle="bold" android:textColor="#1A1A1A"/>
+                <TextView android:id="@+id/btnHelp" android:layout_width="28dp" android:layout_height="28dp"
+                          android:text="?" android:textSize="15sp" android:gravity="center"
+                          android:textColor="#FFFFFF" android:background="#2196F3"
+                          android:clickable="true" android:focusable="true"/>
+            </LinearLayout>
             
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:background="#FFFFFF" android:padding="8dp" android:layout_marginBottom="10dp">
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="temperature参数" android:textSize="11sp" android:textColor="#666"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="温度参数" android:textSize="11sp" android:textColor="#666"/>
                     <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.2" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                 </LinearLayout>
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
@@ -141,7 +148,7 @@ jobs:
         </LinearLayout>
         EOF
 
-        # 6. 生成 MainActivity.java (重构多线程后台处理与流式刷新逻辑)
+        # 6. 生成 MainActivity.java
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.ClipData;
@@ -156,6 +163,7 @@ jobs:
         import android.widget.TextView;
         import android.widget.Toast;
         import androidx.appcompat.app.AppCompatActivity;
+        import androidx.appcompat.app.AlertDialog;
         import org.json.JSONObject;
         import org.pytorch.IValue;
         import org.pytorch.LiteModuleLoader;
@@ -194,6 +202,28 @@ jobs:
                 btnCheck = findViewById(R.id.btnCheck);
                 btnCopy = findViewById(R.id.btnCopy);
                 btnSaveTxt = findViewById(R.id.btnSaveTxt);
+
+                // 说明按钮
+                findViewById(R.id.btnHelp).setOnClickListener(v -> {
+                    new AlertDialog.Builder(this)
+                        .setTitle("参数说明")
+                        .setMessage(
+                            "【温度参数】\n" +
+                            "控制AI判断的果断程度。\n" +
+                            "• 值越低（如0.5）：概率分布越尖锐。模型更自信（置信度更高），更激进，修改量可能上升，因为更不容易被拦截。\n" +
+                            "• 值越高（如2.0）：概率分布越平缓。模型更保守（置信度更低），修改量可能下降，因为更容易被拦截。\n" +
+                            "• 默认1.0～1.2，适合大多数场景\n\n" +
+                            "示例：AI预测某处应为\"地\"\n" +
+                            "• 温度0.5 → 置信度升高，更容易触发修改\n" +
+                            "• 温度2.0 → 置信度降低，更难触发修改\n\n" +
+                            "【置信度拦截阈值】\n" +
+                            "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n\n" +
+                            "示例：若\"地\"的阈值设为0.76\n" +
+                            "• AI置信度0.85 ≥ 0.76 → 执行修改\n" +
+                            "• AI置信度0.70 < 0.76 → 保持原字不变")
+                        .setPositiveButton("知道了", null)
+                        .show();
+                });
 
                 try {
                     String modulePath = assetFilePath(this, "dededi_mobile.ptl");
@@ -265,7 +295,6 @@ jobs:
                 String text = inputText.getText().toString();
                 if (text.isEmpty()) return;
 
-                // 准备工作：工作锁定状态
                 btnCheck.setEnabled(false);
                 btnCopy.setEnabled(false);
                 btnSaveTxt.setEnabled(false);
@@ -282,15 +311,13 @@ jobs:
                 } catch (Exception ignored) {}
                 temp = t1; tDe = t2; tDi = t3; tDe3 = t4;
 
-                // 开启异步全新跑腿线程，防止一万字导致主线程阻塞闪退
                 new Thread(() -> {
                     try {
                         long startTime = System.currentTimeMillis();
                         long unkId = vocab.containsKey("[UNK]") ? vocab.get("[UNK]") : 1;
-                        long maskId = vocab.containsKey("[MASK]") ? vocab.get("[MASK]") : 2;
+                        long maskId = vocab.containsKey("<mask>") ? vocab.get("<mask>") : 2;
                         String[] labels = {"的", "地", "得"};
 
-                        // 分割句子
                         String[] sentences = text.split("(?<=[。！？!?\n])");
                         
                         StringBuilder errorsHtmlBuilder = new StringBuilder(); 
@@ -355,7 +382,7 @@ jobs:
 
                                         sClean.append(pred);
                                         sFullHtml.append("<font color='#E53935'><b>").append(pred).append("</b></font>");
-                                        sErrorHtml.append("<font color='#E53935'>").append(ch).append("</font>→<b>").append(pred).append("</b><font color='#888888'><small>（").append(String.format("%.2f", maxProb)).append("）</small></font>");
+                                        sErrorHtml.append("<font color='#E53935'>").append(ch).append("</font>→<b>").append(pred).append("</b><font color='#888888'><small>（置信度：").append(String.format("%.2f", maxProb)).append("）</small></font>");
                                     } else {
                                         sClean.append(ch);
                                         sFullHtml.append(ch);
@@ -379,8 +406,6 @@ jobs:
                                 errorsHtmlBuilder.append(" ").append(sErrorHtml).append("<br>");
                             }
 
-                            //【核心升级：流式限流刷新 + 动态计时器】
-                            // 每隔 250 毫秒（或处理到最后一句时）就向主线程抛一次界面快照，防止频繁刷新卡UI
                             long now = System.currentTimeMillis();
                             if (now - lastUpdateTime > 250 || sIdx == sentences.length - 1) {
                                 lastUpdateTime = now;
@@ -391,11 +416,11 @@ jobs:
                                 liveReport.append("进度：已分析 ").append(sIdx + 1).append(" / ").append(sentences.length).append(" 句<br><br>");
                                 
                                 if (errorsHtmlBuilder.length() > 0) {
-                                    liveReport.append("<font color='#757575'><b>【🔍 错误修正明细】</b></font><br>")
+                                    liveReport.append("<font color='#757575'><b>【错误句子】</b></font><br>")
                                               .append(errorsHtmlBuilder.toString())
                                               .append("<br>---------------------------------------<br><br>");
                                 }
-                                liveReport.append("<font color='#757575'><b>【📄 修正后完整全文】</b></font><br>")
+                                liveReport.append("<font color='#757575'><b>【修正后完整全文】</b></font><br>")
                                            .append(fullHtmlBuilder.toString());
 
                                 final String htmlSnapshot = liveReport.toString();
@@ -403,7 +428,6 @@ jobs:
                             }
                         }
 
-                        // 最终大结局：渲染全量完工报告
                         cleanTextResult = cleanTextBuilder.toString();
                         long totalTime = System.currentTimeMillis() - startTime;
                         double totalTimeSec = totalTime / 1000.0;
@@ -412,7 +436,7 @@ jobs:
                         finalReport.append("<b>检查完毕！共更正 <font color='#E53935'>").append(totalChangeCount).append("</font> 处。总耗时 ").append(String.format("%.2f", totalTimeSec)).append(" 秒。</b><br><br>");
                         
                         if (totalChangeCount > 0) {
-                            finalReport.append("<font color='#757575'><b>【错误句子：】</b></font><br>")
+                            finalReport.append("<font color='#757575'><b>【错误句子】</b></font><br>")
                                        .append(errorsHtmlBuilder.toString())
                                        .append("<br>---------------------------------------<br><br>");
                         }
