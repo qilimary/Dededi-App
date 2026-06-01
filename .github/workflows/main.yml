@@ -43,7 +43,7 @@ jobs:
         # 2. 生成 settings.gradle
         echo "include ':app'" > settings.gradle
 
-        # 3. 生成 app/build.gradle (保留 64位 独占瘦身)
+        # 3. 生成 app/build.gradle
         cat << 'EOF' > app/build.gradle
         apply plugin: 'com.android.application'
         android {
@@ -87,7 +87,7 @@ jobs:
         </manifest>
         EOF
 
-        # 5. 生成全新的布局文件 (加入高级复制、保存功能区)
+        # 5. 生成布局文件
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -131,9 +131,7 @@ jobs:
                     android:backgroundTint="#4CAF50" android:layout_marginRight="4dp" android:enabled="false"/>
                 <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
                     android:layout_weight="1" android:text="保存为TXT文件" android:textSize="14sp"
-                    android:backgroundTint="#FF9800" android:layout_marginLeft="4dp" android:enabled="false"/>
-            </LinearLayout>
-
+                    **重点修改区域：重构输出逻辑，分离明细与全文** -->
             <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
                 <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:textSize="16sp" android:background="#FFF" android:padding="12dp" android:textColor="#333" android:lineSpacingExtra="5dp"/>
@@ -141,7 +139,7 @@ jobs:
         </LinearLayout>
         EOF
 
-        # 6. 生成 MainActivity.java (添加剪贴板引擎与免权限文件写出服务)
+        # 6. 生成 MainActivity.java
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.ClipData;
@@ -179,7 +177,7 @@ jobs:
             private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3;
             private TextView outputText;
             private Button btnCopy, btnSaveTxt;
-            private String cleanTextResult = ""; // 🌟 核心缓存：存储与 Python 完全一致的纯净纠错后全文
+            private String cleanTextResult = ""; 
 
             @Override
             protected void onCreate(Bundle savedInstanceState) {
@@ -220,7 +218,6 @@ jobs:
                     doInference();
                 });
 
-                // 🌟 复制纯净文本点击响应
                 btnCopy.setOnClickListener(v -> {
                     if (cleanTextResult.isEmpty()) return;
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -229,7 +226,6 @@ jobs:
                     Toast.makeText(this, "📋 纯净修正全文已复制到剪贴板！", Toast.LENGTH_SHORT).show();
                 });
 
-                // 🌟 调用 Android 现代安全文件管理器进行保存
                 btnSaveTxt.setOnClickListener(v -> {
                     if (cleanTextResult.isEmpty()) return;
                     try {
@@ -244,7 +240,6 @@ jobs:
                 });
             }
 
-            // 接收文件管理器保存成功后的返回回调数据
             @Override
             protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                 super.onActivityResult(requestCode, resultCode, data);
@@ -282,14 +277,17 @@ jobs:
                     long maskId = vocab.containsKey("[MASK]") ? vocab.get("[MASK]") : 2;
                     String[] labels = {"的", "地", "得"};
 
+                    // 按标点符号和换行符切分句子
                     String[] sentences = text.split("(?<=[。！？!?\n])");
-                    StringBuilder finalHtmlResult = new StringBuilder();
-                    StringBuilder cleanTextBuilder = new StringBuilder(); // 🌟 并行构建干净的导出流
+                    
+                    StringBuilder errorsHtmlBuilder = new StringBuilder(); // 收集有错的句子明细
+                    StringBuilder fullHtmlBuilder = new StringBuilder();   // 收集整篇仅标红的全文
+                    StringBuilder cleanTextBuilder = new StringBuilder();  // 收集纯文本
                     int totalChangeCount = 0;
 
                     for (String sentence : sentences) {
                         if (sentence.isEmpty()) {
-                            finalHtmlResult.append("<br>");
+                            fullHtmlBuilder.append("<br>");
                             cleanTextBuilder.append("\n");
                             continue;
                         }
@@ -312,6 +310,11 @@ jobs:
                         Tensor outputTensor = module.forward(IValue.from(inputTensor)).toTensor();
                         float[] scores = outputTensor.getDataAsFloatArray();
 
+                        boolean currentSentenceHasError = false;
+                        StringBuilder sClean = new StringBuilder();
+                        StringBuilder sFullHtml = new StringBuilder();
+                        StringBuilder sErrorHtml = new StringBuilder();
+
                         for (int i = 0; i < sentence.length(); i++) {
                             String ch = String.valueOf(sentence.charAt(i));
                             if (ch.equals("的") || ch.equals("地") || ch.equals("得")) {
@@ -332,36 +335,60 @@ jobs:
 
                                 String pred = labels[maxIdx];
                                 if (!pred.equals(ch) && maxProb >= currentThreshold) {
-                                    // 1. 渲染给屏幕看的标记格式
-                                    finalHtmlResult.append("<font color='#E53935'>").append(ch).append("</font>")
-                                            .append("→").append(pred)
-                                            .append("<font color='#888888'><small>（置信度：").append(String.format("%.2f", maxProb)).append("）</small></font>");
-                                    
-                                    // 2. 🌟 塞入纯净导出流 (跟你的 Python 原作行为一模一样，只取修正字)
-                                    cleanTextBuilder.append(pred);
+                                    currentSentenceHasError = true;
                                     totalChangeCount++;
+
+                                    sClean.append(pred);
+                                    // 全文视图：仅标红修正字，不带置信度和箭头
+                                    sFullHtml.append("<font color='#E53935'><b>").append(pred).append("</b></font>");
+                                    // 错误明细视图：原文错字标红 -> 修正字(带置信度)
+                                    sErrorHtml.append("<font color='#E53935'>").append(ch).append("</font>→<b>").append(pred).append("</b><font color='#888888'><small>（").append(String.format("%.2f", maxProb)).append("）</small></font>");
                                 } else {
-                                    finalHtmlResult.append(ch);
-                                    cleanTextBuilder.append(ch);
+                                    sClean.append(ch);
+                                    sFullHtml.append(ch);
+                                    sErrorHtml.append(ch);
                                 }
                             } else {
-                                if (ch.equals("\n")) finalHtmlResult.append("<br>");
-                                else finalHtmlResult.append(ch);
-                                cleanTextBuilder.append(ch);
+                                sClean.append(ch);
+                                if (ch.equals("\n")) {
+                                    sFullHtml.append("<br>");
+                                    sErrorHtml.append("<br>");
+                                } else {
+                                    sFullHtml.append(ch);
+                                    sErrorHtml.append(ch);
+                                }
                             }
+                        }
+
+                        cleanTextBuilder.append(sClean);
+                        fullHtmlBuilder.append(sFullHtml);
+                        // 如果本句有错，才塞进“错误明细区”
+                        if (currentSentenceHasError) {
+                            errorsHtmlBuilder.append("📍 ").append(sErrorHtml).append("<br>");
                         }
                     }
 
                     cleanTextResult = cleanTextBuilder.toString();
                     
-                    // 🌟 推理完立刻激活这俩按钮，不填东西或未推理时则是灰色不可点
                     if (!cleanTextResult.isEmpty()) {
                         btnCopy.setEnabled(true);
                         btnSaveTxt.setEnabled(true);
                     }
 
-                    String summary = "检查完毕！共为您更正 <font color='#E53935'>" + totalChangeCount + "</font> 处。<br><br>" + finalHtmlResult.toString();
-                    outputText.setText(Html.fromHtml(summary, Html.FROM_HTML_MODE_COMPACT));
+                    // 组装最终呈现在屏幕上的 HTML 样式
+                    StringBuilder finalReport = new StringBuilder();
+                    finalReport.append("📝 <b>检查完毕！共为您更正 <font color='#E53935'>").append(totalChangeCount).append("</font> 处。</b><br><br>");
+                    
+                    if (totalChangeCount > 0) {
+                        finalReport.append("<font color='#757575'><b>【🔍 错误修正明细】</b></font><br>")
+                                   .append(errorsHtmlBuilder.toString())
+                                   .append("<br>---------------------------------------<br><br>");
+                    }
+                    
+                    finalReport.append("<font color='#757575'><b>【📄 修正后完整全文】</b></font><br>")
+                               .append(fullHtmlBuilder.toString());
+
+                    outputText.setText(Html.fromHtml(finalReport.toString(), Html.FROM_HTML_MODE_COMPACT));
                 } catch (Exception e) {
                     outputText.setText("推理出错: " + e.getMessage());
                 }
