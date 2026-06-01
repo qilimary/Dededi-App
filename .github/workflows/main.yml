@@ -20,9 +20,16 @@ jobs:
         mkdir -p app/src/main/assets
         mkdir -p gradle/wrapper
 
-        # 复制你的模型和词表 (请确保这两个文件在你的 Git 仓库根目录下)
+        # 复制模型和词表 (请确保这两个文件在你的 Git 仓库根目录下)
         cp dededi_mobile.ptl app/src/main/assets/
         cp student_vocab.json app/src/main/assets/
+
+        # 【新增】生成 gradle.properties，强制开启 AndroidX 支持（不加这个极易报错）
+        cat << 'EOF' > gradle.properties
+        android.useAndroidX=true
+        android.enableJetifier=true
+        org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
+        EOF
 
         # 1. 生成根目录 build.gradle
         cat << 'EOF' > build.gradle
@@ -48,6 +55,10 @@ jobs:
                 targetSdk 33
                 versionCode 1
                 versionName "1.0"
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_11
+                targetCompatibility JavaVersion.VERSION_11
             }
         }
         dependencies {
@@ -93,7 +104,7 @@ jobs:
         </LinearLayout>
         EOF
 
-        # 6. 生成 MainActivity.java (已修复 Long 数组传递给 PyTorch 的编译隐患)
+        # 6. 生成 MainActivity.java
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.Context;
@@ -166,7 +177,6 @@ jobs:
                     long unkId = vocab.containsKey("[UNK]") ? vocab.get("[UNK]") : 1;
                     long maskId = vocab.containsKey("[MASK]") ? vocab.get("[MASK]") : 2;
                     
-                    // 使用 LongBuffer 代替普通的 long[] 以适配 PyTorch Tensor 接口
                     LongBuffer inputBuffer = LongBuffer.allocate(text.length());
                     for (int i = 0; i < text.length(); i++) {
                         String ch = String.valueOf(text.charAt(i));
@@ -176,7 +186,7 @@ jobs:
                             inputBuffer.put(vocab.containsKey(ch) ? vocab.get(ch) : unkId);
                         }
                     }
-                    inputBuffer.rewind(); // 重置指针回到缓冲区头部
+                    inputBuffer.rewind();
                     
                     Tensor inputTensor = Tensor.fromBlob(inputBuffer, new long[]{1, text.length()});
                     Tensor outputTensor = module.forward(IValue.from(inputTensor)).toTensor();
@@ -262,9 +272,16 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # 开启高级排查模式，并将日志强制格式化为普通文本，防止关键报错被刷掉
+    # 【核心改动】如果编译失败，将最后100行错误日志强行写入手机端可见的 GitHub Summary 页面
     - name: Build APK
-      run: ./gradlew assembleDebug --stacktrace --console=plain
+      run: |
+        ./gradlew assembleDebug --stacktrace --console=plain > build_output.log 2>&1 || {
+          echo "### ❌ 编译未通过！以下是手机专供的具体报错信息：" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+          tail -n 100 build_output.log >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        }
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
