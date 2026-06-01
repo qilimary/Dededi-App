@@ -17,6 +17,8 @@ jobs:
         mkdir -p app/src/main/java/com/app/dededi
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/drawable
+        mkdir -p app/src/main/res/mipmap-anydpi-v26
         mkdir -p app/src/main/assets
         mkdir -p gradle/wrapper
 
@@ -43,7 +45,7 @@ jobs:
         # 2. 生成 settings.gradle
         echo "include ':app'" > settings.gradle
 
-        # 3. 生成 app/build.gradle
+        # 3. 生成 app/build.gradle (去除多余依赖，开启混淆与极限压缩)
         cat << 'EOF' > app/build.gradle
         apply plugin: 'com.android.application'
         android {
@@ -59,6 +61,14 @@ jobs:
                     abiFilters "arm64-v8a"
                 }
             }
+            buildTypes {
+                release {
+                    minifyEnabled true      // 开启代码压缩和混淆
+                    shrinkResources true    // 开启无用资源剔除
+                    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                    signingConfig signingConfigs.debug // 借用debug签名，方便直接安装
+                }
+            }
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_11
                 targetCompatibility JavaVersion.VERSION_11
@@ -68,15 +78,52 @@ jobs:
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.8.0'
             implementation 'org.pytorch:pytorch_android_lite:1.13.0'
-            implementation 'org.pytorch:pytorch_android_torchvision_lite:1.13.0'
+            // 已删除 torchvision_lite 依赖，纯文本模型不需要，直接省去 10MB+ 体积
         }
         EOF
 
-        # 4. 生成 AndroidManifest.xml
+        # 3.1 生成 Proguard 混淆规则 (防止 AI 模型读取报错)
+        cat << 'EOF' > app/proguard-rules.pro
+        -keep class org.pytorch.** { *; }
+        -keep class com.facebook.jni.** { *; }
+        -keepclasseswithmembers class * {
+            native <methods>;
+        }
+        -dontwarn org.pytorch.**
+        EOF
+
+        # 3.2 生成自定义 APP 图标资源 (绿色渐变背景 + 纠错勾号)
+        cat << 'EOF' > app/src/main/res/values/colors.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <color name="icon_bg">#4CAF50</color>
+        </resources>
+        EOF
+        
+        cat << 'EOF' > app/src/main/res/drawable/ic_dededi_fg.xml
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="108dp" android:height="108dp" android:viewportWidth="24" android:viewportHeight="24">
+            <path android:fillColor="#FFFFFF" android:pathData="M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z"/>
+        </vector>
+        EOF
+        
+        cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@color/icon_bg"/>
+            <foreground android:drawable="@drawable/ic_dededi_fg"/>
+        </adaptive-icon>
+        EOF
+
+        # 4. 生成 AndroidManifest.xml (挂载自定义图标)
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <application android:allowBackup="true" android:label="“的地得”纠错AI" android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+            <application android:allowBackup="true" 
+                         android:icon="@mipmap/ic_launcher"
+                         android:roundIcon="@mipmap/ic_launcher"
+                         android:label="“的地得”纠错AI" 
+                         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                 <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustPan">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
@@ -222,7 +269,6 @@ jobs:
                     outputText.setText("❌ 模型加载失败: " + e.getMessage());
                 }
 
-                // 绑定说明弹窗按钮事件
                 btnHelp.setOnClickListener(v -> {
                     new androidx.appcompat.app.AlertDialog.Builder(this)
                         .setTitle("参数与阈值说明")
@@ -381,7 +427,6 @@ jobs:
 
                                         sClean.append(pred);
                                         sFullHtml.append("<font color='#E53935'><b>").append(pred).append("</b></font>");
-                                        // 修改为明朗的（置信度：0.xx）格式
                                         sErrorHtml.append("<font color='#E53935'>").append(ch).append("</font>→<b>").append(pred).append("</b><font color='#888888'><small>（置信度：").append(String.format("%.2f", maxProb)).append("）</small></font>");
                                     } else {
                                         sClean.append(ch);
@@ -500,10 +545,10 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Build APK
+    - name: Build APK (Release mode for maximum compression)
       run: |
-        ./gradlew assembleDebug --stacktrace --console=plain > build_output.log 2>&1 || {
-          echo "### ❌ 编译未通过！以下是手机专供的具体报错信息：" >> $GITHUB_STEP_SUMMARY
+        ./gradlew assembleRelease --stacktrace --console=plain > build_output.log 2>&1 || {
+          echo "### ❌ 编译未通过！以下是具体报错信息：" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
           tail -n 100 build_output.log >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
@@ -514,4 +559,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: Dededi-App-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: app/build/outputs/apk/release/app-release.apk
