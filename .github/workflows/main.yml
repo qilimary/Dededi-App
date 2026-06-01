@@ -100,7 +100,7 @@ jobs:
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:background="#FFFFFF" android:padding="8dp" android:layout_marginBottom="10dp">
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="温度" android:textSize="11sp" android:textColor="#666"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="temperature参数" android:textSize="11sp" android:textColor="#666"/>
                     <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.2" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                 </LinearLayout>
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
@@ -225,7 +225,7 @@ jobs:
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     ClipData clip = ClipData.newPlainText("Corrected Article", cleanTextResult);
                     if (clipboard != null) clipboard.setPrimaryClip(clip);
-                    Toast.makeText(this, "📋 纯净修正全文已复制到剪贴板！", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "修正后的全文已复制到剪贴板", Toast.LENGTH_SHORT).show();
                 });
 
                 btnSaveTxt.setOnClickListener(v -> {
@@ -234,7 +234,7 @@ jobs:
                         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType("text/plain");
-                        intent.putExtra(Intent.EXTRA_TITLE, "地得纠错结果_纯净版.txt");
+                        intent.putExtra(Intent.EXTRA_TITLE, "纠错结果_纯净版.txt");
                         startActivityForResult(intent, 101);
                     } catch (Exception e) {
                         Toast.makeText(this, "调起系统文件管理器失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -252,10 +252,10 @@ jobs:
                         if (os != null) {
                             os.write(cleanTextResult.getBytes(StandardCharsets.UTF_8));
                             os.close();
-                            Toast.makeText(this, "💾 成功导出！.txt文件已安全写入", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, ".txt文件已安全写入", Toast.LENGTH_SHORT).show();
                         }
                     } catch (Exception e) {
-                        Toast.makeText(this, "❌ 写入文件失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "❌写入文件失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                     }
                 }
             }
@@ -269,7 +269,7 @@ jobs:
                 btnCheck.setEnabled(false);
                 btnCopy.setEnabled(false);
                 btnSaveTxt.setEnabled(false);
-                outputText.setText("⏳ 正在拉起异步 AI 算力引擎...");
+                outputText.setText("正在拉起异步 AI 算力引擎...");
 
                 final float temp;
                 final float tDe, tDi, tDe3;
@@ -376,7 +376,7 @@ jobs:
                             cleanTextBuilder.append(sClean);
                             fullHtmlBuilder.append(sFullHtml);
                             if (currentSentenceHasError) {
-                                errorsHtmlBuilder.append("📍 ").append(sErrorHtml).append("<br>");
+                                errorsHtmlBuilder.append(" ").append(sErrorHtml).append("<br>");
                             }
 
                             //【核心升级：流式限流刷新 + 动态计时器】
@@ -387,7 +387,7 @@ jobs:
                                 double elapsedSec = (now - startTime) / 1000.0;
                                 
                                 StringBuilder liveReport = new StringBuilder();
-                                liveReport.append("⏳ <b>AI 正在全力纠错中... 已耗时 <font color='#2196F3'>").append(String.format("%.1f", elapsedSec)).append("</font> 秒</b><br>");
+                                liveReport.append(" <b>AI 正在审查... 已耗时 <font color='#2196F3'>").append(String.format("%.1f", elapsedSec)).append("</font> 秒</b><br>");
                                 liveReport.append("进度：已分析 ").append(sIdx + 1).append(" / ").append(sentences.length).append(" 句<br><br>");
                                 
                                 if (errorsHtmlBuilder.length() > 0) {
@@ -409,14 +409,14 @@ jobs:
                         double totalTimeSec = totalTime / 1000.0;
 
                         StringBuilder finalReport = new StringBuilder();
-                        finalReport.append("📝 <b>检查完毕！共为您更正 <font color='#E53935'>").append(totalChangeCount).append("</font> 处。总耗时 ").append(String.format("%.2f", totalTimeSec)).append(" 秒。</b><br><br>");
+                        finalReport.append("<b>检查完毕！共更正 <font color='#E53935'>").append(totalChangeCount).append("</font> 处。总耗时 ").append(String.format("%.2f", totalTimeSec)).append(" 秒。</b><br><br>");
                         
                         if (totalChangeCount > 0) {
-                            finalReport.append("<font color='#757575'><b>【🔍 错误修正明细】</b></font><br>")
+                            finalReport.append("<font color='#757575'><b>【错误句子：】</b></font><br>")
                                        .append(errorsHtmlBuilder.toString())
                                        .append("<br>---------------------------------------<br><br>");
                         }
-                        finalReport.append("<font color='#757575'><b>【📄 修正后完整全文】</b></font><br>")
+                        finalReport.append("<font color='#757575'><b>【修正后的全文】</b></font><br>")
                                    .append(fullHtmlBuilder.toString());
 
                         final String finalHtmlStr = finalReport.toString();
