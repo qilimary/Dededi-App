@@ -18,13 +18,13 @@ jobs:
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
         mkdir -p app/src/main/assets
+        mkdir -p gradle/wrapper
 
         # 复制你的模型和词表
         cp dededi_mobile.ptl app/src/main/assets/
         cp student_vocab.json app/src/main/assets/
 
-        # 自动生成工程配置
-        echo "include ':app'" > settings.gradle
+        # 1. 生成根目录 build.gradle
         cat << 'EOF' > build.gradle
         buildscript {
             repositories { google(); mavenCentral() }
@@ -33,8 +33,12 @@ jobs:
         allprojects { repositories { google(); mavenCentral() } }
         EOF
 
+        # 2. 生成 settings.gradle
+        echo "include ':app'" > settings.gradle
+
+        # 3. 生成 app/build.gradle (改用 apply plugin 避免找不到插件报错)
         cat << 'EOF' > app/build.gradle
-        plugins { id 'com.android.application' }
+        apply plugin: 'com.android.application'
         android {
             namespace 'com.app.dededi'
             compileSdk 33
@@ -54,6 +58,7 @@ jobs:
         }
         EOF
 
+        # 4. 生成 AndroidManifest.xml
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -68,6 +73,7 @@ jobs:
         </manifest>
         EOF
 
+        # 5. 生成 layout 文件
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -87,6 +93,7 @@ jobs:
         </LinearLayout>
         EOF
 
+        # 6. 生成 MainActivity.java
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.Context;
@@ -156,7 +163,7 @@ jobs:
                 if (text.isEmpty()) return;
                 try {
                     long unkId = vocab.containsKey("[UNK]") ? vocab.get("[UNK]") : 1;
-                    long maskId = vocab.containsKey("[mask]") ? vocab.get("[mask]") : 2;
+                    long maskId = vocab.containsKey("[MASK]") ? vocab.get("[MASK]") : 2;
                     long[] inputIds = new long[text.length()];
                     for (int i = 0; i < text.length(); i++) {
                         String ch = String.valueOf(text.charAt(i));
@@ -229,6 +236,20 @@ jobs:
         }
         EOF
 
+        # 7. 下载 Gradle Wrapper 核心文件 (避免因环境缺少 gradle 指令导致失败)
+        wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -O gradle/wrapper/gradle-wrapper.jar
+        wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradlew -O gradlew
+        chmod +x gradlew
+
+        # 8. 生成 wrapper 配置文件 (指定 Gradle 7.5.1 以适配 AGP 7.4.2)
+        cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-7.5.1-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
+
     - name: set up JDK 11
       uses: actions/setup-java@v4
       with:
@@ -237,9 +258,7 @@ jobs:
         cache: gradle
 
     - name: Build APK
-      run: |
-        gradle wrapper --gradle-version 7.4.2
-        ./gradlew assembleDebug
+      run: ./gradlew assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
