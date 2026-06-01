@@ -43,7 +43,7 @@ jobs:
         # 2. 生成 settings.gradle
         echo "include ':app'" > settings.gradle
 
-        # 3. 生成 app/build.gradle
+        # 3. 生成 app/build.gradle (保留 64位 独占瘦身)
         cat << 'EOF' > app/build.gradle
         apply plugin: 'com.android.application'
         android {
@@ -55,6 +55,9 @@ jobs:
                 targetSdk 33
                 versionCode 1
                 versionName "1.0"
+                ndk {
+                    abiFilters "arm64-v8a"
+                }
             }
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_11
@@ -73,8 +76,8 @@ jobs:
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <application android:allowBackup="true" android:label="地得的纠错" android:theme="@style/Theme.AppCompat.Light.NoActionBar">
-                <activity android:name=".MainActivity" android:exported="true">
+            <application android:allowBackup="true" android:label="“的地得”纠错AI" android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustPan">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -84,36 +87,74 @@ jobs:
         </manifest>
         EOF
 
-        # 5. 生成 layout 文件
+        # 5. 生成全新的布局文件 (加入高级复制、保存功能区)
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
             android:layout_width="match_parent" android:layout_height="match_parent"
-            android:orientation="vertical" android:padding="16dp" android:background="#F5F5F5">
+            android:orientation="vertical" android:padding="14dp" android:background="#F8F9FA">
+            
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
-                      android:text="地得的本地AI纠错" android:textSize="22sp" android:textStyle="bold" android:layout_marginBottom="16dp" android:textColor="#333"/>
-            <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="200dp"
+                      android:text="“的地得”纠错AI" android:textSize="20sp" android:textStyle="bold" android:layout_marginBottom="12dp" android:textColor="#1A1A1A"/>
+            
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:background="#FFFFFF" android:padding="8dp" android:layout_marginBottom="10dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="温度" android:textSize="11sp" android:textColor="#666"/>
+                    <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.2" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的阈值" android:textSize="11sp" android:textColor="#666"/>
+                    <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地阈值" android:textSize="11sp" android:textColor="#666"/>
+                    <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.76" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得阈值" android:textSize="11sp" android:textColor="#666"/>
+                    <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.76" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="160dp"
                 android:hint="在此输入或者粘贴需要检查的文本..." android:gravity="top|start" android:background="#FFF"
-                android:padding="12dp" android:textSize="16sp" />
-            <Button android:id="@+id/btnCheck" android:layout_width="match_parent" android:layout_height="60dp"
-                android:text="开始纠错 (本地闪电推理)" android:textSize="18sp" android:layout_marginTop="16dp" android:layout_marginBottom="16dp"/>
+                android:padding="12dp" android:textSize="15sp" android:scrollbars="vertical"/>
+            
+            <Button android:id="@+id/btnCheck" android:layout_width="match_parent" android:layout_height="52dp"
+                android:text="开始纠错" android:textSize="16sp" android:layout_marginTop="10dp" android:layout_marginBottom="10dp" android:backgroundTint="#2196F3"/>
+            
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:layout_marginBottom="10dp">
+                <Button android:id="@+id/btnCopy" android:layout_width="0dp" android:layout_height="48dp"
+                    android:layout_weight="1" android:text="复制纯净全文" android:textSize="14sp"
+                    android:backgroundTint="#4CAF50" android:layout_marginRight="4dp" android:enabled="false"/>
+                <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
+                    android:layout_weight="1" android:text="保存为TXT文件" android:textSize="14sp"
+                    android:backgroundTint="#FF9800" android:layout_marginLeft="4dp" android:enabled="false"/>
+            </LinearLayout>
+
             <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
                 <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textSize="18sp" android:background="#FFF" android:padding="12dp" android:textColor="#333" android:lineSpacingExtra="6dp"/>
+                    android:textSize="16sp" android:background="#FFF" android:padding="12dp" android:textColor="#333" android:lineSpacingExtra="5dp"/>
             </ScrollView>
         </LinearLayout>
         EOF
 
-        # 6. 生成 MainActivity.java (已彻底修复 Direct Buffer 内存共享机制)
+        # 6. 生成 MainActivity.java (添加剪贴板引擎与免权限文件写出服务)
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
+        import android.content.ClipData;
+        import android.content.ClipboardManager;
         import android.content.Context;
+        import android.content.Intent;
         import android.os.Bundle;
         import android.text.Html;
         import android.view.inputmethod.InputMethodManager;
         import android.widget.Button;
         import android.widget.EditText;
         import android.widget.TextView;
+        import android.widget.Toast;
         import androidx.appcompat.app.AppCompatActivity;
         import org.json.JSONObject;
         import org.pytorch.IValue;
@@ -123,6 +164,7 @@ jobs:
         import java.io.File;
         import java.io.FileOutputStream;
         import java.io.InputStream;
+        import java.io.OutputStream;
         import java.nio.charset.StandardCharsets;
         import java.nio.ByteBuffer;
         import java.nio.ByteOrder;
@@ -134,8 +176,10 @@ jobs:
         public class MainActivity extends AppCompatActivity {
             private Module module = null;
             private Map<String, Long> vocab = new HashMap<>();
-            private EditText inputText;
+            private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3;
             private TextView outputText;
+            private Button btnCopy, btnSaveTxt;
+            private String cleanTextResult = ""; // 🌟 核心缓存：存储与 Python 完全一致的纯净纠错后全文
 
             @Override
             protected void onCreate(Bundle savedInstanceState) {
@@ -143,7 +187,13 @@ jobs:
                 setContentView(R.layout.activity_main);
                 inputText = findViewById(R.id.inputText);
                 outputText = findViewById(R.id.outputText);
+                editTemp = findViewById(R.id.editTemp);
+                editThreshDe1 = findViewById(R.id.editThreshDe1);
+                editThreshDe2 = findViewById(R.id.editThreshDe2);
+                editThreshDe3 = findViewById(R.id.editThreshDe3);
                 Button btnCheck = findViewById(R.id.btnCheck);
+                btnCopy = findViewById(R.id.btnCopy);
+                btnSaveTxt = findViewById(R.id.btnSaveTxt);
 
                 try {
                     String modulePath = assetFilePath(this, "dededi_mobile.ptl");
@@ -169,74 +219,149 @@ jobs:
                     imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
                     doInference();
                 });
+
+                // 🌟 复制纯净文本点击响应
+                btnCopy.setOnClickListener(v -> {
+                    if (cleanTextResult.isEmpty()) return;
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    ClipData clip = ClipData.newPlainText("Corrected Article", cleanTextResult);
+                    clipboard.setPrimaryClip(clip);
+                    Toast.makeText(this, "📋 纯净修正全文已复制到剪贴板！", Toast.LENGTH_SHORT).show();
+                });
+
+                // 🌟 调用 Android 现代安全文件管理器进行保存
+                btnSaveTxt.setOnClickListener(v -> {
+                    if (cleanTextResult.isEmpty()) return;
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("text/plain");
+                        intent.putExtra(Intent.EXTRA_TITLE, "地得纠错结果_纯净版.txt");
+                        startActivityForResult(intent, 101);
+                    } catch (Exception e) {
+                        Toast.makeText(this, "调起系统文件管理器失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+
+            // 接收文件管理器保存成功后的返回回调数据
+            @Override
+            protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                super.onActivityResult(requestCode, resultCode, data);
+                if (requestCode == 101 && resultCode == RESULT_OK && data != null && data.getData() != null) {
+                    try {
+                        android.net.Uri uri = data.getData();
+                        OutputStream os = getContentResolver().openOutputStream(uri);
+                        if (os != null) {
+                            os.write(cleanTextResult.getBytes(StandardCharsets.UTF_8));
+                            os.close();
+                            Toast.makeText(this, "💾 成功导出！.txt文件已安全写入", Toast.LENGTH_SHORT).show();
+                        }
+                    } catch (Exception e) {
+                        Toast.makeText(this, "❌ 写入文件失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                }
             }
 
             private void doInference() {
                 if (module == null) return;
                 String text = inputText.getText().toString();
                 if (text.isEmpty()) return;
+
+                float temp = 1.2f;
+                float tDe = 0.70f, tDi = 0.76f, tDe3 = 0.76f;
+                try {
+                    temp = Float.parseFloat(editTemp.getText().toString());
+                    tDe = Float.parseFloat(editThreshDe1.getText().toString());
+                    tDi = Float.parseFloat(editThreshDe2.getText().toString());
+                    tDe3 = Float.parseFloat(editThreshDe3.getText().toString());
+                } catch (Exception ignored) {}
+
                 try {
                     long unkId = vocab.containsKey("[UNK]") ? vocab.get("[UNK]") : 1;
                     long maskId = vocab.containsKey("[MASK]") ? vocab.get("[MASK]") : 2;
-                    
-                    // 【核心修正】通过 allocateDirect 申请直连 C++ 的底层内存，并指定字节序
-                    ByteBuffer byteBuffer = ByteBuffer.allocateDirect(text.length() * 8); // 1个Long占8字节
-                    byteBuffer.order(ByteOrder.nativeOrder());
-                    LongBuffer inputBuffer = byteBuffer.asLongBuffer();
-                    
-                    for (int i = 0; i < text.length(); i++) {
-                        String ch = String.valueOf(text.charAt(i));
-                        if (ch.equals("的") || ch.equals("地") || ch.equals("得")) {
-                            inputBuffer.put(maskId);
-                        } else {
-                            inputBuffer.put(vocab.containsKey(ch) ? vocab.get(ch) : unkId);
-                        }
-                    }
-                    inputBuffer.rewind();
-                    
-                    Tensor inputTensor = Tensor.fromBlob(inputBuffer, new long[]{1, text.length()});
-                    Tensor outputTensor = module.forward(IValue.from(inputTensor)).toTensor();
-                    float[] scores = outputTensor.getDataAsFloatArray();
-                    
-                    StringBuilder resultHtml = new StringBuilder();
                     String[] labels = {"的", "地", "得"};
-                    int changeCount = 0;
-                    
-                    for (int i = 0; i < text.length(); i++) {
-                        String ch = String.valueOf(text.charAt(i));
-                        if (ch.equals("的") || ch.equals("地") || ch.equals("得")) {
-                            int baseIdx = i * 3;
-                            float temp = 1.2f; 
-                            float s0 = (float)Math.exp(scores[baseIdx] / temp);
-                            float s1 = (float)Math.exp(scores[baseIdx + 1] / temp);
-                            float s2 = (float)Math.exp(scores[baseIdx + 2] / temp);
-                            float sum = s0 + s1 + s2;
-                            float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
-                            
-                            int maxIdx = 0; float maxProb = p0;
-                            if(p1 > maxProb) { maxProb = p1; maxIdx = 1; }
-                            if(p2 > maxProb) { maxProb = p2; maxIdx = 2; }
-                            
-                            float threshold = 0.5f; 
-                            if(maxIdx == 0) threshold = 0.70f;
-                            if(maxIdx == 1) threshold = 0.76f;
-                            if(maxIdx == 2) threshold = 0.76f;
-                            
-                            String pred = labels[maxIdx];
-                            if (!pred.equals(ch) && maxProb >= threshold) {
-                                resultHtml.append("<font color='#E53935'><b>").append(pred).append("</b></font>")
-                                          .append("<font color='#888888'><small> (").append(String.format("%.2f", maxProb)).append(")</small></font>");
-                                changeCount++;
+
+                    String[] sentences = text.split("(?<=[。！？!?\n])");
+                    StringBuilder finalHtmlResult = new StringBuilder();
+                    StringBuilder cleanTextBuilder = new StringBuilder(); // 🌟 并行构建干净的导出流
+                    int totalChangeCount = 0;
+
+                    for (String sentence : sentences) {
+                        if (sentence.isEmpty()) {
+                            finalHtmlResult.append("<br>");
+                            cleanTextBuilder.append("\n");
+                            continue;
+                        }
+
+                        ByteBuffer byteBuffer = ByteBuffer.allocateDirect(sentence.length() * 8);
+                        byteBuffer.order(ByteOrder.nativeOrder());
+                        LongBuffer inputBuffer = byteBuffer.asLongBuffer();
+
+                        for (int i = 0; i < sentence.length(); i++) {
+                            String ch = String.valueOf(sentence.charAt(i));
+                            if (ch.equals("的") || ch.equals("地") || ch.equals("得")) {
+                                inputBuffer.put(maskId);
                             } else {
-                                resultHtml.append(ch);
+                                inputBuffer.put(vocab.containsKey(ch) ? vocab.get(ch) : unkId);
                             }
-                        } else {
-                            if(ch.equals("\n")) resultHtml.append("<br>");
-                            else resultHtml.append(ch);
+                        }
+                        inputBuffer.rewind();
+
+                        Tensor inputTensor = Tensor.fromBlob(inputBuffer, new long[]{1, sentence.length()});
+                        Tensor outputTensor = module.forward(IValue.from(inputTensor)).toTensor();
+                        float[] scores = outputTensor.getDataAsFloatArray();
+
+                        for (int i = 0; i < sentence.length(); i++) {
+                            String ch = String.valueOf(sentence.charAt(i));
+                            if (ch.equals("的") || ch.equals("地") || ch.equals("得")) {
+                                int baseIdx = i * 3;
+                                float s0 = (float) Math.exp(scores[baseIdx] / temp);
+                                float s1 = (float) Math.exp(scores[baseIdx + 1] / temp);
+                                float s2 = (float) Math.exp(scores[baseIdx + 2] / temp);
+                                float sum = s0 + s1 + s2;
+                                float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
+
+                                int maxIdx = 0; float maxProb = p0;
+                                if (p1 > maxProb) { maxProb = p1; maxIdx = 1; }
+                                if (p2 > maxProb) { maxProb = p2; maxIdx = 2; }
+
+                                float currentThreshold = tDe;
+                                if (maxIdx == 1) currentThreshold = tDi;
+                                if (maxIdx == 2) currentThreshold = tDe3;
+
+                                String pred = labels[maxIdx];
+                                if (!pred.equals(ch) && maxProb >= currentThreshold) {
+                                    // 1. 渲染给屏幕看的标记格式
+                                    finalHtmlResult.append("<font color='#E53935'>").append(ch).append("</font>")
+                                            .append("→").append(pred)
+                                            .append("<font color='#888888'><small>（置信度：").append(String.format("%.2f", maxProb)).append("）</small></font>");
+                                    
+                                    // 2. 🌟 塞入纯净导出流 (跟你的 Python 原作行为一模一样，只取修正字)
+                                    cleanTextBuilder.append(pred);
+                                    totalChangeCount++;
+                                } else {
+                                    finalHtmlResult.append(ch);
+                                    cleanTextBuilder.append(ch);
+                                }
+                            } else {
+                                if (ch.equals("\n")) finalHtmlResult.append("<br>");
+                                else finalHtmlResult.append(ch);
+                                cleanTextBuilder.append(ch);
+                            }
                         }
                     }
-                    String finalRes = "<b>🎉 检查完毕！共为您更正 <font color='#E53935'>" + changeCount + "</font> 处。</b><br><br>" + resultHtml.toString();
-                    outputText.setText(Html.fromHtml(finalRes, Html.FROM_HTML_MODE_COMPACT));
+
+                    cleanTextResult = cleanTextBuilder.toString();
+                    
+                    // 🌟 推理完立刻激活这俩按钮，不填东西或未推理时则是灰色不可点
+                    if (!cleanTextResult.isEmpty()) {
+                        btnCopy.setEnabled(true);
+                        btnSaveTxt.setEnabled(true);
+                    }
+
+                    String summary = "检查完毕！共为您更正 <font color='#E53935'>" + totalChangeCount + "</font> 处。<br><br>" + finalHtmlResult.toString();
+                    outputText.setText(Html.fromHtml(summary, Html.FROM_HTML_MODE_COMPACT));
                 } catch (Exception e) {
                     outputText.setText("推理出错: " + e.getMessage());
                 }
