@@ -10,10 +10,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: set up JDK 11
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: '11'
         distribution: 'temurin'
@@ -94,7 +94,6 @@ jobs:
         </LinearLayout>
         EOF
 
-        # 自动生成 Java 推理代码 (完美复刻你的 Python 逻辑)
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.Context;
@@ -186,7 +185,7 @@ jobs:
                         String ch = String.valueOf(text.charAt(i));
                         if (ch.equals("的") || ch.equals("地") || ch.equals("得")) {
                             int baseIdx = i * 3;
-                            float temp = 1.2f; // 你的温度系数
+                            float temp = 1.2f; 
                             float s0 = (float)Math.exp(scores[baseIdx] / temp);
                             float s1 = (float)Math.exp(scores[baseIdx + 1] / temp);
                             float s2 = (float)Math.exp(scores[baseIdx + 2] / temp);
@@ -197,7 +196,7 @@ jobs:
                             if(p1 > maxProb) { maxProb = p1; maxIdx = 1; }
                             if(p2 > maxProb) { maxProb = p2; maxIdx = 2; }
                             
-                            float threshold = 0.5f; // 你的拦截机制
+                            float threshold = 0.5f; 
                             if(maxIdx == 0) threshold = 0.70f;
                             if(maxIdx == 1) threshold = 0.76f;
                             if(maxIdx == 2) threshold = 0.76f;
@@ -242,7 +241,7 @@ jobs:
         ./gradlew assembleDebug
 
     - name: Upload APK
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: Dededi-App-APK
         path: app/build/outputs/apk/debug/app-debug.apk
