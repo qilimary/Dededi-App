@@ -154,7 +154,7 @@ jobs:
         
         cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <adaptive-icon xmlns:adaptive-icon="http://schemas.android.com/apk/res/android">
+        <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
             <background android:drawable="@color/icon_bg"/>
             <foreground android:drawable="@drawable/ic_dededi_fg"/>
         </adaptive-icon>
@@ -271,9 +271,6 @@ jobs:
         import java.io.InputStream;
         import java.io.OutputStream;
         import java.nio.charset.StandardCharsets;
-        import java.nio.ByteBuffer;
-        import java.nio.ByteOrder;
-        import java.nio.LongBuffer;
         import java.util.HashMap;
         import java.util.Iterator;
         import java.util.Map;
@@ -456,15 +453,13 @@ jobs:
                                 if (isFastMode) {
                                     long fUnk = fastVocab.getOrDefault("[UNK]", 1L);
                                     long fMask = fastVocab.getOrDefault("[MASK]", 2L);
-                                    ByteBuffer bb = ByteBuffer.allocateDirect(sentence.length() * 8).order(ByteOrder.nativeOrder());
-                                    LongBuffer ib = bb.asLongBuffer();
+                                    long[] ids = new long[sentence.length()];
                                     for (int i = 0; i < sentence.length(); i++) {
                                         String ch = String.valueOf(sentence.charAt(i));
-                                        if (ch.equals("的") || ch.equals("地") || ch.equals("得")) ib.put(fMask);
-                                        else ib.put(fastVocab.getOrDefault(ch, fUnk));
+                                        if (ch.equals("的") || ch.equals("地") || ch.equals("得")) ids[i] = fMask;
+                                        else ids[i] = fastVocab.getOrDefault(ch, fUnk);
                                     }
-                                    ib.rewind();
-                                    Tensor inputTensor = Tensor.fromBlob(ib, new long[]{1, sentence.length()});
+                                    Tensor inputTensor = Tensor.fromBlob(ids, new long[]{1, sentence.length()});
                                     scores = fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
                                 } else {
                                     int exactLen = sentence.length() + 2;
@@ -627,3 +622,4 @@ jobs:
       with:
         name: Dededi-App-APK-Pro
         path: app/build/outputs/apk/release/app-release.apk
+
