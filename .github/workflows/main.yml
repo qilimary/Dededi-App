@@ -372,7 +372,7 @@ jobs:
                 rbFast = findViewById(R.id.rbFast);
                 Button btnHelp = findViewById(R.id.btnHelp);
 
-                outputText.setText("🔄 正在底层解压与解密 AI 引擎，首次启动约需数秒...");
+                outputText.setText("正在加载AI（首次需约5秒）...");
                 new Thread(() -> {
                     try {
                         try {
@@ -393,7 +393,7 @@ jobs:
                         } catch(Exception ignored) {}
 
                         runOnUiThread(() -> {
-                            outputText.setText("✅ AI 引擎已全部就绪 (已启用 Native 层多重防护)");
+                            outputText.setText("AI已加载完成");
                         });
                     } catch (Exception ignored) {}
                 }).start();
