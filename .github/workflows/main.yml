@@ -3,6 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch: # 加入了这个，以后可以在网页上手动点击运行了！
 
 jobs:
   build:
@@ -13,25 +14,22 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Python Dependencies
-      run: pip install gdown torch  # 安装谷歌下载工具和 PyTorch 转换环境
+      run: pip install gdown torch
 
     - name: Download, Unzip and Preprocess Pro Model
       run: |
         echo "正在利用云端从 Google Drive 极速下载专业版大模型压缩包..."
-        # 15JfoTVtYWhP7duhueKpjtbGQv16LEI2t 是你分享链接中的文件 ID
         gdown 15JfoTVtYWhP7duhueKpjtbGQv16LEI2t -O dededi_model_pt201_final.zip
         
         echo "正在解压模型压缩包..."
         unzip -o dededi_model_pt201_final.zip
         
-        # 自动编写云端转换脚本
         cat << 'EOF' > convert.py
         import json
         import torch
         import os
         from torch.utils.mobile_optimizer import optimize_for_mobile
         
-        # 智能化搜索：不管你在压缩包里套了多少层文件夹，自动把这两个文件找出来
         model_path = None
         vocab_path = None
         for root, dirs, files in os.walk('.'):
@@ -45,7 +43,7 @@ jobs:
             
         print(f"🎯 成功定位文件：\n- 模型: {model_path}\n- 词表: {vocab_path}")
         
-        print("正在转换词表为精简 JSON 格式...")
+        print("正在转换词表...")
         with open(vocab_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         raw_vocab = data['model']['vocab']
@@ -53,11 +51,11 @@ jobs:
         with open('roberta_vocab.json', 'w', encoding='utf-8') as f:
             json.dump(clean_vocab, f, ensure_ascii=False)
             
-        print("正在将大模型编译并优化为手机专用的 PTL 格式...")
+        print("正在转换手机端模型...")
         model = torch.jit.load(model_path)
         optimized_model = optimize_for_mobile(model)
         optimized_model._save_for_lite_interpreter('roberta_mobile.ptl')
-        print("✅ 云端模型预处理与格式转换完美成功！")
+        print("✅ 转换成功！")
         EOF
         
         python convert.py
@@ -72,22 +70,17 @@ jobs:
         mkdir -p app/src/main/assets
         mkdir -p gradle/wrapper
 
-        # 1. 复制原有的极速版模型与词表（保持不变）
-        cp dededi_mobile.ptl app/src/main/assets/
-        cp student_vocab.json app/src/main/assets/
-        
-        # 2. 复制刚刚在云端自动解压、转换好的专业版模型与词表
+        cp dededi_mobile.ptl app/src/main/assets/ || true
+        cp student_vocab.json app/src/main/assets/ || true
         cp roberta_mobile.ptl app/src/main/assets/
         cp roberta_vocab.json app/src/main/assets/
 
-        # 生成 gradle.properties (调大内存至 3GB，防止编译 305M 大模型时内存溢出)
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
         android.enableJetifier=true
-        org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=512m
+        org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m
         EOF
 
-        # 1. 生成根目录 build.gradle
         cat << 'EOF' > build.gradle
         buildscript {
             repositories { google(); mavenCentral() }
@@ -96,10 +89,8 @@ jobs:
         allprojects { repositories { google(); mavenCentral() } }
         EOF
 
-        # 2. 生成 settings.gradle
         echo "include ':app'" > settings.gradle
 
-        # 3. 生成 app/build.gradle
         cat << 'EOF' > app/build.gradle
         apply plugin: 'com.android.application'
         android {
@@ -114,6 +105,9 @@ jobs:
                 ndk {
                     abiFilters "arm64-v8a"
                 }
+            }
+            aaptOptions {
+                noCompress "ptl", "json"
             }
             buildTypes {
                 release {
@@ -135,7 +129,6 @@ jobs:
         }
         EOF
 
-        # 3.1 生成 Proguard 混淆规则
         cat << 'EOF' > app/proguard-rules.pro
         -keep class org.pytorch.** { *; }
         -keep class com.facebook.jni.** { *; }
@@ -145,7 +138,6 @@ jobs:
         -dontwarn org.pytorch.**
         EOF
 
-        # 3.2 生成自定义 APP 图标资源
         cat << 'EOF' > app/src/main/res/values/colors.xml
         <?xml version="1.0" encoding="utf-8"?>
         <resources>
@@ -168,7 +160,6 @@ jobs:
         </adaptive-icon>
         EOF
 
-        # 4. 生成 AndroidManifest.xml
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -187,7 +178,6 @@ jobs:
         </manifest>
         EOF
 
-        # 5. 生成布局文件 (支持随时切换单选框)
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -245,7 +235,7 @@ jobs:
                     android:layout_weight="1" android:text="复制纯净全文" android:textSize="14sp"
                     android:backgroundTint="#4CAF50" android:layout_marginRight="4dp" android:enabled="false"/>
                 <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="保存为TXT文件" android:textSize="14sp"
+                    android:layout_weight="1" android:text="保存TXT" android:textSize="14sp"
                     android:backgroundTint="#FF9800" android:enabled="false"/>
             </LinearLayout>
 
@@ -256,7 +246,6 @@ jobs:
         </LinearLayout>
         EOF
 
-        # 6. 生成 MainActivity.java
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.ClipData;
@@ -290,11 +279,9 @@ jobs:
         import java.util.Map;
 
         public class MainActivity extends AppCompatActivity {
-            // 极速版数据
             private Module fastModule = null;
             private Map<String, Long> fastVocab = new HashMap<>();
 
-            // 专业版数据 (为了节约宝贵的手机内存，采用惰性懒加载模式)
             private Module proModule = null;
             private Map<String, Long> proVocab = new HashMap<>();
             private long clsId=101, sepId=102, maskId=103, unkId=100, deId=0, diId=0, de2Id=0;
@@ -321,7 +308,6 @@ jobs:
                 rbFast = findViewById(R.id.rbFast);
                 Button btnHelp = findViewById(R.id.btnHelp);
 
-                // 启动时默认秒加载轻量极速版
                 try {
                     String fastPath = assetFilePath(this, "dededi_mobile.ptl");
                     fastModule = LiteModuleLoader.load(fastPath);
@@ -336,19 +322,13 @@ jobs:
                     }
                     outputText.setText("✅ 极速 AI 引擎就绪 (离线安全)");
                 } catch (Exception e) {
-                    outputText.setText("❌ 基础模型初始化失败: " + e.getMessage());
+                    outputText.setText("✅ APP已启动。如果你尚未放入极速版模型，可直接勾选下方的【专业版】使用！");
                 }
 
                 btnHelp.setOnClickListener(v -> {
                     new androidx.appcompat.app.AlertDialog.Builder(this)
                         .setTitle("双版本与参数说明")
-                        .setMessage("【版本模式】\n" +
-                                    "• 极速版 (BiGRU)：体积小、处理飞快，适合中低配手机或超长篇幅文本。\n" +
-                                    "• 专业版 (RoBERTa)：305M超大语义底座。首次运行有1-2秒初始化的加载感。能够精细捕捉语境，推荐用于精修！\n\n" +
-                                    "【切分机制说明】\n" +
-                                    "应用已内置标点符号自动切分，无论长文本多少万字，每一小句切开后长度均处于极安全范围内，彻底避免大模型崩溃溢出。\n\n" +
-                                    "【温度与置信度】\n" +
-                                    "默认参数已适配最佳效果。如果嫌AI改动太少，可微调降低各字词的过滤阈值。")
+                        .setMessage("【版本模式】\n• 极速版(BiGRU)\n• 专业版(RoBERTa)\n默认参数已适配最佳效果，可微调各字词过滤阈值。")
                         .setPositiveButton("知道了", null)
                         .show();
                 });
@@ -376,7 +356,7 @@ jobs:
                         intent.putExtra(Intent.EXTRA_TITLE, "地得纠错Pro结果.txt");
                         startActivityForResult(intent, 101);
                     } catch (Exception e) {
-                        Toast.makeText(this, "调起管理器失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "调起失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                     }
                 });
             }
@@ -386,16 +366,13 @@ jobs:
                 super.onActivityResult(requestCode, resultCode, data);
                 if (requestCode == 101 && resultCode == RESULT_OK && data != null && data.getData() != null) {
                     try {
-                        android.net.Uri uri = data.getData();
-                        OutputStream os = getContentResolver().openOutputStream(uri);
+                        OutputStream os = getContentResolver().openOutputStream(data.getData());
                         if (os != null) {
                             os.write(cleanTextResult.getBytes(StandardCharsets.UTF_8));
                             os.close();
-                            Toast.makeText(this, ".txt保存成功", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
                         }
-                    } catch (Exception e) {
-                        Toast.makeText(this, "写入失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                    }
+                    } catch (Exception e) {}
                 }
             }
 
@@ -403,12 +380,9 @@ jobs:
                 String text = inputText.getText().toString();
                 if (text.isEmpty()) return;
 
-                btnCheck.setEnabled(false);
-                btnCopy.setEnabled(false);
-                btnSaveTxt.setEnabled(false);
-
+                btnCheck.setEnabled(false); btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
                 boolean isFastMode = rbFast.isChecked();
-                outputText.setText(isFastMode ? "极速版正在审查..." : "正在唤醒305M专业版AI大模型(首次运行需加载数秒)...");
+                outputText.setText(isFastMode ? "极速版正在审查..." : "正在唤醒专业版大模型(首次运行需加载数秒)...");
 
                 final float temp, tDe, tDi, tDe3;
                 float t1 = 1.2f, t2 = 0.70f, t3 = 0.76f, t4 = 0.76f;
@@ -422,7 +396,6 @@ jobs:
 
                 new Thread(() -> {
                     try {
-                        // 🌟 专业版懒加载逻辑：只有当用户第一次勾选专业版并点开始时，才从运存加载 305M 文件
                         if (!isFastMode && proModule == null) {
                             String proPath = assetFilePath(MainActivity.this, "roberta_mobile.ptl");
                             proModule = LiteModuleLoader.load(proPath);
@@ -446,8 +419,6 @@ jobs:
 
                         long startTime = System.currentTimeMillis();
                         String[] labels = {"的", "地", "得"};
-                        
-                        // 🔮 双模型完美共用相同的标点分割系统：
                         String[] sentences = text.split("(?<=[。！？!?\n])");
                         
                         StringBuilder errorsHtmlBuilder = new StringBuilder(); 
@@ -458,13 +429,8 @@ jobs:
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             String sentence = sentences[sIdx];
-                            if (sentence.isEmpty()) {
-                                fullHtmlBuilder.append("<br>");
-                                cleanTextBuilder.append("\n");
-                                continue;
-                            }
+                            if (sentence.isEmpty()) { fullHtmlBuilder.append("<br>"); cleanTextBuilder.append("\n"); continue; }
 
-                            // 预筛：这一句若无目标字，直接跳过推理提速
                             boolean hasTarget = false;
                             for (int i = 0; i < sentence.length(); i++) {
                                 char c = sentence.charAt(i);
@@ -488,7 +454,6 @@ jobs:
                                 int vocabSize = isFastMode ? 3 : proVocab.size();
 
                                 if (isFastMode) {
-                                    // ------------ 极速版推理 ------------
                                     long fUnk = fastVocab.getOrDefault("[UNK]", 1L);
                                     long fMask = fastVocab.getOrDefault("[MASK]", 2L);
                                     ByteBuffer bb = ByteBuffer.allocateDirect(sentence.length() * 8).order(ByteOrder.nativeOrder());
@@ -502,8 +467,7 @@ jobs:
                                     Tensor inputTensor = Tensor.fromBlob(ib, new long[]{1, sentence.length()});
                                     scores = fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
                                 } else {
-                                    // ------------ 专业版大模型标准三张量输入 (RoBERTa) ------------
-                                    int exactLen = sentence.length() + 2; // 含开头[CLS]与结尾[SEP]
+                                    int exactLen = sentence.length() + 2;
                                     long[] ids = new long[exactLen];
                                     long[] masks = new long[exactLen];
                                     long[] types = new long[exactLen];
@@ -526,7 +490,6 @@ jobs:
                                     scores = outTensor.getDataAsFloatArray();
                                 }
 
-                                // 统一的精细概率解码映射
                                 for (int i = 0; i < sentence.length(); i++) {
                                     char ch = sentence.charAt(i);
                                     if (ch == '的' || ch == '地' || ch == '得') {
@@ -537,7 +500,7 @@ jobs:
                                             s1 = (float) Math.exp(scores[base + 1] / temp);
                                             s2 = (float) Math.exp(scores[base + 2] / temp);
                                         } else {
-                                            int seqPos = i + 1; // 加上[CLS]的偏移量
+                                            int seqPos = i + 1; 
                                             s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)deId] / temp);
                                             s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)diId] / temp);
                                             s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)de2Id] / temp);
@@ -576,7 +539,6 @@ jobs:
                             fullHtmlBuilder.append(sFullHtml);
                             if (currentSentenceHasError) errorsHtmlBuilder.append(sErrorHtml).append("<br>");
 
-                            // 手机实时UI刷新渲染
                             long now = System.currentTimeMillis();
                             if (now - lastUpdateTime > 300 || sIdx == sentences.length - 1) {
                                 lastUpdateTime = now;
@@ -604,9 +566,7 @@ jobs:
                         final String finalHtml = report.toString();
                         runOnUiThread(() -> {
                             outputText.setText(Html.fromHtml(finalHtml, Html.FROM_HTML_MODE_COMPACT));
-                            btnCheck.setEnabled(true);
-                            btnCopy.setEnabled(true);
-                            btnSaveTxt.setEnabled(true);
+                            btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true);
                         });
 
                     } catch (Exception e) {
@@ -633,16 +593,14 @@ jobs:
         }
         EOF
 
-        # 7. 下载 Gradle Wrapper 核心文件
         wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -O gradle/wrapper/gradle-wrapper.jar
         wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradlew -O gradlew
         chmod +x gradlew
 
-        # 8. 生成 wrapper 配置文件
         cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
         distributionBase=GRADLE_USER_HOME
         distributionPath=wrapper/dists
-        distributionUrl=https\://services.gradle.org/distributions/gradle-7.5.1-bin.zip
+        distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-bin.zip
         zipStoreBase=GRADLE_USER_HOME
         zipStorePath=wrapper/dists
         EOF
@@ -654,7 +612,7 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Build APK (Release mode for maximum compression)
+    - name: Build APK (Release mode)
       run: |
         ./gradlew assembleRelease --stacktrace --console=plain > build_output.log 2>&1 || {
           echo "### ❌ 编译未通过！以下是具体报错信息：" >> $GITHUB_STEP_SUMMARY
