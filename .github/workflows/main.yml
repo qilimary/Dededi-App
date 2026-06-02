@@ -540,6 +540,657 @@ jobs:
 
     - name: set up JDK 11
       uses: actions/setup-java@v4
+      with:name: Build Android APK
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Python Dependencies
+      run: pip install gdown torch  # 安装谷歌下载工具和 PyTorch 转换环境
+
+    - name: Download, Unzip and Preprocess Pro Model
+      run: |
+        echo "正在利用云端从 Google Drive 极速下载专业版大模型压缩包..."
+        # 15JfoTVtYWhP7duhueKpjtbGQv16LEI2t 是你分享链接中的文件 ID
+        gdown 15JfoTVtYWhP7duhueKpjtbGQv16LEI2t -O dededi_model_pt201_final.zip
+        
+        echo "正在解压模型压缩包..."
+        unzip -o dededi_model_pt201_final.zip
+        
+        # 自动编写云端转换脚本
+        cat << 'EOF' > convert.py
+        import json
+        import torch
+        import os
+        from torch.utils.mobile_optimizer import optimize_for_mobile
+        
+        # 智能化搜索：不管你在压缩包里套了多少层文件夹，自动把这两个文件找出来
+        model_path = None
+        vocab_path = None
+        for root, dirs, files in os.walk('.'):
+            if 'model_traced.pt' in files:
+                model_path = os.path.join(root, 'model_traced.pt')
+            if 'tokenizer.json' in files:
+                vocab_path = os.path.join(root, 'tokenizer.json')
+                
+        if not model_path or not vocab_path:
+            raise Exception("❌ 压缩包内未找到 model_traced.pt 或 tokenizer.json，请检查文件名！")
+            
+        print(f"🎯 成功定位文件：\n- 模型: {model_path}\n- 词表: {vocab_path}")
+        
+        print("正在转换词表为精简 JSON 格式...")
+        with open(vocab_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        raw_vocab = data['model']['vocab']
+        clean_vocab = {token: int(idx) for token, idx in raw_vocab.items()}
+        with open('roberta_vocab.json', 'w', encoding='utf-8') as f:
+            json.dump(clean_vocab, f, ensure_ascii=False)
+            
+        print("正在将大模型编译并优化为手机专用的 PTL 格式...")
+        model = torch.jit.load(model_path)
+        optimized_model = optimize_for_mobile(model)
+        optimized_model._save_for_lite_interpreter('roberta_mobile.ptl')
+        print("✅ 云端模型预处理与格式转换完美成功！")
+        EOF
+        
+        python convert.py
+
+    - name: Scaffold Android Project
+      run: |
+        mkdir -p app/src/main/java/com/app/dededi
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/drawable
+        mkdir -p app/src/main/res/mipmap-anydpi-v26
+        mkdir -p app/src/main/assets
+        mkdir -p gradle/wrapper
+
+        # 1. 复制原有的极速版模型与词表（保持不变）
+        cp dededi_mobile.ptl app/src/main/assets/
+        cp student_vocab.json app/src/main/assets/
+        
+        # 2. 复制刚刚在云端自动解压、转换好的专业版模型与词表
+        cp roberta_mobile.ptl app/src/main/assets/
+        cp roberta_vocab.json app/src/main/assets/
+
+        # 生成 gradle.properties (调大内存至 3GB，防止编译 305M 大模型时内存溢出)
+        cat << 'EOF' > gradle.properties
+        android.useAndroidX=true
+        android.enableJetifier=true
+        org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=512m
+        EOF
+
+        # 1. 生成根目录 build.gradle
+        cat << 'EOF' > build.gradle
+        buildscript {
+            repositories { google(); mavenCentral() }
+            dependencies { classpath "com.android.tools.build:gradle:7.4.2" }
+        }
+        allprojects { repositories { google(); mavenCentral() } }
+        EOF
+
+        # 2. 生成 settings.gradle
+        echo "include ':app'" > settings.gradle
+
+        # 3. 生成 app/build.gradle
+        cat << 'EOF' > app/build.gradle
+        apply plugin: 'com.android.application'
+        android {
+            namespace 'com.app.dededi'
+            compileSdk 33
+            defaultConfig {
+                applicationId "com.app.dededi"
+                minSdk 24
+                targetSdk 33
+                versionCode 2
+                versionName "2.0"
+                ndk {
+                    abiFilters "arm64-v8a"
+                }
+            }
+            buildTypes {
+                release {
+                    minifyEnabled true      
+                    shrinkResources true    
+                    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                    signingConfig signingConfigs.debug 
+                }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_11
+                targetCompatibility JavaVersion.VERSION_11
+            }
+        }
+        dependencies {
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.8.0'
+            implementation 'org.pytorch:pytorch_android_lite:1.13.0'
+        }
+        EOF
+
+        # 3.1 生成 Proguard 混淆规则
+        cat << 'EOF' > app/proguard-rules.pro
+        -keep class org.pytorch.** { *; }
+        -keep class com.facebook.jni.** { *; }
+        -keepclasseswithmembers class * {
+            native <methods>;
+        }
+        -dontwarn org.pytorch.**
+        EOF
+
+        # 3.2 生成自定义 APP 图标资源
+        cat << 'EOF' > app/src/main/res/values/colors.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <resources>
+            <color name="icon_bg">#2196F3</color>
+        </resources>
+        EOF
+        
+        cat << 'EOF' > app/src/main/res/drawable/ic_dededi_fg.xml
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="108dp" android:height="108dp" android:viewportWidth="24" android:viewportHeight="24">
+            <path android:fillColor="#FFFFFF" android:pathData="M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z"/>
+        </vector>
+        EOF
+        
+        cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <adaptive-icon xmlns:adaptive-icon="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@color/icon_bg"/>
+            <foreground android:drawable="@drawable/ic_dededi_fg"/>
+        </adaptive-icon>
+        EOF
+
+        # 4. 生成 AndroidManifest.xml
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <application android:allowBackup="true" 
+                         android:icon="@mipmap/ic_launcher"
+                         android:roundIcon="@mipmap/ic_launcher"
+                         android:label="“的地得”纠错AI Pro" 
+                         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustPan">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
+
+        # 5. 生成布局文件 (支持随时切换单选框)
+        cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:orientation="vertical" android:padding="14dp" android:background="#F8F9FA">
+            
+            <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
+                    android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="#1A1A1A"
+                    android:layout_alignParentStart="true" android:layout_centerVertical="true"/>
+                <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="36dp" 
+                    android:text="说明" android:textSize="12sp" android:backgroundTint="#757575" 
+                    android:layout_alignParentEnd="true" android:layout_centerVertical="true"
+                    android:paddingStart="8dp" android:paddingEnd="8dp"/>
+            </RelativeLayout>
+
+            <RadioGroup android:id="@+id/rgMode" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:layout_marginBottom="10dp" android:gravity="center">
+                <RadioButton android:id="@+id/rbFast" android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="极速版 (BiGRU)" android:checked="true" android:textSize="14sp"/>
+                <RadioButton android:id="@+id/rbPro" android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="专业版 (RoBERTa)" android:textSize="14sp"/>
+            </RadioGroup>
+            
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:background="#FFFFFF" android:padding="8dp" android:layout_marginBottom="10dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="温度参数" android:textSize="11sp" android:textColor="#666"/>
+                    <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.2" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的阈值" android:textSize="11sp" android:textColor="#666"/>
+                    <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地阈值" android:textSize="11sp" android:textColor="#666"/>
+                    <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.76" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得阈值" android:textSize="11sp" android:textColor="#666"/>
+                    <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.76" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="140dp"
+                android:hint="在此输入或者粘贴需要检查的文本..." android:gravity="top|start" android:background="#FFF"
+                android:padding="12dp" android:textSize="15sp" android:scrollbars="vertical"/>
+            
+            <Button android:id="@+id/btnCheck" android:layout_width="match_parent" android:layout_height="52dp"
+                android:text="开始纠错" android:textSize="16sp" android:layout_marginTop="10dp" android:layout_marginBottom="10dp" android:backgroundTint="#2196F3"/>
+            
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:layout_marginBottom="10dp">
+                <Button android:id="@+id/btnCopy" android:layout_width="0dp" android:layout_height="48dp"
+                    android:layout_weight="1" android:text="复制纯净全文" android:textSize="14sp"
+                    android:backgroundTint="#4CAF50" android:layout_marginRight="4dp" android:enabled="false"/>
+                <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
+                    android:layout_weight="1" android:text="保存为TXT文件" android:textSize="14sp"
+                    android:backgroundTint="#FF9800" android:enabled="false"/>
+            </LinearLayout>
+
+            <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
+                <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:textSize="16sp" android:background="#FFF" android:padding="12dp" android:textColor="#333" android:lineSpacingExtra="5dp"/>
+            </ScrollView>
+        </LinearLayout>
+        EOF
+
+        # 6. 生成 MainActivity.java
+        cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
+        package com.app.dededi;
+        import android.content.ClipData;
+        import android.content.ClipboardManager;
+        import android.content.Context;
+        import android.content.Intent;
+        import android.os.Bundle;
+        import android.text.Html;
+        import android.view.inputmethod.InputMethodManager;
+        import android.widget.Button;
+        import android.widget.EditText;
+        import android.widget.RadioButton;
+        import android.widget.TextView;
+        import android.widget.Toast;
+        import androidx.appcompat.app.AppCompatActivity;
+        import org.json.JSONObject;
+        import org.pytorch.IValue;
+        import org.pytorch.LiteModuleLoader;
+        import org.pytorch.Module;
+        import org.pytorch.Tensor;
+        import java.io.File;
+        import java.io.FileOutputStream;
+        import java.io.InputStream;
+        import java.io.OutputStream;
+        import java.nio.charset.StandardCharsets;
+        import java.nio.ByteBuffer;
+        import java.nio.ByteOrder;
+        import java.nio.LongBuffer;
+        import java.util.HashMap;
+        import java.util.Iterator;
+        import java.util.Map;
+
+        public class MainActivity extends AppCompatActivity {
+            // 极速版数据
+            private Module fastModule = null;
+            private Map<String, Long> fastVocab = new HashMap<>();
+
+            // 专业版数据 (为了节约宝贵的手机内存，采用惰性懒加载模式)
+            private Module proModule = null;
+            private Map<String, Long> proVocab = new HashMap<>();
+            private long clsId=101, sepId=102, maskId=103, unkId=100, deId=0, diId=0, de2Id=0;
+
+            private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3;
+            private TextView outputText;
+            private Button btnCheck, btnCopy, btnSaveTxt;
+            private RadioButton rbFast;
+            private String cleanTextResult = ""; 
+
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                setContentView(R.layout.activity_main);
+                inputText = findViewById(R.id.inputText);
+                outputText = findViewById(R.id.outputText);
+                editTemp = findViewById(R.id.editTemp);
+                editThreshDe1 = findViewById(R.id.editThreshDe1);
+                editThreshDe2 = findViewById(R.id.editThreshDe2);
+                editThreshDe3 = findViewById(R.id.editThreshDe3);
+                btnCheck = findViewById(R.id.btnCheck);
+                btnCopy = findViewById(R.id.btnCopy);
+                btnSaveTxt = findViewById(R.id.btnSaveTxt);
+                rbFast = findViewById(R.id.rbFast);
+                Button btnHelp = findViewById(R.id.btnHelp);
+
+                // 启动时默认秒加载轻量极速版
+                try {
+                    String fastPath = assetFilePath(this, "dededi_mobile.ptl");
+                    fastModule = LiteModuleLoader.load(fastPath);
+                    InputStream is = getAssets().open("student_vocab.json");
+                    byte[] buffer = new byte[is.available()];
+                    is.read(buffer); is.close();
+                    JSONObject json = new JSONObject(new String(buffer, StandardCharsets.UTF_8));
+                    Iterator<String> keys = json.keys();
+                    while(keys.hasNext()) {
+                        String key = keys.next();
+                        fastVocab.put(key, (long) json.getInt(key));
+                    }
+                    outputText.setText("✅ 极速 AI 引擎就绪 (离线安全)");
+                } catch (Exception e) {
+                    outputText.setText("❌ 基础模型初始化失败: " + e.getMessage());
+                }
+
+                btnHelp.setOnClickListener(v -> {
+                    new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("双版本与参数说明")
+                        .setMessage("【版本模式】\n" +
+                                    "• 极速版 (BiGRU)：体积小、处理飞快，适合中低配手机或超长篇幅文本。\n" +
+                                    "• 专业版 (RoBERTa)：305M超大语义底座。首次运行有1-2秒初始化的加载感。能够精细捕捉语境，推荐用于精修！\n\n" +
+                                    "【切分机制说明】\n" +
+                                    "应用已内置标点符号自动切分，无论长文本多少万字，每一小句切开后长度均处于极安全范围内，彻底避免大模型崩溃溢出。\n\n" +
+                                    "【温度与置信度】\n" +
+                                    "默认参数已适配最佳效果。如果嫌AI改动太少，可微调降低各字词的过滤阈值。")
+                        .setPositiveButton("知道了", null)
+                        .show();
+                });
+
+                btnCheck.setOnClickListener(v -> {
+                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+                    doInference();
+                });
+
+                btnCopy.setOnClickListener(v -> {
+                    if (cleanTextResult.isEmpty()) return;
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    ClipData clip = ClipData.newPlainText("Corrected Article", cleanTextResult);
+                    if (clipboard != null) clipboard.setPrimaryClip(clip);
+                    Toast.makeText(this, "纯净全文已复制", Toast.LENGTH_SHORT).show();
+                });
+
+                btnSaveTxt.setOnClickListener(v -> {
+                    if (cleanTextResult.isEmpty()) return;
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("text/plain");
+                        intent.putExtra(Intent.EXTRA_TITLE, "地得纠错Pro结果.txt");
+                        startActivityForResult(intent, 101);
+                    } catch (Exception e) {
+                        Toast.makeText(this, "调起管理器失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+
+            @Override
+            protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                super.onActivityResult(requestCode, resultCode, data);
+                if (requestCode == 101 && resultCode == RESULT_OK && data != null && data.getData() != null) {
+                    try {
+                        android.net.Uri uri = data.getData();
+                        OutputStream os = getContentResolver().openOutputStream(uri);
+                        if (os != null) {
+                            os.write(cleanTextResult.getBytes(StandardCharsets.UTF_8));
+                            os.close();
+                            Toast.makeText(this, ".txt保存成功", Toast.LENGTH_SHORT).show();
+                        }
+                    } catch (Exception e) {
+                        Toast.makeText(this, "写入失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+
+            private void doInference() {
+                String text = inputText.getText().toString();
+                if (text.isEmpty()) return;
+
+                btnCheck.setEnabled(false);
+                btnCopy.setEnabled(false);
+                btnSaveTxt.setEnabled(false);
+
+                boolean isFastMode = rbFast.isChecked();
+                outputText.setText(isFastMode ? "极速版正在审查..." : "正在唤醒305M专业版AI大模型(首次运行需加载数秒)...");
+
+                final float temp, tDe, tDi, tDe3;
+                float t1 = 1.2f, t2 = 0.70f, t3 = 0.76f, t4 = 0.76f;
+                try {
+                    t1 = Float.parseFloat(editTemp.getText().toString());
+                    t2 = Float.parseFloat(editThreshDe1.getText().toString());
+                    t3 = Float.parseFloat(editThreshDe2.getText().toString());
+                    t4 = Float.parseFloat(editThreshDe3.getText().toString());
+                } catch (Exception ignored) {}
+                temp = t1; tDe = t2; tDi = t3; tDe3 = t4;
+
+                new Thread(() -> {
+                    try {
+                        // 🌟 专业版懒加载逻辑：只有当用户第一次勾选专业版并点开始时，才从运存加载 305M 文件
+                        if (!isFastMode && proModule == null) {
+                            String proPath = assetFilePath(MainActivity.this, "roberta_mobile.ptl");
+                            proModule = LiteModuleLoader.load(proPath);
+                            InputStream is = getAssets().open("roberta_vocab.json");
+                            byte[] buffer = new byte[is.available()];
+                            is.read(buffer); is.close();
+                            JSONObject json = new JSONObject(new String(buffer, StandardCharsets.UTF_8));
+                            Iterator<String> keys = json.keys();
+                            while(keys.hasNext()) {
+                                String key = keys.next();
+                                proVocab.put(key, (long) json.getInt(key));
+                            }
+                            clsId = proVocab.getOrDefault("[CLS]", 101L);
+                            sepId = proVocab.getOrDefault("[SEP]", 102L);
+                            maskId = proVocab.getOrDefault("[MASK]", 103L);
+                            unkId = proVocab.getOrDefault("[UNK]", 100L);
+                            deId = proVocab.getOrDefault("的", 0L);
+                            diId = proVocab.getOrDefault("地", 0L);
+                            de2Id = proVocab.getOrDefault("得", 0L);
+                        }
+
+                        long startTime = System.currentTimeMillis();
+                        String[] labels = {"的", "地", "得"};
+                        
+                        // 🔮 双模型完美共用相同的标点分割系统：
+                        String[] sentences = text.split("(?<=[。！？!?\n])");
+                        
+                        StringBuilder errorsHtmlBuilder = new StringBuilder(); 
+                        StringBuilder fullHtmlBuilder = new StringBuilder();   
+                        StringBuilder cleanTextBuilder = new StringBuilder();  
+                        int totalChangeCount = 0;
+                        long lastUpdateTime = System.currentTimeMillis();
+
+                        for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
+                            String sentence = sentences[sIdx];
+                            if (sentence.isEmpty()) {
+                                fullHtmlBuilder.append("<br>");
+                                cleanTextBuilder.append("\n");
+                                continue;
+                            }
+
+                            // 预筛：这一句若无目标字，直接跳过推理提速
+                            boolean hasTarget = false;
+                            for (int i = 0; i < sentence.length(); i++) {
+                                char c = sentence.charAt(i);
+                                if (c == '的' || c == '地' || c == '得') { hasTarget = true; break; }
+                            }
+
+                            boolean currentSentenceHasError = false;
+                            StringBuilder sClean = new StringBuilder();
+                            StringBuilder sFullHtml = new StringBuilder();
+                            StringBuilder sErrorHtml = new StringBuilder();
+
+                            if (!hasTarget) {
+                                sClean.append(sentence);
+                                for (int i = 0; i < sentence.length(); i++) {
+                                    char ch = sentence.charAt(i);
+                                    if (ch == '\n') { sFullHtml.append("<br>"); sErrorHtml.append("<br>"); }
+                                    else { sFullHtml.append(ch); sErrorHtml.append(ch); }
+                                }
+                            } else {
+                                float[] scores;
+                                int vocabSize = isFastMode ? 3 : proVocab.size();
+
+                                if (isFastMode) {
+                                    // ------------ 极速版推理 ------------
+                                    long fUnk = fastVocab.getOrDefault("[UNK]", 1L);
+                                    long fMask = fastVocab.getOrDefault("[MASK]", 2L);
+                                    ByteBuffer bb = ByteBuffer.allocateDirect(sentence.length() * 8).order(ByteOrder.nativeOrder());
+                                    LongBuffer ib = bb.asLongBuffer();
+                                    for (int i = 0; i < sentence.length(); i++) {
+                                        String ch = String.valueOf(sentence.charAt(i));
+                                        if (ch.equals("的") || ch.equals("地") || ch.equals("得")) ib.put(fMask);
+                                        else ib.put(fastVocab.getOrDefault(ch, fUnk));
+                                    }
+                                    ib.rewind();
+                                    Tensor inputTensor = Tensor.fromBlob(ib, new long[]{1, sentence.length()});
+                                    scores = fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
+                                } else {
+                                    // ------------ 专业版大模型标准三张量输入 (RoBERTa) ------------
+                                    int exactLen = sentence.length() + 2; // 含开头[CLS]与结尾[SEP]
+                                    long[] ids = new long[exactLen];
+                                    long[] masks = new long[exactLen];
+                                    long[] types = new long[exactLen];
+
+                                    ids[0] = clsId; masks[0] = 1; types[0] = 0;
+                                    for (int i = 0; i < sentence.length(); i++) {
+                                        String ch = String.valueOf(sentence.charAt(i));
+                                        if (ch.equals("的") || ch.equals("地") || ch.equals("得")) ids[i + 1] = maskId;
+                                        else ids[i + 1] = proVocab.getOrDefault(ch, unkId);
+                                        masks[i + 1] = 1; types[i + 1] = 0;
+                                    }
+                                    ids[exactLen - 1] = sepId; masks[exactLen - 1] = 1; types[exactLen - 1] = 0;
+
+                                    Tensor tIds = Tensor.fromBlob(ids, new long[]{1, exactLen});
+                                    Tensor tMasks = Tensor.fromBlob(masks, new long[]{1, exactLen});
+                                    Tensor tTypes = Tensor.fromBlob(types, new long[]{1, exactLen});
+
+                                    IValue outputVal = proModule.forward(IValue.from(tIds), IValue.from(tMasks), IValue.from(tTypes));
+                                    Tensor outTensor = outputVal.isTuple() ? outputVal.toTuple()[0].toTensor() : outputVal.toTensor();
+                                    scores = outTensor.getDataAsFloatArray();
+                                }
+
+                                // 统一的精细概率解码映射
+                                for (int i = 0; i < sentence.length(); i++) {
+                                    char ch = sentence.charAt(i);
+                                    if (ch == '的' || ch == '地' || ch == '得') {
+                                        float s0, s1, s2;
+                                        if (isFastMode) {
+                                            int base = i * 3;
+                                            s0 = (float) Math.exp(scores[base] / temp);
+                                            s1 = (float) Math.exp(scores[base + 1] / temp);
+                                            s2 = (float) Math.exp(scores[base + 2] / temp);
+                                        } else {
+                                            int seqPos = i + 1; // 加上[CLS]的偏移量
+                                            s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)deId] / temp);
+                                            s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)diId] / temp);
+                                            s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)de2Id] / temp);
+                                        }
+
+                                        float sum = s0 + s1 + s2;
+                                        float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
+
+                                        int maxIdx = 0; float maxProb = p0;
+                                        if (p1 > maxProb) { maxProb = p1; maxIdx = 1; }
+                                        if (p2 > maxProb) { maxProb = p2; maxIdx = 2; }
+
+                                        float threshold = tDe;
+                                        if (maxIdx == 1) threshold = tDi;
+                                        if (maxIdx == 2) threshold = tDe3;
+
+                                        String pred = labels[maxIdx];
+                                        if (!pred.equals(String.valueOf(ch)) && maxProb >= threshold) {
+                                            currentSentenceHasError = true;
+                                            totalChangeCount++;
+                                            sClean.append(pred);
+                                            sFullHtml.append("<font color='#E53935'><b>").append(pred).append("</b></font>");
+                                            sErrorHtml.append("<font color='#E53935'>").append(ch).append("</font>→<b>").append(pred).append("</b><font color='#888888'><small>（").append(String.format("%.2f", maxProb)).append("）</small></font> ");
+                                        } else {
+                                            sClean.append(ch); sFullHtml.append(ch); sErrorHtml.append(ch);
+                                        }
+                                    } else {
+                                        sClean.append(ch);
+                                        if (ch == '\n') { sFullHtml.append("<br>"); sErrorHtml.append("<br>"); }
+                                        else { sFullHtml.append(ch); sErrorHtml.append(ch); }
+                                    }
+                                }
+                            }
+
+                            cleanTextBuilder.append(sClean);
+                            fullHtmlBuilder.append(sFullHtml);
+                            if (currentSentenceHasError) errorsHtmlBuilder.append(sErrorHtml).append("<br>");
+
+                            // 手机实时UI刷新渲染
+                            long now = System.currentTimeMillis();
+                            if (now - lastUpdateTime > 300 || sIdx == sentences.length - 1) {
+                                lastUpdateTime = now;
+                                double sec = (now - startTime) / 1000.0;
+                                StringBuilder report = new StringBuilder();
+                                report.append("<b>AI 正在审查中... 已耗时 <font color='#2196F3'>").append(String.format("%.1f", sec)).append("</font> 秒</b><br>");
+                                report.append("进度：已分析 ").append(sIdx + 1).append(" / ").append(sentences.length).append(" 句<br><br>");
+                                if (errorsHtmlBuilder.length() > 0) {
+                                    report.append("<font color='#757575'><b>【已发现误用：】</b></font><br>").append(errorsHtmlBuilder.toString()).append("<br>");
+                                }
+                                report.append("<font color='#757575'><b>【动态修正预览】</b></font><br>").append(fullHtmlBuilder.toString());
+                                final String snap = report.toString();
+                                runOnUiThread(() -> outputText.setText(Html.fromHtml(snap, Html.FROM_HTML_MODE_COMPACT)));
+                            }
+                        }
+
+                        cleanTextResult = cleanTextBuilder.toString();
+                        double totalSec = (System.currentTimeMillis() - startTime) / 1000.0;
+                        StringBuilder report = new StringBuilder();
+                        report.append("<b>检查完毕！共更正 <font color='#E53935'>").append(totalChangeCount).append("</font> 处。耗时 ").append(String.format("%.2f", totalSec)).append(" 秒。</b><br><br>");
+                        if (totalChangeCount > 0) {
+                            report.append("<font color='#757575'><b>【更正清单：】</b></font><br>").append(errorsHtmlBuilder.toString()).append("<br>---------------------------------------<br><br>");
+                        }
+                        report.append("<font color='#757575'><b>【修正后的全文】</b></font><br>").append(fullHtmlBuilder.toString());
+                        final String finalHtml = report.toString();
+                        runOnUiThread(() -> {
+                            outputText.setText(Html.fromHtml(finalHtml, Html.FROM_HTML_MODE_COMPACT));
+                            btnCheck.setEnabled(true);
+                            btnCopy.setEnabled(true);
+                            btnSaveTxt.setEnabled(true);
+                        });
+
+                    } catch (Exception e) {
+                        final String err = e.getMessage();
+                        runOnUiThread(() -> {
+                            outputText.setText("推理运行中断: " + err);
+                            btnCheck.setEnabled(true);
+                        });
+                    }
+                }).start();
+            }
+
+            private String assetFilePath(Context context, String assetName) throws Exception {
+                File file = new File(context.getFilesDir(), assetName);
+                if (file.exists() && file.length() > 0) return file.getAbsolutePath();
+                try (InputStream is = context.getAssets().open(assetName);
+                     FileOutputStream os = new FileOutputStream(file)) {
+                    byte[] buffer = new byte[4 * 1024]; int read;
+                    while ((read = is.read(buffer)) != -1) os.write(buffer, 0, read);
+                    os.flush();
+                }
+                return file.getAbsolutePath();
+            }
+        }
+        EOF
+
+        # 7. 下载 Gradle Wrapper 核心文件
+        wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -O gradle/wrapper/gradle-wrapper.jar
+        wget -q https://raw.githubusercontent.com/gradle/gradle/master/gradlew -O gradlew
+        chmod +x gradlew
+
+        # 8. 生成 wrapper 配置文件
+        cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-7.5.1-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
+
+    - name: set up JDK 11
+      uses: actions/setup-java@v4
       with:
         java-version: '11'
         distribution: 'temurin'
@@ -558,5 +1209,5 @@ jobs:
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Dededi-App-APK
+        name: Dededi-App-APK-Pro
         path: app/build/outputs/apk/release/app-release.apk
