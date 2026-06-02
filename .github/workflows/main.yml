@@ -14,14 +14,14 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Python Dependencies
-      run: pip install gdown torch
+      run: pip install gdown torch pycryptodome
 
     - name: Download, Unzip and Preprocess Pro Model
       run: |
-        echo "正在利用云端从 Google Drive 极速下载专业版大模型压缩包..."
+        echo "正在利用云端从 Google Drive 下载专业版大模型..."
         gdown 15JfoTVtYWhP7duhueKpjtbGQv16LEI2t -O dededi_model_pt201_final.zip
         
-        echo "正在解压模型压缩包..."
+        echo "正在解压..."
         unzip -o dededi_model_pt201_final.zip
         
         cat << 'EOF' > convert.py
@@ -38,12 +38,6 @@ jobs:
             if 'tokenizer.json' in files:
                 vocab_path = os.path.join(root, 'tokenizer.json')
                 
-        if not model_path or not vocab_path:
-            raise Exception("❌ 压缩包内未找到 model_traced.pt 或 tokenizer.json，请检查文件名！")
-            
-        print(f"🎯 成功定位文件：\n- 模型: {model_path}\n- 词表: {vocab_path}")
-        
-        print("正在转换词表...")
         with open(vocab_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         raw_vocab = data['model']['vocab']
@@ -51,29 +45,33 @@ jobs:
         with open('roberta_vocab.json', 'w', encoding='utf-8') as f:
             json.dump(clean_vocab, f, ensure_ascii=False)
             
-        print("正在转换手机端模型...")
         model = torch.jit.load(model_path)
         optimized_model = optimize_for_mobile(model)
         optimized_model._save_for_lite_interpreter('roberta_mobile.ptl')
-        print("✅ 转换成功！")
         EOF
         
         python convert.py
 
-    - name: Encrypt Models (Anti-Decompilation)
+    - name: Encrypt Models with AES-256 (Military-grade)
       run: |
         cat << 'EOF' > encrypt.py
         import os
-        def encrypt(file_in, file_out):
-            if not os.path.exists(file_in): return
-            with open(file_in, 'rb') as f: data = bytearray(f.read())
-            # 对模型执行位级 XOR 加密污染，防逆向破解
-            for i in range(len(data)): data[i] ^= 0x7B
-            with open(file_out, 'wb') as f: f.write(data)
+        from Crypto.Cipher import AES
+        from Crypto.Util.Padding import pad
 
-        encrypt('dededi_mobile.ptl', 'sys_core_f.dat')
-        encrypt('roberta_mobile.ptl', 'sys_core_p.dat')
-        print("✅ 模型已完成二进制加密，伪装系统文件完毕！")
+        # 32字节 AES-256 密钥
+        KEY = b'xT9#mP2!qL5*vN8^cK4@bJ7$zR1%yW0&'
+        IV = b'1234567890123456'
+
+        def encrypt_file(file_in, file_out):
+            if not os.path.exists(file_in): return
+            with open(file_in, 'rb') as f: data = f.read()
+            cipher = AES.new(KEY, AES.MODE_CBC, IV)
+            enc_data = cipher.encrypt(pad(data, AES.block_size))
+            with open(file_out, 'wb') as f: f.write(enc_data)
+
+        encrypt_file('dededi_mobile.ptl', 'sys_core_f.dat')
+        encrypt_file('roberta_mobile.ptl', 'sys_core_p.dat')
         EOF
         python encrypt.py
 
@@ -85,9 +83,9 @@ jobs:
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/mipmap-anydpi-v26
         mkdir -p app/src/main/assets
+        mkdir -p app/src/main/cpp
         mkdir -p gradle/wrapper
 
-        # 移动加密后的模型到assets，完全隐藏原本结构
         cp sys_core_f.dat app/src/main/assets/ || true
         cp sys_core_p.dat app/src/main/assets/
         cp student_vocab.json app/src/main/assets/ || true
@@ -109,7 +107,39 @@ jobs:
 
         echo "include ':app'" > settings.gradle
 
-        # 移除了 noCompress，开启系统级压缩，大幅缩小体积
+        # C++ NDK 配置文件
+        cat << 'EOF' > app/src/main/cpp/CMakeLists.txt
+        cmake_minimum_required(VERSION 3.10.2)
+        project("dededi")
+        add_library(dededi SHARED native-lib.cpp)
+        find_library(log-lib log)
+        target_link_libraries(dededi ${log-lib})
+        EOF
+
+        # C++ 密钥分散逻辑 (防逆向)
+        cat << 'EOF' > app/src/main/cpp/native-lib.cpp
+        #include <jni.h>
+        #include <string>
+
+        extern "C" JNIEXPORT jbyteArray JNICALL
+        Java_com_app_dededi_MainActivity_getSecretKey(JNIEnv* env, jobject /* this */) {
+            char key[32];
+            // 故意打散赋值，防止十六进制查看器直接搜索到字符串
+            key[0]='x'; key[1]='T'; key[2]='9'; key[3]='#';
+            key[4]='m'; key[5]='P'; key[6]='2'; key[7]='!';
+            key[8]='q'; key[9]='L'; key[10]='5'; key[11]='*';
+            key[12]='v'; key[13]='N'; key[14]='8'; key[15]='^';
+            key[16]='c'; key[17]='K'; key[18]='4'; key[19]='@';
+            key[20]='b'; key[21]='J'; key[22]='7'; key[23]='$';
+            key[24]='z'; key[25]='R'; key[26]='1'; key[27]='%';
+            key[28]='y'; key[29]='W'; key[30]='0'; key[31]='&';
+
+            jbyteArray ret = env->NewByteArray(32);
+            env->SetByteArrayRegion(ret, 0, 32, (jbyte*)key);
+            return ret;
+        }
+        EOF
+
         cat << 'EOF' > app/build.gradle
         apply plugin: 'com.android.application'
         android {
@@ -122,6 +152,7 @@ jobs:
                 versionCode 2
                 versionName "2.0"
                 ndk { abiFilters "arm64-v8a" }
+                externalNativeBuild { cmake { cppFlags "" } }
             }
             buildTypes {
                 release {
@@ -130,6 +161,9 @@ jobs:
                     proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
                     signingConfig signingConfigs.debug 
                 }
+            }
+            externalNativeBuild {
+                cmake { path "src/main/cpp/CMakeLists.txt"; version "3.22.1" }
             }
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_11
@@ -146,20 +180,15 @@ jobs:
         cat << 'EOF' > app/proguard-rules.pro
         -keep class org.pytorch.** { *; }
         -keep class com.facebook.jni.** { *; }
-        -keepclasseswithmembers class * {
-            native <methods>;
-        }
+        -keepclasseswithmembers class * { native <methods>; }
         -dontwarn org.pytorch.**
         EOF
 
         cat << 'EOF' > app/src/main/res/values/colors.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <resources>
-            <color name="icon_bg">#2196F3</color>
-        </resources>
+        <resources><color name="icon_bg">#2196F3</color></resources>
         EOF
         
-        # 缩小对勾的大小，让它居中完整显示
         cat << 'EOF' > app/src/main/res/drawable/ic_dededi_fg.xml
         <vector xmlns:android="http://schemas.android.com/apk/res/android"
             android:width="108dp" android:height="108dp" android:viewportWidth="24" android:viewportHeight="24">
@@ -177,7 +206,6 @@ jobs:
         </adaptive-icon>
         EOF
 
-        # 加入 extractNativeLibs="false"，防止系统重复解压C库占空间
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -197,7 +225,6 @@ jobs:
         </manifest>
         EOF
 
-        # 布局：默认勾选专业版 rbPro
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -266,7 +293,6 @@ jobs:
         </LinearLayout>
         EOF
 
-        # 更新 Java 代码，加入阅后即焚、加密还原、说明书内容等
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.ClipData;
@@ -295,8 +321,16 @@ jobs:
         import java.util.HashMap;
         import java.util.Iterator;
         import java.util.Map;
+        import javax.crypto.Cipher;
+        import javax.crypto.CipherInputStream;
+        import javax.crypto.spec.IvParameterSpec;
+        import javax.crypto.spec.SecretKeySpec;
 
         public class MainActivity extends AppCompatActivity {
+            // 加载 C++ 安全库
+            static { System.loadLibrary("dededi"); }
+            public native byte[] getSecretKey();
+
             private Module fastModule = null;
             private Map<String, Long> fastVocab = new HashMap<>();
 
@@ -309,6 +343,14 @@ jobs:
             private Button btnCheck, btnCopy, btnSaveTxt;
             private RadioButton rbFast;
             private String cleanTextResult = ""; 
+
+            // 白名单词库
+            private final String[] IGNORE_WORDS = {
+                "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
+                "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面",
+                "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "获得", "取得", "赢得", "免得", "懒得",
+                "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地"
+            };
 
             @Override
             protected void onCreate(Bundle savedInstanceState) {
@@ -326,7 +368,6 @@ jobs:
                 rbFast = findViewById(R.id.rbFast);
                 Button btnHelp = findViewById(R.id.btnHelp);
 
-                // 开屏立刻异步唤醒和解密模型
                 outputText.setText("🔄 正在底层解密并唤醒 AI 引擎，首次启动约需数秒...");
                 new Thread(() -> {
                     try {
@@ -348,24 +389,34 @@ jobs:
                         } catch(Exception ignored) {}
 
                         runOnUiThread(() -> {
-                            outputText.setText("✅ AI 引擎已全部就绪 (已启用底层多重防护)");
+                            outputText.setText("✅ AI 引擎已全部就绪 (已启用 Native 层多重防护)");
                         });
                     } catch (Exception ignored) {}
                 }).start();
 
                 btnHelp.setOnClickListener(v -> {
+                    String helpText = "【模型区别】\n" +
+                            "极速版：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。但错误率不如专业版。\n" +
+                            "专业版：模型参数量大，推理速度较慢，精确率极高，错误率少。\n" +
+                            "注：不同性能的手机在推理速度上会有不同，性能越强的手机推理速度越快。\n" +
+                            "神经网络可能会犯一些低级错误，这是通病，在所难免。\n\n" +
+                            "【温度参数】\n" +
+                            "控制AI判断的果断程度。\n" +
+                            "• 值越低（如0.5）：概率分布越尖锐。模型更自信（置信度更高），更激进，修改量可能上升，因为更不容易被拦截。\n" +
+                            "• 值越高（如2.0）：概率分布越平缓。模型更保守（置信度更低），修改量可能下降，因为更容易被拦截。\n" +
+                            "• 默认1.0～1.2，适合大多数场景\n\n" +
+                            "示例：AI预测某处应为\"地\"\n" +
+                            "• 温度0.5 → 置信度升高，更容易触发修改\n" +
+                            "• 温度2.0 → 置信度降低，更难触发修改\n\n" +
+                            "【置信度拦截阈值】\n" +
+                            "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n\n" +
+                            "示例：若\"地\"的阈值设为0.76\n" +
+                            "• AI置信度0.85 ≥ 0.76 → 执行修改\n" +
+                            "• AI置信度0.70 < 0.76 → 保持原字不变";
+                    
                     new androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("版本与参数说明")
-                        .setMessage("【版本区别】\n" +
-                                    "• 极速版 (BiGRU)：体积小、运行极快，适合日常短句或大批量文本的极速扫描，但对长难句复杂语境理解可能稍弱。\n" +
-                                    "• 专业版 (RoBERTa)：拥有数十倍的参数量，深入理解复杂上下文，准确率极高，适合写文章精细润色，但耗时稍长。\n\n" +
-                                    "【温度参数】\n" +
-                                    "控制AI判断的果断程度。\n" +
-                                    "• 越低 (如0.5)：模型更自信，更激进，修改量可能上升。\n" +
-                                    "• 越高 (如2.0)：模型更保守，不易触发修改。\n\n" +
-                                    "【置信度拦截阈值】\n" +
-                                    "只有AI的置信度 ≥ 该阈值时才执行修改，否则保留原字，防止过度纠错。\n" +
-                                    "示例：若阈值设为0.76，AI置信度0.85则修改，0.70则维持原样。")
+                        .setTitle("使用说明")
+                        .setMessage(helpText)
                         .setPositiveButton("知道了", null)
                         .show();
                 });
@@ -423,7 +474,6 @@ jobs:
                 }
             }
 
-            // 加载词汇表
             private void loadVocab(Map<String, Long> map, String assetName) throws Exception {
                 InputStream is = getAssets().open(assetName);
                 byte[] buffer = new byte[is.available()];
@@ -436,22 +486,27 @@ jobs:
                 }
             }
 
-            // 核心防护：解密、挂载内存后立即自毁文件
+            // AES-256 流式解密，极低内存消耗，用完立即销毁
             private Module loadDecryptedModule(Context context, String assetName) throws Exception {
+                byte[] keyBytes = getSecretKey(); // 从底层 C++ 获取打散的密钥
+                byte[] ivBytes = "1234567890123456".getBytes(StandardCharsets.UTF_8);
+                
+                Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+                cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(ivBytes));
+
                 File file = new File(context.getFilesDir(), assetName + ".tmp");
                 try (InputStream is = context.getAssets().open(assetName);
+                     CipherInputStream cis = new CipherInputStream(is, cipher);
                      FileOutputStream os = new FileOutputStream(file)) {
-                    byte[] buffer = new byte[8 * 1024]; 
+                    byte[] buffer = new byte[8192];
                     int read;
-                    while ((read = is.read(buffer)) != -1) {
-                        for(int i = 0; i < read; i++) buffer[i] ^= 0x7B; // 二进制动态还原
+                    while ((read = cis.read(buffer)) != -1) {
                         os.write(buffer, 0, read);
                     }
                     os.flush();
                 }
                 Module module = LiteModuleLoader.load(file.getAbsolutePath());
-                // 挂载成功后，毫秒级内将本体文件“阅后即焚”，节省手机400MB空间且极高强度防盗取
-                file.delete(); 
+                file.delete(); // 内存挂载后瞬间自毁，防止提取
                 return module;
             }
 
@@ -488,10 +543,22 @@ jobs:
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) { fullHtmlBuilder.append("<br>"); cleanTextBuilder.append("\n"); continue; }
 
+                            // 初始化白名单屏蔽机制
+                            boolean[] isIgnored = new boolean[sentence.length()];
+                            for (String w : IGNORE_WORDS) {
+                                int idx = sentence.indexOf(w);
+                                while (idx >= 0) {
+                                    for (int k = 0; k < w.length(); k++) isIgnored[idx + k] = true;
+                                    idx = sentence.indexOf(w, idx + 1);
+                                }
+                            }
+
                             boolean hasTarget = false;
                             for (int i = 0; i < sentence.length(); i++) {
                                 char c = sentence.charAt(i);
-                                if (c == '的' || c == '地' || c == '得') { hasTarget = true; break; }
+                                if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { 
+                                    hasTarget = true; break; 
+                                }
                             }
 
                             boolean currentSentenceHasError = false;
@@ -516,7 +583,7 @@ jobs:
                                     long[] ids = new long[sentence.length()];
                                     for (int i = 0; i < sentence.length(); i++) {
                                         String ch = String.valueOf(sentence.charAt(i));
-                                        if (ch.equals("的") || ch.equals("地") || ch.equals("得")) ids[i] = fMask;
+                                        if (!isIgnored[i] && (ch.equals("的") || ch.equals("地") || ch.equals("得"))) ids[i] = fMask;
                                         else ids[i] = fastVocab.getOrDefault(ch, fUnk);
                                     }
                                     Tensor inputTensor = Tensor.fromBlob(ids, new long[]{1, sentence.length()});
@@ -530,7 +597,7 @@ jobs:
                                     ids[0] = clsId; masks[0] = 1; types[0] = 0;
                                     for (int i = 0; i < sentence.length(); i++) {
                                         String ch = String.valueOf(sentence.charAt(i));
-                                        if (ch.equals("的") || ch.equals("地") || ch.equals("得")) ids[i + 1] = maskId;
+                                        if (!isIgnored[i] && (ch.equals("的") || ch.equals("地") || ch.equals("得"))) ids[i + 1] = maskId;
                                         else ids[i + 1] = proVocab.getOrDefault(ch, unkId);
                                         masks[i + 1] = 1; types[i + 1] = 0;
                                     }
@@ -547,6 +614,15 @@ jobs:
 
                                 for (int i = 0; i < sentence.length(); i++) {
                                     char ch = sentence.charAt(i);
+                                    
+                                    // 若在白名单中，强制保留原字，跳过推理计算
+                                    if (isIgnored[i]) {
+                                        sClean.append(ch);
+                                        if (ch == '\n') { sFullHtml.append("<br>"); sErrorHtml.append("<br>"); }
+                                        else { sFullHtml.append(ch); sErrorHtml.append(ch); }
+                                        continue;
+                                    }
+
                                     if (ch == '的' || ch == '地' || ch == '得') {
                                         float s0, s1, s2;
                                         if (isFastMode) {
