@@ -60,17 +60,13 @@ jobs:
         from Crypto.Cipher import AES
         from Crypto.Util.Padding import pad
 
-        # 32字节 AES-256 密钥
         KEY = b'xT9#mP2!qL5*vN8^cK4@bJ7$zR1%yW0&'
         IV = b'1234567890123456'
 
         def encrypt_file(file_in, file_out):
             if not os.path.exists(file_in): return
-            # 先对模型进行 GZIP 极限压缩，解决 AES 导致体积膨胀的问题
             with open(file_in, 'rb') as f: data = f.read()
             compressed_data = gzip.compress(data)
-            
-            # 再对压缩后的包进行军工级加密
             cipher = AES.new(KEY, AES.MODE_CBC, IV)
             enc_data = cipher.encrypt(pad(compressed_data, AES.block_size))
             with open(file_out, 'wb') as f: f.write(enc_data)
@@ -121,26 +117,38 @@ jobs:
         target_link_libraries(dededi ${log-lib})
         EOF
 
-        # C++ 密钥分散逻辑 (防逆向)
+        # C++ 高级运行时动态运算混淆 (密钥和IV防提取得更高境界)
         cat << 'EOF' > app/src/main/cpp/native-lib.cpp
         #include <jni.h>
-        #include <string>
 
         extern "C" JNIEXPORT jbyteArray JNICALL
-        Java_com_app_dededi_MainActivity_getSecretKey(JNIEnv* env, jobject /* this */) {
-            char key[32];
-            // 故意打散赋值，防止十六进制查看器直接搜索到字符串
-            key[0]='x'; key[1]='T'; key[2]='9'; key[3]='#';
-            key[4]='m'; key[5]='P'; key[6]='2'; key[7]='!';
-            key[8]='q'; key[9]='L'; key[10]='5'; key[11]='*';
-            key[12]='v'; key[13]='N'; key[14]='8'; key[15]='^';
-            key[16]='c'; key[17]='K'; key[18]='4'; key[19]='@';
-            key[20]='b'; key[21]='J'; key[22]='7'; key[23]='$';
-            key[24]='z'; key[25]='R'; key[26]='1'; key[27]='%';
-            key[28]='y'; key[29]='W'; key[30]='0'; key[31]='&';
-
+        Java_com_app_dededi_MainActivity_getSecretKey(JNIEnv* env, jobject) {
+            // XOR key: 0x37
+            char k[] = { (char)('x'^0x37), (char)('T'^0x37), (char)('9'^0x37), (char)('#'^0x37),
+                         (char)('m'^0x37), (char)('P'^0x37), (char)('2'^0x37), (char)('!'^0x37),
+                         (char)('q'^0x37), (char)('L'^0x37), (char)('5'^0x37), (char)('*'^0x37),
+                         (char)('v'^0x37), (char)('N'^0x37), (char)('8'^0x37), (char)('^'^0x37),
+                         (char)('c'^0x37), (char)('K'^0x37), (char)('4'^0x37), (char)('@'^0x37),
+                         (char)('b'^0x37), (char)('J'^0x37), (char)('7'^0x37), (char)('$'^0x37),
+                         (char)('z'^0x37), (char)('R'^0x37), (char)('1'^0x37), (char)('%'^0x37),
+                         (char)('y'^0x37), (char)('W'^0x37), (char)('0'^0x37), (char)('&'^0x37) };
             jbyteArray ret = env->NewByteArray(32);
-            env->SetByteArrayRegion(ret, 0, 32, (jbyte*)key);
+            jbyte bytes[32];
+            for(int i=0; i<32; i++) bytes[i] = k[i] ^ 0x37; // 运行瞬间动态还原
+            env->SetByteArrayRegion(ret, 0, 32, bytes);
+            return ret;
+        }
+
+        extern "C" JNIEXPORT jbyteArray JNICALL
+        Java_com_app_dededi_MainActivity_getSecretIV(JNIEnv* env, jobject) {
+            char iv[] = { (char)('1'^0x37), (char)('2'^0x37), (char)('3'^0x37), (char)('4'^0x37),
+                          (char)('5'^0x37), (char)('6'^0x37), (char)('7'^0x37), (char)('8'^0x37),
+                          (char)('9'^0x37), (char)('0'^0x37), (char)('1'^0x37), (char)('2'^0x37),
+                          (char)('3'^0x37), (char)('4'^0x37), (char)('5'^0x37), (char)('6'^0x37) };
+            jbyteArray ret = env->NewByteArray(16);
+            jbyte bytes[16];
+            for(int i=0; i<16; i++) bytes[i] = iv[i] ^ 0x37; // 运行瞬间动态还原
+            env->SetByteArrayRegion(ret, 0, 16, bytes);
             return ret;
         }
         EOF
@@ -240,8 +248,8 @@ jobs:
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
                     android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="#1A1A1A"
                     android:layout_alignParentStart="true" android:layout_centerVertical="true"/>
-                <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="36dp" 
-                    android:text="说明" android:textSize="12sp" android:backgroundTint="#757575" 
+                <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="30dp" 
+                    android:text="说明" android:textSize="11sp" android:backgroundTint="#9E9E9E" 
                     android:layout_alignParentEnd="true" android:layout_centerVertical="true"
                     android:paddingStart="8dp" android:paddingEnd="8dp"/>
             </RelativeLayout>
@@ -249,9 +257,9 @@ jobs:
             <RadioGroup android:id="@+id/rgMode" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginBottom="10dp" android:gravity="center">
                 <RadioButton android:id="@+id/rbFast" android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="极速版 (BiGRU)" android:textSize="14sp"/>
+                    android:layout_weight="1" android:text="极速 (BiGRU)" android:textSize="14sp"/>
                 <RadioButton android:id="@+id/rbPro" android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="专业版 (RoBERTa)" android:checked="true" android:textSize="14sp"/>
+                    android:layout_weight="1" android:text="专业 (RoBERTa)" android:checked="true" android:textSize="14sp"/>
             </RadioGroup>
             
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -304,12 +312,14 @@ jobs:
         import android.content.ClipboardManager;
         import android.content.Context;
         import android.content.Intent;
+        import android.content.SharedPreferences;
         import android.os.Bundle;
         import android.text.Html;
         import android.view.inputmethod.InputMethodManager;
         import android.widget.Button;
         import android.widget.EditText;
         import android.widget.RadioButton;
+        import android.widget.RadioGroup;
         import android.widget.TextView;
         import android.widget.Toast;
         import androidx.appcompat.app.AppCompatActivity;
@@ -335,6 +345,7 @@ jobs:
         public class MainActivity extends AppCompatActivity {
             static { System.loadLibrary("dededi"); }
             public native byte[] getSecretKey();
+            public native byte[] getSecretIV();
 
             private Module fastModule = null;
             private Map<String, Long> fastVocab = new HashMap<>();
@@ -347,7 +358,11 @@ jobs:
             private TextView outputText;
             private Button btnCheck, btnCopy, btnSaveTxt;
             private RadioButton rbFast;
+            private RadioGroup rgMode;
             private String cleanTextResult = ""; 
+
+            private SharedPreferences sp;
+            private boolean currentIsFast = false;
 
             private final String[] IGNORE_WORDS = {
                 "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
@@ -360,6 +375,9 @@ jobs:
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
                 setContentView(R.layout.activity_main);
+                
+                sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
+                
                 inputText = findViewById(R.id.inputText);
                 outputText = findViewById(R.id.outputText);
                 editTemp = findViewById(R.id.editTemp);
@@ -370,9 +388,19 @@ jobs:
                 btnCopy = findViewById(R.id.btnCopy);
                 btnSaveTxt = findViewById(R.id.btnSaveTxt);
                 rbFast = findViewById(R.id.rbFast);
+                rgMode = findViewById(R.id.rgMode);
                 Button btnHelp = findViewById(R.id.btnHelp);
 
-                outputText.setText("正在加载AI（首次需约5秒）...");
+                currentIsFast = rbFast.isChecked();
+                loadSettings(currentIsFast);
+
+                rgMode.setOnCheckedChangeListener((group, checkedId) -> {
+                    saveSettings(currentIsFast); // 先保存切换前的设置
+                    currentIsFast = (checkedId == R.id.rbFast);
+                    loadSettings(currentIsFast); // 载入切换后的设置
+                });
+
+                outputText.setText("正在加载AI（首次需约15秒）...");
                 new Thread(() -> {
                     try {
                         try {
@@ -400,8 +428,8 @@ jobs:
 
                 btnHelp.setOnClickListener(v -> {
                     String helpText = "【模型区别】\n" +
-                            "极速版：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。但错误率不如专业版。\n" +
-                            "专业版：模型参数量大，推理速度较慢，精确率极高，错误率少。\n" +
+                            "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。但错误率不如专业版。\n" +
+                            "专业：模型参数量大，推理速度较慢，精确率极高，错误率少。\n" +
                             "注：不同性能的手机在推理速度上会有不同，性能越强的手机推理速度越快。\n" +
                             "神经网络可能会犯一些低级错误，这是通病，在所难免。\n\n" +
                             "【温度参数】\n" +
@@ -428,6 +456,8 @@ jobs:
                 btnCheck.setOnClickListener(v -> {
                     InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+                    
+                    saveSettings(currentIsFast); // 开始检查前也保存一次参数
                     
                     boolean isFastMode = rbFast.isChecked();
                     if (isFastMode && fastModule == null) {
@@ -463,6 +493,24 @@ jobs:
                 });
             }
 
+            private void loadSettings(boolean isFast) {
+                String prefix = isFast ? "fast_" : "pro_";
+                editTemp.setText(sp.getString(prefix + "temp", "1.2"));
+                editThreshDe1.setText(sp.getString(prefix + "th1", "0.70"));
+                editThreshDe2.setText(sp.getString(prefix + "th2", "0.76"));
+                editThreshDe3.setText(sp.getString(prefix + "th3", "0.76"));
+            }
+
+            private void saveSettings(boolean isFast) {
+                String prefix = isFast ? "fast_" : "pro_";
+                sp.edit()
+                  .putString(prefix + "temp", editTemp.getText().toString())
+                  .putString(prefix + "th1", editThreshDe1.getText().toString())
+                  .putString(prefix + "th2", editThreshDe2.getText().toString())
+                  .putString(prefix + "th3", editThreshDe3.getText().toString())
+                  .apply();
+            }
+
             @Override
             protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                 super.onActivityResult(requestCode, resultCode, data);
@@ -490,10 +538,9 @@ jobs:
                 }
             }
 
-            // GZIP解压 + AES流式双重处理，保障安全并控制极致体积
             private Module loadDecryptedModule(Context context, String assetName) throws Exception {
                 byte[] keyBytes = getSecretKey(); 
-                byte[] ivBytes = "1234567890123456".getBytes(StandardCharsets.UTF_8);
+                byte[] ivBytes = getSecretIV();
                 
                 Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
                 cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(ivBytes));
@@ -520,7 +567,6 @@ jobs:
                 if (text.isEmpty()) return;
 
                 btnCheck.setEnabled(false); btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
-                outputText.setText(isFastMode ? "极速版正在审查..." : "专业版大模型正在思考...");
 
                 final float temp, tDe, tDi, tDe3;
                 float t1 = 1.2f, t2 = 0.70f, t3 = 0.76f, t4 = 0.76f;
