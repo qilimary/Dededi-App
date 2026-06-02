@@ -52,10 +52,11 @@ jobs:
         
         python convert.py
 
-    - name: Encrypt Models with AES-256 (Military-grade)
+    - name: Compress and Encrypt Models (Size & Security)
       run: |
         cat << 'EOF' > encrypt.py
         import os
+        import gzip
         from Crypto.Cipher import AES
         from Crypto.Util.Padding import pad
 
@@ -65,9 +66,13 @@ jobs:
 
         def encrypt_file(file_in, file_out):
             if not os.path.exists(file_in): return
+            # 先对模型进行 GZIP 极限压缩，解决 AES 导致体积膨胀的问题
             with open(file_in, 'rb') as f: data = f.read()
+            compressed_data = gzip.compress(data)
+            
+            # 再对压缩后的包进行军工级加密
             cipher = AES.new(KEY, AES.MODE_CBC, IV)
-            enc_data = cipher.encrypt(pad(data, AES.block_size))
+            enc_data = cipher.encrypt(pad(compressed_data, AES.block_size))
             with open(file_out, 'wb') as f: f.write(enc_data)
 
         encrypt_file('dededi_mobile.ptl', 'sys_core_f.dat')
@@ -321,13 +326,13 @@ jobs:
         import java.util.HashMap;
         import java.util.Iterator;
         import java.util.Map;
+        import java.util.zip.GZIPInputStream;
         import javax.crypto.Cipher;
         import javax.crypto.CipherInputStream;
         import javax.crypto.spec.IvParameterSpec;
         import javax.crypto.spec.SecretKeySpec;
 
         public class MainActivity extends AppCompatActivity {
-            // 加载 C++ 安全库
             static { System.loadLibrary("dededi"); }
             public native byte[] getSecretKey();
 
@@ -344,7 +349,6 @@ jobs:
             private RadioButton rbFast;
             private String cleanTextResult = ""; 
 
-            // 白名单词库
             private final String[] IGNORE_WORDS = {
                 "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
                 "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面",
@@ -368,7 +372,7 @@ jobs:
                 rbFast = findViewById(R.id.rbFast);
                 Button btnHelp = findViewById(R.id.btnHelp);
 
-                outputText.setText("🔄 正在底层解密并唤醒 AI 引擎，首次启动约需数秒...");
+                outputText.setText("🔄 正在底层解压与解密 AI 引擎，首次启动约需数秒...");
                 new Thread(() -> {
                     try {
                         try {
@@ -486,9 +490,9 @@ jobs:
                 }
             }
 
-            // AES-256 流式解密，极低内存消耗，用完立即销毁
+            // GZIP解压 + AES流式双重处理，保障安全并控制极致体积
             private Module loadDecryptedModule(Context context, String assetName) throws Exception {
-                byte[] keyBytes = getSecretKey(); // 从底层 C++ 获取打散的密钥
+                byte[] keyBytes = getSecretKey(); 
                 byte[] ivBytes = "1234567890123456".getBytes(StandardCharsets.UTF_8);
                 
                 Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
@@ -497,16 +501,17 @@ jobs:
                 File file = new File(context.getFilesDir(), assetName + ".tmp");
                 try (InputStream is = context.getAssets().open(assetName);
                      CipherInputStream cis = new CipherInputStream(is, cipher);
+                     GZIPInputStream gis = new GZIPInputStream(cis);
                      FileOutputStream os = new FileOutputStream(file)) {
                     byte[] buffer = new byte[8192];
                     int read;
-                    while ((read = cis.read(buffer)) != -1) {
+                    while ((read = gis.read(buffer)) != -1) {
                         os.write(buffer, 0, read);
                     }
                     os.flush();
                 }
                 Module module = LiteModuleLoader.load(file.getAbsolutePath());
-                file.delete(); // 内存挂载后瞬间自毁，防止提取
+                file.delete(); 
                 return module;
             }
 
@@ -543,7 +548,6 @@ jobs:
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) { fullHtmlBuilder.append("<br>"); cleanTextBuilder.append("\n"); continue; }
 
-                            // 初始化白名单屏蔽机制
                             boolean[] isIgnored = new boolean[sentence.length()];
                             for (String w : IGNORE_WORDS) {
                                 int idx = sentence.indexOf(w);
@@ -615,7 +619,6 @@ jobs:
                                 for (int i = 0; i < sentence.length(); i++) {
                                     char ch = sentence.charAt(i);
                                     
-                                    // 若在白名单中，强制保留原字，跳过推理计算
                                     if (isIgnored[i]) {
                                         sClean.append(ch);
                                         if (ch == '\n') { sFullHtml.append("<br>"); sErrorHtml.append("<br>"); }
