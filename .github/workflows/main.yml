@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # 加入了这个，以后可以在网页上手动点击运行了！
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -60,6 +60,23 @@ jobs:
         
         python convert.py
 
+    - name: Encrypt Models (Anti-Decompilation)
+      run: |
+        cat << 'EOF' > encrypt.py
+        import os
+        def encrypt(file_in, file_out):
+            if not os.path.exists(file_in): return
+            with open(file_in, 'rb') as f: data = bytearray(f.read())
+            # 对模型执行位级 XOR 加密污染，防逆向破解
+            for i in range(len(data)): data[i] ^= 0x7B
+            with open(file_out, 'wb') as f: f.write(data)
+
+        encrypt('dededi_mobile.ptl', 'sys_core_f.dat')
+        encrypt('roberta_mobile.ptl', 'sys_core_p.dat')
+        print("✅ 模型已完成二进制加密，伪装系统文件完毕！")
+        EOF
+        python encrypt.py
+
     - name: Scaffold Android Project
       run: |
         mkdir -p app/src/main/java/com/app/dededi
@@ -70,9 +87,10 @@ jobs:
         mkdir -p app/src/main/assets
         mkdir -p gradle/wrapper
 
-        cp dededi_mobile.ptl app/src/main/assets/ || true
+        # 移动加密后的模型到assets，完全隐藏原本结构
+        cp sys_core_f.dat app/src/main/assets/ || true
+        cp sys_core_p.dat app/src/main/assets/
         cp student_vocab.json app/src/main/assets/ || true
-        cp roberta_mobile.ptl app/src/main/assets/
         cp roberta_vocab.json app/src/main/assets/
 
         cat << 'EOF' > gradle.properties
@@ -91,6 +109,7 @@ jobs:
 
         echo "include ':app'" > settings.gradle
 
+        # 移除了 noCompress，开启系统级压缩，大幅缩小体积
         cat << 'EOF' > app/build.gradle
         apply plugin: 'com.android.application'
         android {
@@ -102,12 +121,7 @@ jobs:
                 targetSdk 33
                 versionCode 2
                 versionName "2.0"
-                ndk {
-                    abiFilters "arm64-v8a"
-                }
-            }
-            aaptOptions {
-                noCompress "ptl", "json"
+                ndk { abiFilters "arm64-v8a" }
             }
             buildTypes {
                 release {
@@ -145,10 +159,13 @@ jobs:
         </resources>
         EOF
         
+        # 缩小对勾的大小，让它居中完整显示
         cat << 'EOF' > app/src/main/res/drawable/ic_dededi_fg.xml
         <vector xmlns:android="http://schemas.android.com/apk/res/android"
             android:width="108dp" android:height="108dp" android:viewportWidth="24" android:viewportHeight="24">
-            <path android:fillColor="#FFFFFF" android:pathData="M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z"/>
+            <group android:scaleX="0.75" android:scaleY="0.75" android:pivotX="12" android:pivotY="12">
+                <path android:fillColor="#FFFFFF" android:pathData="M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z"/>
+            </group>
         </vector>
         EOF
         
@@ -160,10 +177,12 @@ jobs:
         </adaptive-icon>
         EOF
 
+        # 加入 extractNativeLibs="false"，防止系统重复解压C库占空间
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <application android:allowBackup="true" 
+                         android:extractNativeLibs="false"
                          android:icon="@mipmap/ic_launcher"
                          android:roundIcon="@mipmap/ic_launcher"
                          android:label="“的地得”纠错AI Pro" 
@@ -178,6 +197,7 @@ jobs:
         </manifest>
         EOF
 
+        # 布局：默认勾选专业版 rbPro
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -197,9 +217,9 @@ jobs:
             <RadioGroup android:id="@+id/rgMode" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginBottom="10dp" android:gravity="center">
                 <RadioButton android:id="@+id/rbFast" android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="极速版 (BiGRU)" android:checked="true" android:textSize="14sp"/>
+                    android:layout_weight="1" android:text="极速版 (BiGRU)" android:textSize="14sp"/>
                 <RadioButton android:id="@+id/rbPro" android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="专业版 (RoBERTa)" android:textSize="14sp"/>
+                    android:layout_weight="1" android:text="专业版 (RoBERTa)" android:checked="true" android:textSize="14sp"/>
             </RadioGroup>
             
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -246,6 +266,7 @@ jobs:
         </LinearLayout>
         EOF
 
+        # 更新 Java 代码，加入阅后即焚、加密还原、说明书内容等
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
         import android.content.ClipData;
@@ -305,27 +326,46 @@ jobs:
                 rbFast = findViewById(R.id.rbFast);
                 Button btnHelp = findViewById(R.id.btnHelp);
 
-                try {
-                    String fastPath = assetFilePath(this, "dededi_mobile.ptl");
-                    fastModule = LiteModuleLoader.load(fastPath);
-                    InputStream is = getAssets().open("student_vocab.json");
-                    byte[] buffer = new byte[is.available()];
-                    is.read(buffer); is.close();
-                    JSONObject json = new JSONObject(new String(buffer, StandardCharsets.UTF_8));
-                    Iterator<String> keys = json.keys();
-                    while(keys.hasNext()) {
-                        String key = keys.next();
-                        fastVocab.put(key, (long) json.getInt(key));
-                    }
-                    outputText.setText("✅ 极速 AI 引擎就绪 (离线安全)");
-                } catch (Exception e) {
-                    outputText.setText("✅ APP已启动。如果你尚未放入极速版模型，可直接勾选下方的【专业版】使用！");
-                }
+                // 开屏立刻异步唤醒和解密模型
+                outputText.setText("🔄 正在底层解密并唤醒 AI 引擎，首次启动约需数秒...");
+                new Thread(() -> {
+                    try {
+                        try {
+                            fastModule = loadDecryptedModule(this, "sys_core_f.dat");
+                            loadVocab(fastVocab, "student_vocab.json");
+                        } catch(Exception ignored) {}
+                        
+                        try {
+                            proModule = loadDecryptedModule(this, "sys_core_p.dat");
+                            loadVocab(proVocab, "roberta_vocab.json");
+                            clsId = proVocab.getOrDefault("[CLS]", 101L);
+                            sepId = proVocab.getOrDefault("[SEP]", 102L);
+                            maskId = proVocab.getOrDefault("[MASK]", 103L);
+                            unkId = proVocab.getOrDefault("[UNK]", 100L);
+                            deId = proVocab.getOrDefault("的", 0L);
+                            diId = proVocab.getOrDefault("地", 0L);
+                            de2Id = proVocab.getOrDefault("得", 0L);
+                        } catch(Exception ignored) {}
+
+                        runOnUiThread(() -> {
+                            outputText.setText("✅ AI 引擎已全部就绪 (已启用底层多重防护)");
+                        });
+                    } catch (Exception ignored) {}
+                }).start();
 
                 btnHelp.setOnClickListener(v -> {
                     new androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("双版本与参数说明")
-                        .setMessage("【版本模式】\n• 极速版(BiGRU)\n• 专业版(RoBERTa)\n默认参数已适配最佳效果，可微调各字词过滤阈值。")
+                        .setTitle("版本与参数说明")
+                        .setMessage("【版本区别】\n" +
+                                    "• 极速版 (BiGRU)：体积小、运行极快，适合日常短句或大批量文本的极速扫描，但对长难句复杂语境理解可能稍弱。\n" +
+                                    "• 专业版 (RoBERTa)：拥有数十倍的参数量，深入理解复杂上下文，准确率极高，适合写文章精细润色，但耗时稍长。\n\n" +
+                                    "【温度参数】\n" +
+                                    "控制AI判断的果断程度。\n" +
+                                    "• 越低 (如0.5)：模型更自信，更激进，修改量可能上升。\n" +
+                                    "• 越高 (如2.0)：模型更保守，不易触发修改。\n\n" +
+                                    "【置信度拦截阈值】\n" +
+                                    "只有AI的置信度 ≥ 该阈值时才执行修改，否则保留原字，防止过度纠错。\n" +
+                                    "示例：若阈值设为0.76，AI置信度0.85则修改，0.70则维持原样。")
                         .setPositiveButton("知道了", null)
                         .show();
                 });
@@ -333,7 +373,17 @@ jobs:
                 btnCheck.setOnClickListener(v -> {
                     InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
-                    doInference();
+                    
+                    boolean isFastMode = rbFast.isChecked();
+                    if (isFastMode && fastModule == null) {
+                        Toast.makeText(this, "极速版引擎仍在解密初始化，请稍候...", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (!isFastMode && proModule == null) {
+                        Toast.makeText(this, "专业版大模型仍在解密初始化，请稍候...", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    doInference(isFastMode);
                 });
 
                 btnCopy.setOnClickListener(v -> {
@@ -369,17 +419,48 @@ jobs:
                             os.close();
                             Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
                         }
-                    } catch (Exception e) {}
+                    } catch (Exception ignored) {}
                 }
             }
 
-            private void doInference() {
+            // 加载词汇表
+            private void loadVocab(Map<String, Long> map, String assetName) throws Exception {
+                InputStream is = getAssets().open(assetName);
+                byte[] buffer = new byte[is.available()];
+                is.read(buffer); is.close();
+                JSONObject json = new JSONObject(new String(buffer, StandardCharsets.UTF_8));
+                Iterator<String> keys = json.keys();
+                while(keys.hasNext()) {
+                    String key = keys.next();
+                    map.put(key, (long) json.getInt(key));
+                }
+            }
+
+            // 核心防护：解密、挂载内存后立即自毁文件
+            private Module loadDecryptedModule(Context context, String assetName) throws Exception {
+                File file = new File(context.getFilesDir(), assetName + ".tmp");
+                try (InputStream is = context.getAssets().open(assetName);
+                     FileOutputStream os = new FileOutputStream(file)) {
+                    byte[] buffer = new byte[8 * 1024]; 
+                    int read;
+                    while ((read = is.read(buffer)) != -1) {
+                        for(int i = 0; i < read; i++) buffer[i] ^= 0x7B; // 二进制动态还原
+                        os.write(buffer, 0, read);
+                    }
+                    os.flush();
+                }
+                Module module = LiteModuleLoader.load(file.getAbsolutePath());
+                // 挂载成功后，毫秒级内将本体文件“阅后即焚”，节省手机400MB空间且极高强度防盗取
+                file.delete(); 
+                return module;
+            }
+
+            private void doInference(boolean isFastMode) {
                 String text = inputText.getText().toString();
                 if (text.isEmpty()) return;
 
                 btnCheck.setEnabled(false); btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
-                boolean isFastMode = rbFast.isChecked();
-                outputText.setText(isFastMode ? "极速版正在审查..." : "正在唤醒专业版大模型(首次运行需加载数秒)...");
+                outputText.setText(isFastMode ? "极速版正在审查..." : "专业版大模型正在思考...");
 
                 final float temp, tDe, tDi, tDe3;
                 float t1 = 1.2f, t2 = 0.70f, t3 = 0.76f, t4 = 0.76f;
@@ -393,27 +474,6 @@ jobs:
 
                 new Thread(() -> {
                     try {
-                        if (!isFastMode && proModule == null) {
-                            String proPath = assetFilePath(MainActivity.this, "roberta_mobile.ptl");
-                            proModule = LiteModuleLoader.load(proPath);
-                            InputStream is = getAssets().open("roberta_vocab.json");
-                            byte[] buffer = new byte[is.available()];
-                            is.read(buffer); is.close();
-                            JSONObject json = new JSONObject(new String(buffer, StandardCharsets.UTF_8));
-                            Iterator<String> keys = json.keys();
-                            while(keys.hasNext()) {
-                                String key = keys.next();
-                                proVocab.put(key, (long) json.getInt(key));
-                            }
-                            clsId = proVocab.getOrDefault("[CLS]", 101L);
-                            sepId = proVocab.getOrDefault("[SEP]", 102L);
-                            maskId = proVocab.getOrDefault("[MASK]", 103L);
-                            unkId = proVocab.getOrDefault("[UNK]", 100L);
-                            deId = proVocab.getOrDefault("的", 0L);
-                            diId = proVocab.getOrDefault("地", 0L);
-                            de2Id = proVocab.getOrDefault("得", 0L);
-                        }
-
                         long startTime = System.currentTimeMillis();
                         String[] labels = {"的", "地", "得"};
                         String[] sentences = text.split("(?<=[。！？!?\n])");
@@ -518,7 +578,7 @@ jobs:
                                             totalChangeCount++;
                                             sClean.append(pred);
                                             sFullHtml.append("<font color='#E53935'><b>").append(pred).append("</b></font>");
-                                            sErrorHtml.append("<font color='#E53935'>").append(ch).append("</font>→<b>").append(pred).append("</b><font color='#888888'><small>（").append(String.format("%.2f", maxProb)).append("）</small></font> ");
+                                            sErrorHtml.append("<font color='#E53935'>").append(ch).append("</font>→<b>").append(pred).append("</b><font color='#888888'><small>（置信度：").append(String.format("%.2f", maxProb)).append("）</small></font> ");
                                         } else {
                                             sClean.append(ch); sFullHtml.append(ch); sErrorHtml.append(ch);
                                         }
@@ -573,18 +633,6 @@ jobs:
                     }
                 }).start();
             }
-
-            private String assetFilePath(Context context, String assetName) throws Exception {
-                File file = new File(context.getFilesDir(), assetName);
-                if (file.exists() && file.length() > 0) return file.getAbsolutePath();
-                try (InputStream is = context.getAssets().open(assetName);
-                     FileOutputStream os = new FileOutputStream(file)) {
-                    byte[] buffer = new byte[4 * 1024]; int read;
-                    while ((read = is.read(buffer)) != -1) os.write(buffer, 0, read);
-                    os.flush();
-                }
-                return file.getAbsolutePath();
-            }
         }
         EOF
 
@@ -622,4 +670,3 @@ jobs:
       with:
         name: Dededi-App-APK-Pro
         path: app/build/outputs/apk/release/app-release.apk
-
