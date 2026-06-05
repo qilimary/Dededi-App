@@ -248,10 +248,11 @@ jobs:
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
                     android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="#1A1A1A"
                     android:layout_alignParentStart="true" android:layout_centerVertical="true"/>
-                <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="30dp" 
-                    android:text="说明" android:textSize="11sp" android:backgroundTint="#9E9E9E" 
+                <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="wrap_content" 
+                    android:minWidth="56dp" android:minHeight="32dp"
+                    android:text="说明" android:textSize="12sp" android:backgroundTint="#9E9E9E" 
                     android:layout_alignParentEnd="true" android:layout_centerVertical="true"
-                    android:paddingStart="8dp" android:paddingEnd="8dp"/>
+                    android:paddingStart="12dp" android:paddingEnd="12dp"/>
             </RelativeLayout>
 
             <RadioGroup android:id="@+id/rgMode" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -363,12 +364,14 @@ jobs:
 
             private SharedPreferences sp;
             private boolean currentIsFast = false;
+            private boolean hasStartedChecking = false; // 用于判定是否已经开始纠错，防止加载提示覆盖结果
 
             private final String[] IGNORE_WORDS = {
                 "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
                 "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面",
                 "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "获得", "取得", "赢得", "免得", "懒得",
-                "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地"
+                "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地",
+                "如鱼得水", "留得", "留的", "拍立得", "坏的"
             };
 
             @Override
@@ -400,7 +403,7 @@ jobs:
                     loadSettings(currentIsFast); // 载入切换后的设置
                 });
 
-                outputText.setText("正在加载AI（首次需约15秒）...");
+                outputText.setText("正在加载专业版AI...（轻量版可直接使用）");
                 new Thread(() -> {
                     try {
                         try {
@@ -421,7 +424,10 @@ jobs:
                         } catch(Exception ignored) {}
 
                         runOnUiThread(() -> {
-                            outputText.setText("AI已加载完成");
+                            // 如果用户还没有点击纠错，才显示加载完成，避免覆盖已经显示出来的纠错结果
+                            if (!hasStartedChecking) {
+                                outputText.setText("AI已加载完成");
+                            }
                         });
                     } catch (Exception ignored) {}
                 }).start();
@@ -457,6 +463,7 @@ jobs:
                     InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
                     
+                    hasStartedChecking = true; // 标记已经开始使用，阻止后台加载提示覆盖
                     saveSettings(currentIsFast); // 开始检查前也保存一次参数
                     
                     boolean isFastMode = rbFast.isChecked();
@@ -495,10 +502,16 @@ jobs:
 
             private void loadSettings(boolean isFast) {
                 String prefix = isFast ? "fast_" : "pro_";
-                editTemp.setText(sp.getString(prefix + "temp", "1.2"));
-                editThreshDe1.setText(sp.getString(prefix + "th1", "0.70"));
-                editThreshDe2.setText(sp.getString(prefix + "th2", "0.76"));
-                editThreshDe3.setText(sp.getString(prefix + "th3", "0.76"));
+                // 极速版默认全0.80，专业版默认0.70, 0.76, 0.76
+                String defTemp = "1.2";
+                String defTh1 = isFast ? "0.80" : "0.70";
+                String defTh2 = isFast ? "0.80" : "0.76";
+                String defTh3 = isFast ? "0.80" : "0.76";
+                
+                editTemp.setText(sp.getString(prefix + "temp", defTemp));
+                editThreshDe1.setText(sp.getString(prefix + "th1", defTh1));
+                editThreshDe2.setText(sp.getString(prefix + "th2", defTh2));
+                editThreshDe3.setText(sp.getString(prefix + "th3", defTh3));
             }
 
             private void saveSettings(boolean isFast) {
