@@ -1,4 +1,4 @@
-name: Build Android APK
+Name: Build Android APK
 
 on:
   push:
@@ -402,7 +402,9 @@ jobs:
         import android.text.style.ClickableSpan;
         import android.text.style.ForegroundColorSpan;
         import android.text.style.StrikethroughSpan;
+        import android.view.MotionEvent;
         import android.view.View;
+        import android.view.ViewTreeObserver;
         import android.view.WindowManager;
         import android.view.inputmethod.InputMethodManager;
         import android.widget.Button;
@@ -459,6 +461,7 @@ jobs:
             private SharedPreferences sp;
             private boolean currentIsFast = false;
             private boolean hasStartedChecking = false;
+            private boolean isAutoScrolling = true;
 
             class TextBlock {
                 String original;
@@ -508,6 +511,23 @@ jobs:
                 currentIsFast = rbFast.isChecked();
                 loadSettings(currentIsFast);
                 
+                scrollView.setOnTouchListener((v, event) -> {
+                    if (event.getAction() == MotionEvent.ACTION_DOWN || event.getAction() == MotionEvent.ACTION_MOVE) {
+                        isAutoScrolling = false;
+                    }
+                    return false;
+                });
+
+                scrollView.getViewTreeObserver().addOnScrollChangedListener(() -> {
+                    View view = scrollView.getChildAt(scrollView.getChildCount() - 1);
+                    if (view != null) {
+                        int diff = (view.getBottom() - (scrollView.getHeight() + scrollView.getScrollY()));
+                        if (diff <= 10) {
+                            isAutoScrolling = true;
+                        }
+                    }
+                });
+
                 inputText.addTextChangedListener(new TextWatcher() {
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -558,13 +578,20 @@ jobs:
 
                 btnHelp.setOnClickListener(v -> {
                     String helpText = "【模型介绍】\n" +
-                            "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n" +
-                            "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n" +
-                            "注：不同手机的速度会有不同，性能越强的手机，模型推理速度越快。\n" +
-                            "神经网络可能会犯一些低级错误，这是深度学习模型的通病，在所难免。\n\n" +
+                            "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n" +
+                            "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n\n" +
+                            "注：不同手机的推理速度会有不同。性能越强的手机，模型推理速度越快。\n" +
+                            "模型可能会犯一些低级错误，这是神经网络的通病，在所难免。\n\n" +
+                            "【温度参数】\n" +
+                            "控制AI判断的果断程度。\n" +
+                            "• 值越低（如0.5）：概率分布越尖锐。模型更自信（置信度更高），更激进，修改量可能上升，因为更不容易被拦截。\n" +
+                            "• 值越高（如2.0）：概率分布越平缓。模型更保守（置信度更低），修改量可能下降，因为更容易被拦截。\n" +
+                            "• 默认0.9～1.2，适合大多数场景\n\n" +
+                            "【置信度拦截阈值】\n" +
+                            "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n\n" +
                             "【交互与拓展功能】\n" +
-                            "• 交互式修改：在检查完毕后，直接点击下方结果中带下划线的字，即可弹出菜单修改为其他字。而且，如果你在“更正清单”中将误杀的字还原成了原字，它会像消消乐一样从列表中自动消失！\n" +
-                            "• 一键粘贴：点击按钮快速读取剪贴板内容，无需长按。\n" +
+                            "• 交互式修改：检查完毕后，直接点击清单或全文中带下划线的字，即可修改为其他字。在“更正清单”中的修改会同步至下方全文，如果还原，则会从错误列表中自动消失。\n" +
+                            "• 一键粘贴：快速将剪贴板内容粘贴至框中。\n" +
                             "• 系统分享：在微信、浏览器中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                     
@@ -589,6 +616,7 @@ jobs:
                     
                     hasStartedChecking = true; 
                     saveSettings(currentIsFast); 
+                    isAutoScrolling = true;
                     
                     boolean isFastMode = rbFast.isChecked();
                     if (isFastMode && fastModule == null) {
@@ -917,7 +945,9 @@ jobs:
                                 runOnUiThread(() -> {
                                     progressBar.setProgress(currentProgress);
                                     outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
-                                    scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
+                                    if (isAutoScrolling) {
+                                        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
+                                    }
                                 });
                             }
                         }
