@@ -865,12 +865,17 @@ jobs:
             private void renderFinalBlocks() {
                 SpannableStringBuilder ssb = new SpannableStringBuilder();
                 
-                String header = "检查完毕！共更正 " + lastChangeCount + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击全文中带下划线的字可手动修改/还原）\n\n";
-                SpannableString headerSp = new SpannableString(header);
-                headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                ssb.append(headerSp);
-                
-                if (lastChangeCount > 0) {
+                if (lastChangeCount == 0) {
+                    String header = "检查完毕！未检测到“的地得”误用。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
+                    SpannableString headerSp = new SpannableString(header);
+                    headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.append(headerSp);
+                } else {
+                    String header = "检查完毕！共更正 " + lastChangeCount + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击全文中带下划线的字可手动修改/还原）\n\n";
+                    SpannableString headerSp = new SpannableString(header);
+                    headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.append(headerSp);
+                    
                     SpannableStringBuilder listSp = new SpannableStringBuilder();
                     listSp.append("【更正清单：】\n");
                     for (TextBlock b : currentBlocks) {
@@ -884,7 +889,7 @@ jobs:
                     ssb.append(listSp);
                 }
                 
-                SpannableString fullHeader = new SpannableString("【修正后的全文】\n");
+                SpannableString fullHeader = new SpannableString(lastChangeCount > 0 ? "【修正后的全文】\n" : "【原文】\n");
                 fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 ssb.append(fullHeader);
                 
