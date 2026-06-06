@@ -162,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 4
-                versionName "2.2"
+                versionCode 5
+                versionName "2.3"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -215,7 +215,7 @@ jobs:
             <style name="Theme.Dededi" parent="Theme.AppCompat.DayNight.NoActionBar">
                 <item name="colorPrimary">#2196F3</item>
                 <item name="colorPrimaryDark">#1976D2</item>
-                <item name="colorAccent">#FF9800</item>
+                <item name="colorAccent">#4CAF50</item>
                 <item name="android:statusBarColor">@color/bg_color</item>
                 <item name="android:windowLightStatusBar">true</item>
             </style>
@@ -239,7 +239,7 @@ jobs:
             <style name="Theme.Dededi" parent="Theme.AppCompat.DayNight.NoActionBar">
                 <item name="colorPrimary">#2196F3</item>
                 <item name="colorPrimaryDark">#1976D2</item>
-                <item name="colorAccent">#FF9800</item>
+                <item name="colorAccent">#4CAF50</item>
                 <item name="android:statusBarColor">@color/bg_color</item>
                 <item name="android:windowLightStatusBar">false</item>
             </style>
@@ -342,18 +342,19 @@ jobs:
             
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginBottom="10dp">
+                <!-- 三个按钮统一为极简浅绿色，文本深绿色 -->
                 <Button android:id="@+id/btnPaste" android:layout_width="0dp" android:layout_height="48dp"
                     android:layout_weight="1" android:text="一键粘贴" android:textSize="14sp"
-                    android:backgroundTint="#9C27B0" android:layout_marginRight="4dp"/>
+                    android:backgroundTint="#E8F5E9" android:textColor="#2E7D32" android:layout_marginRight="4dp"/>
                 <Button android:id="@+id/btnCopy" android:layout_width="0dp" android:layout_height="48dp"
                     android:layout_weight="1" android:text="复制全文" android:textSize="14sp"
-                    android:backgroundTint="#4CAF50" android:layout_marginRight="4dp" android:enabled="false"/>
+                    android:backgroundTint="#E8F5E9" android:textColor="#2E7D32" android:layout_marginRight="4dp" android:enabled="false"/>
                 <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
                     android:layout_weight="1" android:text="保存TXT" android:textSize="14sp"
-                    android:backgroundTint="#FF9800" android:enabled="false"/>
+                    android:backgroundTint="#E8F5E9" android:textColor="#2E7D32" android:enabled="false"/>
             </LinearLayout>
 
-            <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
+            <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent">
                 <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:textSize="16sp" android:background="@color/card_bg" android:padding="12dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
             </ScrollView>
@@ -369,6 +370,7 @@ jobs:
         import android.content.SharedPreferences;
         import android.graphics.Color;
         import android.os.Bundle;
+        import android.text.Html;
         import android.text.SpannableString;
         import android.text.SpannableStringBuilder;
         import android.text.Spanned;
@@ -382,6 +384,7 @@ jobs:
         import android.widget.EditText;
         import android.widget.RadioButton;
         import android.widget.RadioGroup;
+        import android.widget.ScrollView;
         import android.widget.TextView;
         import android.widget.Toast;
         import androidx.appcompat.app.AlertDialog;
@@ -421,6 +424,7 @@ jobs:
 
             private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3;
             private TextView outputText;
+            private ScrollView scrollView;
             private Button btnCheck, btnCopy, btnSaveTxt, btnPaste;
             private RadioButton rbFast;
             private RadioGroup rgMode;
@@ -434,14 +438,14 @@ jobs:
                 String original;
                 String current;
                 boolean isMutable;
-                float conf;
-                public TextBlock(String o, String c, boolean m, float f) {
-                    this.original = o; this.current = c; this.isMutable = m; this.conf = f;
+                public TextBlock(String o, String c, boolean m) {
+                    this.original = o; this.current = c; this.isMutable = m;
                 }
             }
             private List<TextBlock> currentBlocks = new ArrayList<>();
             private long lastTimeMs = 0;
             private int lastChangeCount = 0;
+            private String lastLiveErrorsHtml = "";
 
             private final String[] IGNORE_WORDS = {
                 "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
@@ -460,6 +464,7 @@ jobs:
                 
                 inputText = findViewById(R.id.inputText);
                 outputText = findViewById(R.id.outputText);
+                scrollView = findViewById(R.id.scrollView);
                 editTemp = findViewById(R.id.editTemp);
                 editThreshDe1 = findViewById(R.id.editThreshDe1);
                 editThreshDe2 = findViewById(R.id.editThreshDe2);
@@ -475,7 +480,6 @@ jobs:
                 currentIsFast = rbFast.isChecked();
                 loadSettings(currentIsFast);
 
-                // 处理外部应用分享进来的文本
                 Intent intent = getIntent();
                 if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
                     String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
@@ -494,12 +498,12 @@ jobs:
                 new Thread(() -> {
                     try {
                         try {
-                            fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.2");
+                            fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.3");
                             loadVocab(fastVocab, "student_vocab.json");
                         } catch(Exception ignored) {}
                         
                         try {
-                            proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_cache_v2.2");
+                            proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_cache_v2.3");
                             loadVocab(proVocab, "roberta_vocab.json");
                             clsId = proVocab.getOrDefault("[CLS]", 101L);
                             sepId = proVocab.getOrDefault("[SEP]", 102L);
@@ -650,7 +654,6 @@ jobs:
                 }
             }
 
-            // 持久化缓存加载模型，提升秒开速度
             private Module loadDecryptedModule(Context context, String assetName, String cacheKey) throws Exception {
                 File cacheFile = new File(context.getFilesDir(), cacheKey + ".ptl");
                 if (cacheFile.exists() && cacheFile.length() > 0) {
@@ -707,6 +710,7 @@ jobs:
                         
                         currentBlocks.clear();
                         int totalChangeCount = 0;
+                        StringBuilder liveErrorsHtml = new StringBuilder();
                         long lastUIUpdateTime = System.currentTimeMillis();
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
@@ -731,7 +735,7 @@ jobs:
                             }
 
                             if (!hasTarget) {
-                                currentBlocks.add(new TextBlock(sentence, sentence, false, 0f));
+                                currentBlocks.add(new TextBlock(sentence, sentence, false));
                             } else {
                                 float[] scores;
                                 int vocabSize = isFastMode ? 3 : proVocab.size();
@@ -772,9 +776,12 @@ jobs:
                                 }
 
                                 StringBuilder normalText = new StringBuilder();
+                                StringBuilder highlightedSentence = new StringBuilder(); // 用于实时打印单句上下文
+                                boolean currentSentenceHasError = false;
+                                
                                 Runnable flushNormal = () -> {
                                     if(normalText.length() > 0) {
-                                        currentBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false, 0f));
+                                        currentBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false));
                                         normalText.setLength(0);
                                     }
                                 };
@@ -784,6 +791,7 @@ jobs:
                                     
                                     if (isIgnored[i] || (ch != '的' && ch != '地' && ch != '得')) {
                                         normalText.append(ch);
+                                        highlightedSentence.append(ch);
                                         continue;
                                     }
 
@@ -815,27 +823,46 @@ jobs:
 
                                     String pred = labels[maxIdx];
                                     boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
-                                    if (changed) totalChangeCount++;
                                     
-                                    currentBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb));
+                                    if (changed) {
+                                        totalChangeCount++;
+                                        currentSentenceHasError = true;
+                                        // 实时高亮显示片段，原字红色划线，修改后为蓝色加粗，顺带显示置信度
+                                        highlightedSentence.append("<font color='#E53935'><s>").append(ch).append("</s></font><font color='#2196F3'><b>").append(pred).append("</b></font><font color='#9E9E9E'><small>(").append(String.format("%.2f", maxProb)).append(")</small></font>");
+                                    } else {
+                                        highlightedSentence.append(ch);
+                                    }
+                                    
+                                    currentBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true));
                                 }
                                 flushNormal.run();
+                                
+                                // 如果这句上下文有错误，将其追加进实时日志
+                                if (currentSentenceHasError) {
+                                    liveErrorsHtml.append(highlightedSentence.toString()).append("<br><br>");
+                                }
                             }
 
                             long now = System.currentTimeMillis();
                             if (now - lastUIUpdateTime > 300) {
                                 lastUIUpdateTime = now;
-                                final String prog = "AI 正在审查中...\n已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒\n进度：" + (sIdx+1) + " / " + sentences.length;
-                                runOnUiThread(() -> outputText.setText(prog));
+                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + (sIdx+1) + " / " + sentences.length + "<br><br>" +
+                                                        (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【实时更正记录】：</font></b><br>" + liveErrorsHtml.toString() : "");
+                                runOnUiThread(() -> {
+                                    outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
+                                    scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); // 自动滚动到底部
+                                });
                             }
                         }
 
                         lastTimeMs = System.currentTimeMillis() - startTime;
                         lastChangeCount = totalChangeCount;
+                        lastLiveErrorsHtml = liveErrorsHtml.toString();
                         
                         runOnUiThread(() -> {
                             renderFinalBlocks();
                             btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true);
+                            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); // 检查完后自动回到顶部方便阅读
                         });
 
                     } catch (Exception e) {
@@ -876,17 +903,10 @@ jobs:
                     headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     ssb.append(headerSp);
                     
-                    SpannableStringBuilder listSp = new SpannableStringBuilder();
-                    listSp.append("【更正清单：】\n");
-                    for (TextBlock b : currentBlocks) {
-                        if (b.isMutable && !b.current.equals(b.original)) {
-                            listSp.append(b.original).append(" → ").append(b.current)
-                                  .append(" (置信度: ").append(String.format("%.2f", b.conf)).append(")\n");
-                        }
+                    if (!lastLiveErrorsHtml.isEmpty()) {
+                        Spanned listSp = Html.fromHtml("<b><font color='#757575'>【更正清单】：</font></b><br>" + lastLiveErrorsHtml + "<font color='#757575'>---------------------------------</font><br><br>", Html.FROM_HTML_MODE_COMPACT);
+                        ssb.append(listSp);
                     }
-                    listSp.append("---------------------------------\n\n");
-                    listSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, listSp.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    ssb.append(listSp);
                 }
                 
                 SpannableString fullHeader = new SpannableString(lastChangeCount > 0 ? "【修正后的全文】\n" : "【原文】\n");
