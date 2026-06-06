@@ -404,7 +404,6 @@ jobs:
         import android.text.style.StrikethroughSpan;
         import android.view.MotionEvent;
         import android.view.View;
-        import android.view.ViewTreeObserver;
         import android.view.WindowManager;
         import android.view.inputmethod.InputMethodManager;
         import android.widget.Button;
@@ -461,7 +460,8 @@ jobs:
             private SharedPreferences sp;
             private boolean currentIsFast = false;
             private boolean hasStartedChecking = false;
-            private boolean isAutoScrolling = true;
+            private boolean autoScrollEnabled = true;
+            private boolean isTouchingScrollView = false;
 
             class TextBlock {
                 String original;
@@ -508,26 +508,31 @@ jobs:
                 rgMode = findViewById(R.id.rgMode);
                 Button btnHelp = findViewById(R.id.btnHelp);
 
-                currentIsFast = rbFast.isChecked();
-                loadSettings(currentIsFast);
-                
                 scrollView.setOnTouchListener((v, event) -> {
-                    if (event.getAction() == MotionEvent.ACTION_DOWN || event.getAction() == MotionEvent.ACTION_MOVE) {
-                        isAutoScrolling = false;
+                    if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                        isTouchingScrollView = true;
+                        autoScrollEnabled = false;
+                    } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                        isTouchingScrollView = false;
+                        if (!scrollView.canScrollVertically(1)) {
+                            autoScrollEnabled = true;
+                        }
                     }
                     return false;
                 });
 
-                scrollView.getViewTreeObserver().addOnScrollChangedListener(() -> {
-                    View view = scrollView.getChildAt(scrollView.getChildCount() - 1);
-                    if (view != null) {
-                        int diff = (view.getBottom() - (scrollView.getHeight() + scrollView.getScrollY()));
-                        if (diff <= 10) {
-                            isAutoScrolling = true;
-                        }
+                scrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+                    if (scrollY < oldScrollY) {
+                        autoScrollEnabled = false;
+                    }
+                    if (!isTouchingScrollView && !v.canScrollVertically(1)) {
+                        autoScrollEnabled = true;
                     }
                 });
 
+                currentIsFast = rbFast.isChecked();
+                loadSettings(currentIsFast);
+                
                 inputText.addTextChangedListener(new TextWatcher() {
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -616,7 +621,7 @@ jobs:
                     
                     hasStartedChecking = true; 
                     saveSettings(currentIsFast); 
-                    isAutoScrolling = true;
+                    autoScrollEnabled = true;
                     
                     boolean isFastMode = rbFast.isChecked();
                     if (isFastMode && fastModule == null) {
@@ -945,7 +950,7 @@ jobs:
                                 runOnUiThread(() -> {
                                     progressBar.setProgress(currentProgress);
                                     outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
-                                    if (isAutoScrolling) {
+                                    if (autoScrollEnabled) {
                                         scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
                                     }
                                 });
