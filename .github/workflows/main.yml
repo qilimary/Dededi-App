@@ -160,8 +160,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 10
-                versionName "2.8"
+                versionCode 11
+                versionName "2.9"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -484,6 +484,8 @@ jobs:
         import android.widget.Toast;
         import org.pytorch.IValue;
         import org.pytorch.Tensor;
+        import java.util.ArrayList;
+        import java.util.List;
 
         public class FloatingService extends Service {
             private WindowManager windowManager;
@@ -546,7 +548,6 @@ jobs:
                     }
                 });
 
-                // 处理点击外部收起
                 floatView.setOnTouchListener((v, event) -> {
                     if (event.getAction() == MotionEvent.ACTION_OUTSIDE) {
                         if (panelInput.getVisibility() == View.VISIBLE) {
@@ -588,8 +589,9 @@ jobs:
                 btnFloatSwitch.setOnClickListener(v -> {
                     SharedPreferences sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
                     boolean currentFast = sp.getBoolean("is_fast_mode", false);
-                    sp.edit().putBoolean("is_fast_mode", !currentFast).apply();
-                    Toast.makeText(this, "已切换至" + (!currentFast ? "极速" : "专业") + "模型", Toast.LENGTH_SHORT).show();
+                    boolean newFast = !currentFast;
+                    sp.edit().putBoolean("is_fast_mode", newFast).apply();
+                    showStatus("已切换至" + (newFast ? "极速" : "专业") + "模型", true);
                 });
 
                 Runnable jumpToApp = () -> {
@@ -694,10 +696,16 @@ jobs:
                         String[] sentences = text.split("(?<=[。！？!?\n])");
                         StringBuilder fullCleanText = new StringBuilder();
                         int[] errorCount = {0};
+                        
+                        long startTime = System.currentTimeMillis();
+                        List<List<MainActivity.TextBlock>> syncAllBlocks = new ArrayList<>();
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) continue;
+                            
+                            List<MainActivity.TextBlock> currentSentenceBlocks = new ArrayList<>();
+                            
                             boolean[] isIgnored = new boolean[sentence.length()];
                             for (String w : MainActivity.IGNORE_WORDS) {
                                 int idx = sentence.indexOf(w);
@@ -706,12 +714,15 @@ jobs:
                                     idx = sentence.indexOf(w, idx + 1);
                                 }
                             }
+                            
                             boolean hasTarget = false;
                             for (int i = 0; i < sentence.length(); i++) {
                                 char c = sentence.charAt(i);
                                 if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { hasTarget = true; break; }
                             }
+                            
                             if (!hasTarget) {
+                                currentSentenceBlocks.add(new MainActivity.TextBlock(sentence, sentence, false, 0f));
                                 fullCleanText.append(sentence);
                             } else {
                                 float[] scores;
@@ -745,12 +756,24 @@ jobs:
                                     Tensor outTensor = outputVal.isTuple() ? outputVal.toTuple()[0].toTensor() : outputVal.toTensor();
                                     scores = outTensor.getDataAsFloatArray();
                                 }
-                                StringBuilder correctedSentence = new StringBuilder();
+                                
+                                StringBuilder normalText = new StringBuilder();
+                                Runnable flushNormal = () -> {
+                                    if(normalText.length() > 0) { 
+                                        currentSentenceBlocks.add(new MainActivity.TextBlock(normalText.toString(), normalText.toString(), false, 0f)); 
+                                        normalText.setLength(0); 
+                                    }
+                                };
+                                
                                 for (int i = 0; i < sentence.length(); i++) {
                                     char ch = sentence.charAt(i);
                                     if (isIgnored[i] || (ch != '的' && ch != '地' && ch != '得')) {
-                                        correctedSentence.append(ch); continue;
+                                        normalText.append(ch);
+                                        if (ch == '，' || ch == ',' || ch == '；' || ch == ';' || ch == '、' || ch == '\n') flushNormal.run();
+                                        continue;
                                     }
+                                    flushNormal.run();
+                                    
                                     float s0, s1, s2;
                                     if (isFastMode) {
                                         int base = i * 3;
@@ -768,30 +791,45 @@ jobs:
                                     float threshold = maxIdx == 1 ? tDi : (maxIdx == 2 ? tDe3 : tDe);
                                     String pred = labels[maxIdx];
                                     boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
+                                    
+                                    currentSentenceBlocks.add(new MainActivity.TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb));
+                                    
                                     if (changed) {
-                                        correctedSentence.append(pred);
                                         errorCount[0]++;
                                         final String errLog = "修复：" + ch + "->" + pred + " (置信度:" + String.format("%.2f", maxProb) + ") | 共 " + errorCount[0] + " 处";
                                         new Handler(Looper.getMainLooper()).post(() -> {
                                             tvStatus.setText(errLog);
                                             tvStatus.setVisibility(View.VISIBLE);
+                                            tvStatus.removeCallbacks(hideStatusRunnable);
                                         });
-                                    } else {
-                                        correctedSentence.append(ch);
                                     }
                                 }
-                                fullCleanText.append(correctedSentence.toString());
+                                flushNormal.run();
+                                
+                                for (MainActivity.TextBlock b : currentSentenceBlocks) {
+                                    fullCleanText.append(b.current);
+                                }
                             }
+                            syncAllBlocks.add(currentSentenceBlocks);
                         }
+                        
+                        // Sync result variables to MainActivity
+                        MainActivity.allSentencesBlocks = syncAllBlocks;
+                        MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
+                        MainActivity.hasNewFloatResult = true;
+                        
                         new Handler(Looper.getMainLooper()).post(() -> {
                             isChecking = false; 
                             btnFloatSwitch.setEnabled(true);
-                            showStatus("已完成，共修复 " + errorCount[0] + " 处", true);
+                            if (errorCount[0] == 0) {
+                                showStatus("未检测到错误", true);
+                            } else {
+                                showStatus("已完成，共修复 " + errorCount[0] + " 处", true);
+                            }
                             editFloatInput.setText(fullCleanText.toString());
                             circleSpin.setVisibility(View.INVISIBLE);
                             ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                             clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
-                            Toast.makeText(FloatingService.this, "已自动复制，也可直接点击悬浮球跳转查看！", Toast.LENGTH_LONG).show();
                             
                             getSharedPreferences("DedediConfig", Context.MODE_PRIVATE).edit().putString("sync_text", fullCleanText.toString()).apply();
                         });
@@ -900,7 +938,7 @@ jobs:
             private boolean isTouchingScrollView = false;
             private int saveFormat = 0; 
 
-            class TextBlock {
+            public static class TextBlock {
                 String original, current;
                 boolean isMutable; float conf;
                 public TextBlock(String o, String c, boolean m, float f) {
@@ -908,8 +946,9 @@ jobs:
                 }
             }
             
-            private List<List<TextBlock>> allSentencesBlocks = new ArrayList<>();
-            private long lastTimeMs = 0;
+            public static List<List<TextBlock>> allSentencesBlocks = new ArrayList<>();
+            public static long lastTimeMs = 0;
+            public static boolean hasNewFloatResult = false;
 
             @Override
             protected void onCreate(Bundle savedInstanceState) {
@@ -971,6 +1010,7 @@ jobs:
                 handleIntent(getIntent());
 
                 rgMode.setOnCheckedChangeListener((group, checkedId) -> {
+                    if (checkedId == -1) return;
                     saveSettings(currentIsFast); 
                     currentIsFast = (checkedId == R.id.rbFast);
                     sp.edit().putBoolean("is_fast_mode", currentIsFast).apply();
@@ -1083,12 +1123,21 @@ jobs:
                 if (!sync.isEmpty() && !sync.equals(inputText.getText().toString())) {
                     inputText.setText(sync);
                 }
+                
                 boolean spFast = sp.getBoolean("is_fast_mode", false);
-                if (spFast != currentIsFast) {
+                if (spFast != currentIsFast || rgMode.getCheckedRadioButtonId() == -1) {
                     currentIsFast = spFast;
-                    rbFast.setChecked(currentIsFast);
-                    rbPro.setChecked(!currentIsFast);
+                    rgMode.check(currentIsFast ? R.id.rbFast : R.id.rbPro);
                     loadSettings(currentIsFast);
+                }
+                
+                if (hasNewFloatResult) {
+                    hasNewFloatResult = false;
+                    renderFinalBlocks();
+                    btnCopy.setEnabled(true);
+                    btnSaveTxt.setEnabled(true);
+                    btnCheck.setEnabled(true);
+                    scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP));
                 }
             }
 
