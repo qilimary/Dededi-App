@@ -162,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 7
-                versionName "2.5"
+                versionCode 8
+                versionName "2.6"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -197,7 +197,6 @@ jobs:
         -dontwarn org.pytorch.**
         EOF
 
-        # ----- 亮色模式配置 -----
         cat << 'EOF' > app/src/main/res/values/colors.xml
         <?xml version="1.0" encoding="utf-8"?>
         <resources>
@@ -224,7 +223,6 @@ jobs:
         </resources>
         EOF
 
-        # ----- 深色模式配置 -----
         cat << 'EOF' > app/src/main/res/values-night/colors.xml
         <?xml version="1.0" encoding="utf-8"?>
         <resources>
@@ -258,6 +256,13 @@ jobs:
             </group>
         </vector>
         EOF
+
+        cat << 'EOF' > app/src/main/res/drawable/circle_bg.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+            <solid android:color="#2196F3"/>
+        </shape>
+        EOF
         
         cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
         <?xml version="1.0" encoding="utf-8"?>
@@ -270,6 +275,8 @@ jobs:
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
             <application android:allowBackup="true" 
                          android:extractNativeLibs="false"
                          android:icon="@mipmap/ic_launcher"
@@ -287,6 +294,7 @@ jobs:
                         <data android:mimeType="text/plain" />
                     </intent-filter>
                 </activity>
+                <service android:name=".FloatingService" android:exported="false" />
             </application>
         </manifest>
         EOF
@@ -301,11 +309,16 @@ jobs:
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
                     android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="@color/text_primary"
                     android:layout_alignParentStart="true" android:layout_centerVertical="true"/>
-                <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="wrap_content" 
-                    android:minWidth="56dp" android:minHeight="32dp"
-                    android:text="说明" android:textSize="12sp" android:backgroundTint="#9E9E9E" 
-                    android:layout_alignParentEnd="true" android:layout_centerVertical="true"
-                    android:paddingStart="12dp" android:paddingEnd="12dp"/>
+                <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_alignParentEnd="true" android:layout_centerVertical="true">
+                    <Button android:id="@+id/btnFloat" android:layout_width="wrap_content" android:layout_height="wrap_content" 
+                        android:minWidth="56dp" android:minHeight="32dp" android:layout_marginEnd="6dp"
+                        android:text="开启悬浮窗" android:textSize="12sp" android:backgroundTint="#FF9800" 
+                        android:paddingStart="12dp" android:paddingEnd="12dp"/>
+                    <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="wrap_content" 
+                        android:minWidth="56dp" android:minHeight="32dp"
+                        android:text="说明" android:textSize="12sp" android:backgroundTint="#9E9E9E" 
+                        android:paddingStart="12dp" android:paddingEnd="12dp"/>
+                </LinearLayout>
             </RelativeLayout>
 
             <RadioGroup android:id="@+id/rgMode" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -371,7 +384,7 @@ jobs:
                     android:layout_weight="1" android:text="复制全文" android:textSize="14sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp" android:enabled="false"/>
                 <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="保存TXT" android:textSize="14sp"
+                    android:layout_weight="1" android:text="保存文档" android:textSize="14sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:enabled="false"/>
             </LinearLayout>
 
@@ -380,6 +393,335 @@ jobs:
                     android:textSize="16sp" android:background="@color/card_bg" android:padding="12dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
             </ScrollView>
         </LinearLayout>
+        EOF
+
+        cat << 'EOF' > app/src/main/res/layout/layout_floating.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:id="@+id/floatRoot"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="8dp">
+
+            <LinearLayout android:id="@+id/panelInput"
+                android:layout_width="250dp" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@color/card_bg"
+                android:padding="10dp" android:visibility="gone"
+                android:elevation="4dp">
+                <EditText android:id="@+id/editFloatInput" android:layout_width="match_parent" android:layout_height="100dp"
+                    android:hint="直接粘贴需要检查的文本..." android:gravity="top|start" android:background="@color/bg_color" android:textColor="@color/text_primary" android:padding="8dp" android:textSize="14sp"/>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
+                    <Button android:id="@+id/btnFloatPaste" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="粘贴并纠错" android:textSize="12sp" android:backgroundTint="#2196F3"/>
+                    <Button android:id="@+id/btnFloatClosePanel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="收起" android:textSize="12sp" android:backgroundTint="#9E9E9E" android:layout_marginStart="4dp"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/panelProgress"
+                android:layout_width="250dp" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@color/card_bg"
+                android:padding="10dp" android:visibility="gone"
+                android:elevation="4dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="后台全速纠错进度：" android:textSize="12sp" android:textColor="@color/text_secondary"/>
+                <ProgressBar android:id="@+id/progFloat" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="8dp" android:progressTint="#81C784" android:max="100"/>
+                <TextView android:id="@+id/tvFloatLatestErr" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="暂无错误" android:textColor="#E53935" android:textSize="13sp" android:layout_marginTop="6dp"/>
+            </LinearLayout>
+
+            <FrameLayout android:id="@+id/btnCircle"
+                android:layout_width="48dp" android:layout_height="48dp"
+                android:layout_below="@id/panelInput"
+                android:background="@drawable/circle_bg"
+                android:elevation="6dp">
+                <ImageView android:layout_width="24dp" android:layout_height="24dp" android:layout_gravity="center" android:src="@drawable/ic_dededi_fg"/>
+                <ProgressBar android:id="@+id/circleSpin" android:layout_width="match_parent" android:layout_height="match_parent" android:visibility="invisible" android:indeterminateTint="#FFFFFF" />
+            </FrameLayout>
+
+            <TextView android:id="@+id/tvStatus"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_below="@id/btnCircle"
+                android:background="#A0000000"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
+                android:paddingStart="6dp" android:paddingEnd="6dp"
+                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:visibility="invisible"
+                android:layout_marginTop="4dp"/>
+        </RelativeLayout>
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/app/dededi/FloatingService.java
+        package com.app.dededi;
+        import android.app.Notification;
+        import android.app.NotificationChannel;
+        import android.app.NotificationManager;
+        import android.app.Service;
+        import android.content.ClipData;
+        import android.content.ClipboardManager;
+        import android.content.Context;
+        import android.content.Intent;
+        import android.content.SharedPreferences;
+        import android.graphics.PixelFormat;
+        import android.os.Build;
+        import android.os.Handler;
+        import android.os.IBinder;
+        import android.os.Looper;
+        import android.view.Gravity;
+        import android.view.LayoutInflater;
+        import android.view.MotionEvent;
+        import android.view.View;
+        import android.view.WindowManager;
+        import android.widget.Button;
+        import android.widget.EditText;
+        import android.widget.ProgressBar;
+        import android.widget.TextView;
+        import android.widget.Toast;
+        import org.pytorch.IValue;
+        import org.pytorch.Tensor;
+
+        public class FloatingService extends Service {
+            private WindowManager windowManager;
+            private View floatView;
+            private WindowManager.LayoutParams params;
+            private View panelInput;
+            private View panelProgress;
+            private EditText editFloatInput;
+            private ProgressBar progFloat;
+            private TextView tvFloatLatestErr;
+            private View circleSpin;
+            private TextView tvStatus;
+            private boolean isChecking = false;
+
+            @Override
+            public void onCreate() {
+                super.onCreate();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    NotificationChannel channel = new NotificationChannel("float_chan", "悬浮窗后台服务", NotificationManager.IMPORTANCE_LOW);
+                    getSystemService(NotificationManager.class).createNotificationChannel(channel);
+                    Notification notification = new Notification.Builder(this, "float_chan")
+                            .setContentTitle("“的地得”纠错AI")
+                            .setContentText("悬浮窗运行中 (支持后台满速推理)")
+                            .setSmallIcon(R.drawable.ic_dededi_fg)
+                            .build();
+                    startForeground(1, notification);
+                }
+
+                windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+                int layoutFlag = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
+                params = new WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, layoutFlag, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
+                params.gravity = Gravity.TOP | Gravity.START;
+                params.x = 0; params.y = 300;
+
+                LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
+                floatView = inflater.inflate(R.layout.layout_floating, null);
+
+                panelInput = floatView.findViewById(R.id.panelInput);
+                panelProgress = floatView.findViewById(R.id.panelProgress);
+                editFloatInput = floatView.findViewById(R.id.editFloatInput);
+                progFloat = floatView.findViewById(R.id.progFloat);
+                tvFloatLatestErr = floatView.findViewById(R.id.tvFloatLatestErr);
+                circleSpin = floatView.findViewById(R.id.circleSpin);
+                tvStatus = floatView.findViewById(R.id.tvStatus);
+                View btnCircle = floatView.findViewById(R.id.btnCircle);
+                Button btnFloatPaste = floatView.findViewById(R.id.btnFloatPaste);
+                Button btnFloatClosePanel = floatView.findViewById(R.id.btnFloatClosePanel);
+
+                btnFloatPaste.setOnClickListener(v -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null && clipboard.hasPrimaryClip() && clipboard.getPrimaryClip().getItemCount() > 0) {
+                        CharSequence pasteText = clipboard.getPrimaryClip().getItemAt(0).getText();
+                        if (pasteText != null) editFloatInput.setText(pasteText);
+                    }
+                    String text = editFloatInput.getText().toString();
+                    if (!text.isEmpty()) {
+                        setFocusable(false);
+                        panelInput.setVisibility(View.GONE);
+                        startInference(text);
+                    }
+                });
+
+                btnFloatClosePanel.setOnClickListener(v -> {
+                    panelInput.setVisibility(View.GONE);
+                    setFocusable(false);
+                });
+
+                btnCircle.setOnTouchListener(new View.OnTouchListener() {
+                    private int initialX, initialY;
+                    private float initialTouchX, initialTouchY;
+                    private boolean isMoved = false;
+                    @Override public boolean onTouch(View v, MotionEvent event) {
+                        switch (event.getAction()) {
+                            case MotionEvent.ACTION_DOWN:
+                                initialX = params.x; initialY = params.y;
+                                initialTouchX = event.getRawX(); initialTouchY = event.getRawY();
+                                isMoved = false; return true;
+                            case MotionEvent.ACTION_MOVE:
+                                int dx = (int) (event.getRawX() - initialTouchX);
+                                int dy = (int) (event.getRawY() - initialTouchY);
+                                if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isMoved = true;
+                                params.x = initialX + dx; params.y = initialY + dy;
+                                windowManager.updateViewLayout(floatView, params);
+                                return true;
+                            case MotionEvent.ACTION_UP:
+                                if (!isMoved) {
+                                    if (isChecking) {
+                                        panelProgress.setVisibility(panelProgress.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+                                    } else {
+                                        boolean isVisible = panelInput.getVisibility() == View.VISIBLE;
+                                        panelInput.setVisibility(isVisible ? View.GONE : View.VISIBLE);
+                                        setFocusable(!isVisible);
+                                    }
+                                }
+                                return true;
+                        }
+                        return false;
+                    }
+                });
+                windowManager.addView(floatView, params);
+            }
+
+            private void setFocusable(boolean focusable) {
+                params.flags = focusable ? WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL : WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                windowManager.updateViewLayout(floatView, params);
+            }
+
+            private void showStatus(String msg, boolean autoHide) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    tvStatus.setText(msg);
+                    tvStatus.setVisibility(View.VISIBLE);
+                    if (autoHide) tvStatus.postDelayed(() -> tvStatus.setVisibility(View.INVISIBLE), 2500);
+                });
+            }
+
+            private void startInference(String text) {
+                SharedPreferences sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
+                boolean isFastMode = sp.getBoolean("is_fast_mode", false);
+                if (isFastMode && MainActivity.fastModule == null) {
+                    Toast.makeText(this, "极速引擎未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return;
+                }
+                if (!isFastMode && MainActivity.proModule == null) {
+                    Toast.makeText(this, "专业大模型未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return;
+                }
+
+                String prefix = isFastMode ? "fast_" : "pro_";
+                float temp = Float.parseFloat(sp.getString(prefix + "temp", isFastMode ? "1.2" : "1.0"));
+                float tDe = Float.parseFloat(sp.getString(prefix + "th1", isFastMode ? "0.80" : "0.70"));
+                float tDi = Float.parseFloat(sp.getString(prefix + "th2", isFastMode ? "0.80" : "0.75"));
+                float tDe3 = Float.parseFloat(sp.getString(prefix + "th3", isFastMode ? "0.80" : "0.75"));
+
+                isChecking = true; showStatus("正在后台满速纠错中……", true);
+                circleSpin.setVisibility(View.VISIBLE); tvFloatLatestErr.setText("暂无错误");
+
+                new Thread(() -> {
+                    try {
+                        String[] labels = {"的", "地", "得"};
+                        String[] sentences = text.split("(?<=[。！？!?\n])");
+                        new Handler(Looper.getMainLooper()).post(() -> progFloat.setMax(sentences.length));
+                        StringBuilder fullCleanText = new StringBuilder();
+
+                        for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
+                            String sentence = sentences[sIdx];
+                            if (sentence.isEmpty()) continue;
+                            boolean[] isIgnored = new boolean[sentence.length()];
+                            for (String w : MainActivity.IGNORE_WORDS) {
+                                int idx = sentence.indexOf(w);
+                                while (idx >= 0) {
+                                    for (int k = 0; k < w.length(); k++) isIgnored[idx + k] = true;
+                                    idx = sentence.indexOf(w, idx + 1);
+                                }
+                            }
+                            boolean hasTarget = false;
+                            for (int i = 0; i < sentence.length(); i++) {
+                                char c = sentence.charAt(i);
+                                if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { hasTarget = true; break; }
+                            }
+                            if (!hasTarget) {
+                                fullCleanText.append(sentence);
+                            } else {
+                                float[] scores;
+                                int vocabSize = isFastMode ? 3 : MainActivity.proVocab.size();
+                                if (isFastMode) {
+                                    long fUnk = MainActivity.fastVocab.getOrDefault("[UNK]", 1L);
+                                    long fMask = MainActivity.fastVocab.getOrDefault("[MASK]", 2L);
+                                    long[] ids = new long[sentence.length()];
+                                    for (int i = 0; i < sentence.length(); i++) {
+                                        String ch = String.valueOf(sentence.charAt(i));
+                                        if (!isIgnored[i] && (ch.equals("的") || ch.equals("地") || ch.equals("得"))) ids[i] = fMask;
+                                        else ids[i] = MainActivity.fastVocab.getOrDefault(ch, fUnk);
+                                    }
+                                    Tensor inputTensor = Tensor.fromBlob(ids, new long[]{1, sentence.length()});
+                                    scores = MainActivity.fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
+                                } else {
+                                    int exactLen = sentence.length() + 2;
+                                    long[] ids = new long[exactLen]; long[] masks = new long[exactLen]; long[] types = new long[exactLen];
+                                    ids[0] = MainActivity.clsId; masks[0] = 1; types[0] = 0;
+                                    for (int i = 0; i < sentence.length(); i++) {
+                                        String ch = String.valueOf(sentence.charAt(i));
+                                        if (!isIgnored[i] && (ch.equals("的") || ch.equals("地") || ch.equals("得"))) ids[i + 1] = MainActivity.maskId;
+                                        else ids[i + 1] = MainActivity.proVocab.getOrDefault(ch, MainActivity.unkId);
+                                        masks[i + 1] = 1; types[i + 1] = 0;
+                                    }
+                                    ids[exactLen - 1] = MainActivity.sepId; masks[exactLen - 1] = 1; types[exactLen - 1] = 0;
+                                    Tensor tIds = Tensor.fromBlob(ids, new long[]{1, exactLen});
+                                    Tensor tMasks = Tensor.fromBlob(masks, new long[]{1, exactLen});
+                                    Tensor tTypes = Tensor.fromBlob(types, new long[]{1, exactLen});
+                                    IValue outputVal = MainActivity.proModule.forward(IValue.from(tIds), IValue.from(tMasks), IValue.from(tTypes));
+                                    Tensor outTensor = outputVal.isTuple() ? outputVal.toTuple()[0].toTensor() : outputVal.toTensor();
+                                    scores = outTensor.getDataAsFloatArray();
+                                }
+                                StringBuilder correctedSentence = new StringBuilder();
+                                for (int i = 0; i < sentence.length(); i++) {
+                                    char ch = sentence.charAt(i);
+                                    if (isIgnored[i] || (ch != '的' && ch != '地' && ch != '得')) {
+                                        correctedSentence.append(ch); continue;
+                                    }
+                                    float s0, s1, s2;
+                                    if (isFastMode) {
+                                        int base = i * 3;
+                                        s0 = (float) Math.exp(scores[base] / temp); s1 = (float) Math.exp(scores[base + 1] / temp); s2 = (float) Math.exp(scores[base + 2] / temp);
+                                    } else {
+                                        int seqPos = i + 1; 
+                                        s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.deId] / temp);
+                                        s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.diId] / temp);
+                                        s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.de2Id] / temp);
+                                    }
+                                    float sum = s0 + s1 + s2; float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
+                                    int maxIdx = 0; float maxProb = p0;
+                                    if (p1 > maxProb) { maxProb = p1; maxIdx = 1; }
+                                    if (p2 > maxProb) { maxProb = p2; maxIdx = 2; }
+                                    float threshold = maxIdx == 1 ? tDi : (maxIdx == 2 ? tDe3 : tDe);
+                                    String pred = labels[maxIdx];
+                                    boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
+                                    if (changed) {
+                                        correctedSentence.append(pred);
+                                        final String errLog = "发现错误：" + ch + " -> " + pred;
+                                        new Handler(Looper.getMainLooper()).post(() -> tvFloatLatestErr.setText(errLog));
+                                    } else {
+                                        correctedSentence.append(ch);
+                                    }
+                                }
+                                fullCleanText.append(correctedSentence.toString());
+                            }
+                            final int currentProgress = sIdx + 1;
+                            new Handler(Looper.getMainLooper()).post(() -> progFloat.setProgress(currentProgress));
+                        }
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            isChecking = false; showStatus("已完成。", true);
+                            circleSpin.setVisibility(View.INVISIBLE); panelProgress.setVisibility(View.GONE);
+                            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
+                            Toast.makeText(FloatingService.this, "修正后的全文已自动复制到剪贴板！", Toast.LENGTH_LONG).show();
+                        });
+                    } catch (Exception e) {
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            isChecking = false; circleSpin.setVisibility(View.INVISIBLE);
+                            Toast.makeText(FloatingService.this, "纠错中断: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        });
+                    }
+                }).start();
+            }
+
+            @Override public IBinder onBind(Intent intent) { return null; }
+            @Override public void onDestroy() { super.onDestroy(); if (floatView != null) windowManager.removeView(floatView); }
+        }
         EOF
 
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
@@ -442,19 +784,26 @@ jobs:
             public native byte[] getSecretKey();
             public native byte[] getSecretIV();
 
-            private Module fastModule = null;
-            private Map<String, Long> fastVocab = new HashMap<>();
+            public static Module fastModule = null;
+            public static Map<String, Long> fastVocab = new HashMap<>();
+            public static Module proModule = null;
+            public static Map<String, Long> proVocab = new HashMap<>();
+            public static long clsId=101, sepId=102, maskId=103, unkId=100, deId=0, diId=0, de2Id=0;
 
-            private Module proModule = null;
-            private Map<String, Long> proVocab = new HashMap<>();
-            private long clsId=101, sepId=102, maskId=103, unkId=100, deId=0, diId=0, de2Id=0;
+            public static final String[] IGNORE_WORDS = {
+                "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
+                "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面",
+                "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "获得", "取得", "赢得", "免得", "懒得",
+                "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地",
+                "如鱼得水", "留得", "留的", "拍立得", "坏的"
+            };
 
             private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3;
             private TextView outputText, tvWordCount;
             private ScrollView scrollView;
             private ProgressBar progressBar;
             private Button btnCheck, btnCopy, btnSaveTxt, btnPaste;
-            private RadioButton rbFast;
+            private RadioButton rbFast, rbPro;
             private RadioGroup rgMode;
 
             private SharedPreferences sp;
@@ -462,12 +811,11 @@ jobs:
             private boolean hasStartedChecking = false;
             private boolean autoScrollEnabled = true;
             private boolean isTouchingScrollView = false;
+            private int saveFormat = 0; 
 
             class TextBlock {
-                String original;
-                String current;
-                boolean isMutable;
-                float conf;
+                String original, current;
+                boolean isMutable; float conf;
                 public TextBlock(String o, String c, boolean m, float f) {
                     this.original = o; this.current = c; this.isMutable = m; this.conf = f;
                 }
@@ -475,14 +823,6 @@ jobs:
             
             private List<List<TextBlock>> allSentencesBlocks = new ArrayList<>();
             private long lastTimeMs = 0;
-
-            private final String[] IGNORE_WORDS = {
-                "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
-                "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面",
-                "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "获得", "取得", "赢得", "免得", "懒得",
-                "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地",
-                "如鱼得水", "留得", "留的", "拍立得", "坏的"
-            };
 
             @Override
             protected void onCreate(Bundle savedInstanceState) {
@@ -505,32 +845,29 @@ jobs:
                 btnCopy = findViewById(R.id.btnCopy);
                 btnSaveTxt = findViewById(R.id.btnSaveTxt);
                 rbFast = findViewById(R.id.rbFast);
+                rbPro = findViewById(R.id.rbPro);
                 rgMode = findViewById(R.id.rgMode);
                 Button btnHelp = findViewById(R.id.btnHelp);
+                Button btnFloat = findViewById(R.id.btnFloat);
 
                 scrollView.setOnTouchListener((v, event) -> {
                     if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                        isTouchingScrollView = true;
-                        autoScrollEnabled = false;
+                        isTouchingScrollView = true; autoScrollEnabled = false;
                     } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
                         isTouchingScrollView = false;
-                        if (!scrollView.canScrollVertically(1)) {
-                            autoScrollEnabled = true;
-                        }
+                        if (!scrollView.canScrollVertically(1)) autoScrollEnabled = true;
                     }
                     return false;
                 });
 
                 scrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
-                    if (scrollY < oldScrollY) {
-                        autoScrollEnabled = false;
-                    }
-                    if (!isTouchingScrollView && !v.canScrollVertically(1)) {
-                        autoScrollEnabled = true;
-                    }
+                    if (scrollY < oldScrollY) autoScrollEnabled = false;
+                    if (!isTouchingScrollView && !v.canScrollVertically(1)) autoScrollEnabled = true;
                 });
 
-                currentIsFast = rbFast.isChecked();
+                currentIsFast = sp.getBoolean("is_fast_mode", false);
+                rbFast.setChecked(currentIsFast);
+                rbPro.setChecked(!currentIsFast);
                 loadSettings(currentIsFast);
                 
                 inputText.addTextChangedListener(new TextWatcher() {
@@ -542,69 +879,51 @@ jobs:
                 Intent intent = getIntent();
                 if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
                     String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
-                    if (sharedText != null) {
-                        inputText.setText(sharedText);
-                    }
+                    if (sharedText != null) inputText.setText(sharedText);
                 }
 
                 rgMode.setOnCheckedChangeListener((group, checkedId) -> {
                     saveSettings(currentIsFast); 
                     currentIsFast = (checkedId == R.id.rbFast);
+                    sp.edit().putBoolean("is_fast_mode", currentIsFast).apply();
                     loadSettings(currentIsFast); 
                 });
 
-                outputText.setText("正在加载专业版AI...（轻量版可直接使用）");
+                outputText.setText("正在加载大模型到内存...（首次启动需解压约5秒）");
                 new Thread(() -> {
                     try {
                         try {
-                            fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.5");
-                            loadVocab(fastVocab, "student_vocab.json");
+                            if (fastModule == null) fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.5");
+                            if (fastVocab.isEmpty()) loadVocab(fastVocab, "student_vocab.json");
                         } catch(Exception ignored) {}
                         
                         try {
-                            proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_cache_v2.5");
-                            loadVocab(proVocab, "roberta_vocab.json");
-                            clsId = proVocab.getOrDefault("[CLS]", 101L);
-                            sepId = proVocab.getOrDefault("[SEP]", 102L);
-                            maskId = proVocab.getOrDefault("[MASK]", 103L);
-                            unkId = proVocab.getOrDefault("[UNK]", 100L);
-                            deId = proVocab.getOrDefault("的", 0L);
-                            diId = proVocab.getOrDefault("地", 0L);
-                            de2Id = proVocab.getOrDefault("得", 0L);
+                            if (proModule == null) proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_cache_v2.5");
+                            if (proVocab.isEmpty()) loadVocab(proVocab, "roberta_vocab.json");
+                            clsId = proVocab.getOrDefault("[CLS]", 101L); sepId = proVocab.getOrDefault("[SEP]", 102L);
+                            maskId = proVocab.getOrDefault("[MASK]", 103L); unkId = proVocab.getOrDefault("[UNK]", 100L);
+                            deId = proVocab.getOrDefault("的", 0L); diId = proVocab.getOrDefault("地", 0L); de2Id = proVocab.getOrDefault("得", 0L);
                         } catch(Exception ignored) {}
 
                         runOnUiThread(() -> {
-                            if (!hasStartedChecking) {
-                                outputText.setText("AI已加载完成");
-                            }
+                            if (!hasStartedChecking) outputText.setText("AI已加载就绪。下次可直接秒开！");
                         });
                     } catch (Exception ignored) {}
                 }).start();
 
                 btnHelp.setOnClickListener(v -> {
-                    String helpText = "【模型介绍】\n" +
-                            "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n" +
-                            "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n\n" +
-                            "注：不同手机的推理速度会有不同。性能越强的手机，模型推理速度越快。\n" +
-                            "模型可能会犯一些低级错误，这是神经网络的通病，在所难免。\n\n" +
-                            "【温度参数】\n" +
-                            "控制AI判断的果断程度。\n" +
-                            "• 值越低（如0.5）：概率分布越尖锐。模型更自信（置信度更高），更激进，修改量可能上升，因为更不容易被拦截。\n" +
-                            "• 值越高（如2.0）：概率分布越平缓。模型更保守（置信度更低），修改量可能下降，因为更容易被拦截。\n" +
-                            "• 默认0.9～1.2，适合大多数场景\n\n" +
-                            "【置信度拦截阈值】\n" +
-                            "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n\n" +
-                            "【交互与拓展功能】\n" +
-                            "• 交互式修改：检查完毕后，直接点击清单或全文中带下划线的字，即可修改为其他字。在“更正清单”中的修改会同步至下方全文，如果还原，则会从错误列表中自动消失。\n" +
-                            "• 一键粘贴：快速将剪贴板内容粘贴至框中。\n" +
-                            "• 系统分享：在微信、浏览器中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n\n" +
-                            "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
-                    
-                    new AlertDialog.Builder(this)
-                        .setTitle("使用说明")
-                        .setMessage(helpText)
-                        .setPositiveButton("知道了", null)
-                        .show();
+                    String helpText = "【模型介绍】\n极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n\n" +
+                            "【悬浮窗】\n点击上方开启后，App可在后台继续满速工作，不影响您浏览其他界面！\n\n【其他交互】\n支持系统分享传文、支持直接保存TXT/PDF/DOCX。检查完毕后，点击错字可手动修改。";
+                    new AlertDialog.Builder(this).setTitle("使用说明").setMessage(helpText).setPositiveButton("知道了", null).show();
+                });
+
+                btnFloat.setOnClickListener(v -> {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) {
+                        Intent i = new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + getPackageName()));
+                        startActivityForResult(i, 201);
+                    } else {
+                        startFloatingService();
+                    }
                 });
 
                 btnPaste.setOnClickListener(v -> {
@@ -618,20 +937,10 @@ jobs:
                 btnCheck.setOnClickListener(v -> {
                     InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
-                    
-                    hasStartedChecking = true; 
-                    saveSettings(currentIsFast); 
-                    autoScrollEnabled = true;
-                    
+                    hasStartedChecking = true; saveSettings(currentIsFast); autoScrollEnabled = true;
                     boolean isFastMode = rbFast.isChecked();
-                    if (isFastMode && fastModule == null) {
-                        Toast.makeText(this, "极速版引擎仍在加载，请稍候...", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    if (!isFastMode && proModule == null) {
-                        Toast.makeText(this, "专业版大模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
+                    if (isFastMode && fastModule == null) { Toast.makeText(this, "极速版引擎仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                    if (!isFastMode && proModule == null) { Toast.makeText(this, "专业版大模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
                     doInference(isFastMode);
                 });
 
@@ -646,70 +955,98 @@ jobs:
 
                 btnSaveTxt.setOnClickListener(v -> {
                     if (getCleanText().isEmpty()) return;
-                    try {
-                        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-                        i.addCategory(Intent.CATEGORY_OPENABLE);
-                        i.setType("text/plain");
-                        i.putExtra(Intent.EXTRA_TITLE, "地得纠错Pro结果.txt");
-                        startActivityForResult(i, 101);
-                    } catch (Exception e) {
-                        Toast.makeText(this, "调起失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                    }
+                    String[] options = {"TXT 纯文本", "PDF 文档", "DOCX 文档"};
+                    new AlertDialog.Builder(this).setTitle("选择保存格式").setItems(options, (dialog, which) -> {
+                        saveFormat = which;
+                        try {
+                            Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                            i.addCategory(Intent.CATEGORY_OPENABLE);
+                            if (which == 0) { i.setType("text/plain"); i.putExtra(Intent.EXTRA_TITLE, "纠错结果.txt"); } 
+                            else if (which == 1) { i.setType("application/pdf"); i.putExtra(Intent.EXTRA_TITLE, "纠错结果.pdf"); } 
+                            else if (which == 2) { i.setType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"); i.putExtra(Intent.EXTRA_TITLE, "纠错结果.docx"); }
+                            startActivityForResult(i, 101);
+                        } catch (Exception e) { Toast.makeText(this, "调起失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
+                    }).show();
                 });
             }
 
+            private void startFloatingService() {
+                Intent intent = new Intent(this, FloatingService.class);
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) { startForegroundService(intent); } 
+                else { startService(intent); }
+                Toast.makeText(this, "悬浮窗已开启（支持后台持续极速推理）", Toast.LENGTH_SHORT).show();
+                moveTaskToBack(true);
+            }
+
             private boolean hasError(List<TextBlock> clause) {
-                for (TextBlock b : clause) {
-                    if (b.isMutable && !b.current.equals(b.original)) return true;
-                }
+                for (TextBlock b : clause) { if (b.isMutable && !b.current.equals(b.original)) return true; }
                 return false;
             }
 
             private String getCleanText() {
                 StringBuilder sb = new StringBuilder();
                 for (List<TextBlock> sentence : allSentencesBlocks) {
-                    for (TextBlock b : sentence) {
-                        sb.append(b.current);
-                    }
+                    for (TextBlock b : sentence) sb.append(b.current);
                 }
                 return sb.toString();
             }
 
             private void loadSettings(boolean isFast) {
                 String prefix = isFast ? "fast_" : "pro_";
-                String defTemp = isFast ? "1.2" : "1.0";
-                String defTh1 = isFast ? "0.80" : "0.70";
-                String defTh2 = isFast ? "0.80" : "0.75";
-                String defTh3 = isFast ? "0.80" : "0.75";
-                
-                editTemp.setText(sp.getString(prefix + "temp", defTemp));
-                editThreshDe1.setText(sp.getString(prefix + "th1", defTh1));
-                editThreshDe2.setText(sp.getString(prefix + "th2", defTh2));
-                editThreshDe3.setText(sp.getString(prefix + "th3", defTh3));
+                editTemp.setText(sp.getString(prefix + "temp", isFast ? "1.2" : "1.0"));
+                editThreshDe1.setText(sp.getString(prefix + "th1", isFast ? "0.80" : "0.70"));
+                editThreshDe2.setText(sp.getString(prefix + "th2", isFast ? "0.80" : "0.75"));
+                editThreshDe3.setText(sp.getString(prefix + "th3", isFast ? "0.80" : "0.75"));
             }
 
             private void saveSettings(boolean isFast) {
                 String prefix = isFast ? "fast_" : "pro_";
-                sp.edit()
-                  .putString(prefix + "temp", editTemp.getText().toString())
-                  .putString(prefix + "th1", editThreshDe1.getText().toString())
-                  .putString(prefix + "th2", editThreshDe2.getText().toString())
-                  .putString(prefix + "th3", editThreshDe3.getText().toString())
-                  .apply();
+                sp.edit().putString(prefix + "temp", editTemp.getText().toString()).putString(prefix + "th1", editThreshDe1.getText().toString())
+                  .putString(prefix + "th2", editThreshDe2.getText().toString()).putString(prefix + "th3", editThreshDe3.getText().toString()).apply();
             }
 
             @Override
             protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                 super.onActivityResult(requestCode, resultCode, data);
+                if (requestCode == 201) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && android.provider.Settings.canDrawOverlays(this)) {
+                        startFloatingService();
+                    } else { Toast.makeText(this, "悬浮窗权限未被授予，无法开启", Toast.LENGTH_SHORT).show(); }
+                }
                 if (requestCode == 101 && resultCode == RESULT_OK && data != null && data.getData() != null) {
                     try {
                         OutputStream os = getContentResolver().openOutputStream(data.getData());
                         if (os != null) {
-                            os.write(getCleanText().getBytes(StandardCharsets.UTF_8));
-                            os.close();
-                            Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
+                            if (saveFormat == 0) {
+                                os.write(getCleanText().getBytes(StandardCharsets.UTF_8));
+                            } else if (saveFormat == 1) {
+                                android.graphics.pdf.PdfDocument pdf = new android.graphics.pdf.PdfDocument();
+                                android.text.TextPaint paint = new android.text.TextPaint();
+                                paint.setTextSize(14); paint.setColor(Color.BLACK);
+                                android.text.StaticLayout sl = new android.text.StaticLayout(getCleanText(), paint, 555, android.text.Layout.Alignment.ALIGN_NORMAL, 1.5f, 0.0f, false);
+                                int textHeight = sl.getHeight() + 40; int pageHeight = Math.max(842, textHeight);
+                                android.graphics.pdf.PdfDocument.PageInfo pageInfo = new android.graphics.pdf.PdfDocument.PageInfo.Builder(595, pageHeight, 1).create();
+                                android.graphics.pdf.PdfDocument.Page page = pdf.startPage(pageInfo);
+                                android.graphics.Canvas canvas = page.getCanvas();
+                                canvas.translate(20, 20); sl.draw(canvas);
+                                pdf.finishPage(page); pdf.writeTo(os); pdf.close();
+                            } else if (saveFormat == 2) {
+                                java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(os);
+                                zos.putNextEntry(new java.util.zip.ZipEntry("[Content_Types].xml"));
+                                zos.write(("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>").getBytes(StandardCharsets.UTF_8));
+                                zos.closeEntry(); zos.putNextEntry(new java.util.zip.ZipEntry("_rels/.rels"));
+                                zos.write(("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>").getBytes(StandardCharsets.UTF_8));
+                                zos.closeEntry(); zos.putNextEntry(new java.util.zip.ZipEntry("word/document.xml"));
+                                String safeText = getCleanText().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+                                StringBuilder docxContent = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>");
+                                for(String p : safeText.split("\n")) { docxContent.append("<w:p><w:r><w:t>").append(p).append("</w:t></w:r></w:p>"); }
+                                docxContent.append("</w:body></w:document>");
+                                zos.write(docxContent.toString().getBytes(StandardCharsets.UTF_8));
+                                zos.closeEntry(); zos.close();
+                            }
+                            os.close(); Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
                         }
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) { Toast.makeText(this, "保存过程出现错误", Toast.LENGTH_SHORT).show(); }
                 }
             }
 
@@ -719,42 +1056,23 @@ jobs:
                 is.read(buffer); is.close();
                 JSONObject json = new JSONObject(new String(buffer, StandardCharsets.UTF_8));
                 Iterator<String> keys = json.keys();
-                while(keys.hasNext()) {
-                    String key = keys.next();
-                    map.put(key, (long) json.getInt(key));
-                }
+                while(keys.hasNext()) { String key = keys.next(); map.put(key, (long) json.getInt(key)); }
             }
 
             private Module loadDecryptedModule(Context context, String assetName, String cacheKey) throws Exception {
                 File cacheFile = new File(context.getFilesDir(), cacheKey + ".ptl");
                 if (cacheFile.exists() && cacheFile.length() > 0) {
-                    try {
-                        return LiteModuleLoader.load(cacheFile.getAbsolutePath());
-                    } catch (Exception e) {
-                        cacheFile.delete(); 
-                    }
+                    try { return LiteModuleLoader.load(cacheFile.getAbsolutePath()); } catch (Exception e) { cacheFile.delete(); }
                 }
-
-                byte[] keyBytes = getSecretKey(); 
-                byte[] ivBytes = getSecretIV();
+                byte[] keyBytes = getSecretKey(); byte[] ivBytes = getSecretIV();
                 Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
                 cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(ivBytes));
-
                 File tempFile = new File(context.getFilesDir(), cacheKey + "_tmp.ptl");
-                try (InputStream is = context.getAssets().open(assetName);
-                     CipherInputStream cis = new CipherInputStream(is, cipher);
-                     GZIPInputStream gis = new GZIPInputStream(cis);
-                     FileOutputStream os = new FileOutputStream(tempFile)) {
-                    byte[] buffer = new byte[8192];
-                    int read;
-                    while ((read = gis.read(buffer)) != -1) {
-                        os.write(buffer, 0, read);
-                    }
+                try (InputStream is = context.getAssets().open(assetName); CipherInputStream cis = new CipherInputStream(is, cipher); GZIPInputStream gis = new GZIPInputStream(cis); FileOutputStream os = new FileOutputStream(tempFile)) {
+                    byte[] buffer = new byte[8192]; int read; while ((read = gis.read(buffer)) != -1) os.write(buffer, 0, read);
                     os.flush();
                 }
-                
-                tempFile.renameTo(cacheFile);
-                return LiteModuleLoader.load(cacheFile.getAbsolutePath());
+                tempFile.renameTo(cacheFile); return LiteModuleLoader.load(cacheFile.getAbsolutePath());
             }
 
             private void doInference(boolean isFastMode) {
@@ -762,55 +1080,37 @@ jobs:
                 if (text.isEmpty()) return;
 
                 btnCheck.setEnabled(false); btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
-
                 final float temp, tDe, tDi, tDe3;
                 float t1 = 1.0f, t2 = 0.70f, t3 = 0.75f, t4 = 0.75f;
                 try {
-                    t1 = Float.parseFloat(editTemp.getText().toString());
-                    t2 = Float.parseFloat(editThreshDe1.getText().toString());
-                    t3 = Float.parseFloat(editThreshDe2.getText().toString());
-                    t4 = Float.parseFloat(editThreshDe3.getText().toString());
+                    t1 = Float.parseFloat(editTemp.getText().toString()); t2 = Float.parseFloat(editThreshDe1.getText().toString());
+                    t3 = Float.parseFloat(editThreshDe2.getText().toString()); t4 = Float.parseFloat(editThreshDe3.getText().toString());
                 } catch (Exception ignored) {}
                 temp = t1; tDe = t2; tDi = t3; tDe3 = t4;
 
                 new Thread(() -> {
                     try {
-                        runOnUiThread(() -> {
-                            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                            progressBar.setVisibility(View.VISIBLE);
-                            progressBar.setProgress(0);
-                        });
-
+                        runOnUiThread(() -> { getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.VISIBLE); progressBar.setProgress(0); });
                         long startTime = System.currentTimeMillis();
                         String[] labels = {"的", "地", "得"};
                         String[] sentences = text.split("(?<=[。！？!?\n])");
-                        
                         runOnUiThread(() -> progressBar.setMax(sentences.length));
-
-                        allSentencesBlocks.clear();
-                        StringBuilder liveErrorsHtml = new StringBuilder();
-                        long lastUIUpdateTime = System.currentTimeMillis();
+                        allSentencesBlocks.clear(); StringBuilder liveErrorsHtml = new StringBuilder(); long lastUIUpdateTime = System.currentTimeMillis();
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) continue;
                             List<TextBlock> currentSentenceBlocks = new ArrayList<>();
-
                             boolean[] isIgnored = new boolean[sentence.length()];
                             for (String w : IGNORE_WORDS) {
                                 int idx = sentence.indexOf(w);
-                                while (idx >= 0) {
-                                    for (int k = 0; k < w.length(); k++) isIgnored[idx + k] = true;
-                                    idx = sentence.indexOf(w, idx + 1);
-                                }
+                                while (idx >= 0) { for (int k = 0; k < w.length(); k++) isIgnored[idx + k] = true; idx = sentence.indexOf(w, idx + 1); }
                             }
 
                             boolean hasTarget = false;
                             for (int i = 0; i < sentence.length(); i++) {
                                 char c = sentence.charAt(i);
-                                if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { 
-                                    hasTarget = true; break; 
-                                }
+                                if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { hasTarget = true; break; }
                             }
 
                             if (!hasTarget) {
@@ -818,10 +1118,8 @@ jobs:
                             } else {
                                 float[] scores;
                                 int vocabSize = isFastMode ? 3 : proVocab.size();
-
                                 if (isFastMode) {
-                                    long fUnk = fastVocab.getOrDefault("[UNK]", 1L);
-                                    long fMask = fastVocab.getOrDefault("[MASK]", 2L);
+                                    long fUnk = fastVocab.getOrDefault("[UNK]", 1L); long fMask = fastVocab.getOrDefault("[MASK]", 2L);
                                     long[] ids = new long[sentence.length()];
                                     for (int i = 0; i < sentence.length(); i++) {
                                         String ch = String.valueOf(sentence.charAt(i));
@@ -832,10 +1130,7 @@ jobs:
                                     scores = fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
                                 } else {
                                     int exactLen = sentence.length() + 2;
-                                    long[] ids = new long[exactLen];
-                                    long[] masks = new long[exactLen];
-                                    long[] types = new long[exactLen];
-
+                                    long[] ids = new long[exactLen]; long[] masks = new long[exactLen]; long[] types = new long[exactLen];
                                     ids[0] = clsId; masks[0] = 1; types[0] = 0;
                                     for (int i = 0; i < sentence.length(); i++) {
                                         String ch = String.valueOf(sentence.charAt(i));
@@ -844,272 +1139,148 @@ jobs:
                                         masks[i + 1] = 1; types[i + 1] = 0;
                                     }
                                     ids[exactLen - 1] = sepId; masks[exactLen - 1] = 1; types[exactLen - 1] = 0;
-
-                                    Tensor tIds = Tensor.fromBlob(ids, new long[]{1, exactLen});
-                                    Tensor tMasks = Tensor.fromBlob(masks, new long[]{1, exactLen});
-                                    Tensor tTypes = Tensor.fromBlob(types, new long[]{1, exactLen});
-
+                                    Tensor tIds = Tensor.fromBlob(ids, new long[]{1, exactLen}); Tensor tMasks = Tensor.fromBlob(masks, new long[]{1, exactLen}); Tensor tTypes = Tensor.fromBlob(types, new long[]{1, exactLen});
                                     IValue outputVal = proModule.forward(IValue.from(tIds), IValue.from(tMasks), IValue.from(tTypes));
                                     Tensor outTensor = outputVal.isTuple() ? outputVal.toTuple()[0].toTensor() : outputVal.toTensor();
                                     scores = outTensor.getDataAsFloatArray();
                                 }
 
                                 StringBuilder normalText = new StringBuilder();
-                                
                                 Runnable flushNormal = () -> {
-                                    if(normalText.length() > 0) {
-                                        currentSentenceBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false, 0f));
-                                        normalText.setLength(0);
-                                    }
+                                    if(normalText.length() > 0) { currentSentenceBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false, 0f)); normalText.setLength(0); }
                                 };
 
                                 for (int i = 0; i < sentence.length(); i++) {
                                     char ch = sentence.charAt(i);
-                                    
                                     if (isIgnored[i] || (ch != '的' && ch != '地' && ch != '得')) {
                                         normalText.append(ch);
-                                        if (ch == '，' || ch == ',' || ch == '；' || ch == ';' || ch == '、' || ch == '\n') {
-                                            flushNormal.run();
-                                        }
+                                        if (ch == '，' || ch == ',' || ch == '；' || ch == ';' || ch == '、' || ch == '\n') flushNormal.run();
                                         continue;
                                     }
-
                                     flushNormal.run();
                                     
                                     float s0, s1, s2;
                                     if (isFastMode) {
-                                        int base = i * 3;
-                                        s0 = (float) Math.exp(scores[base] / temp);
-                                        s1 = (float) Math.exp(scores[base + 1] / temp);
-                                        s2 = (float) Math.exp(scores[base + 2] / temp);
+                                        int base = i * 3; s0 = (float) Math.exp(scores[base] / temp); s1 = (float) Math.exp(scores[base + 1] / temp); s2 = (float) Math.exp(scores[base + 2] / temp);
                                     } else {
                                         int seqPos = i + 1; 
-                                        s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)deId] / temp);
-                                        s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)diId] / temp);
-                                        s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)de2Id] / temp);
+                                        s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)deId] / temp); s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)diId] / temp); s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)de2Id] / temp);
                                     }
-
-                                    float sum = s0 + s1 + s2;
-                                    float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
-
+                                    float sum = s0 + s1 + s2; float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
                                     int maxIdx = 0; float maxProb = p0;
                                     if (p1 > maxProb) { maxProb = p1; maxIdx = 1; }
                                     if (p2 > maxProb) { maxProb = p2; maxIdx = 2; }
-
-                                    float threshold = tDe;
-                                    if (maxIdx == 1) threshold = tDi;
-                                    if (maxIdx == 2) threshold = tDe3;
-
+                                    float threshold = maxIdx == 1 ? tDi : (maxIdx == 2 ? tDe3 : tDe);
                                     String pred = labels[maxIdx];
                                     boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
-                                    
                                     currentSentenceBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb));
                                 }
                                 flushNormal.run();
 
-                                // 依据标点符号智能切分并重组出只有错误的子句，剔除无错的前后冗余语境
-                                List<List<TextBlock>> clauses = new ArrayList<>();
-                                List<TextBlock> currentClause = new ArrayList<>();
+                                List<List<TextBlock>> clauses = new ArrayList<>(); List<TextBlock> currentClause = new ArrayList<>();
                                 for (TextBlock b : currentSentenceBlocks) {
-                                    currentClause.add(b);
-                                    char lastChar = b.original.charAt(b.original.length() - 1);
-                                    if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') {
-                                        clauses.add(currentClause);
-                                        currentClause = new ArrayList<>();
-                                    }
+                                    currentClause.add(b); char lastChar = b.original.charAt(b.original.length() - 1);
+                                    if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') { clauses.add(currentClause); currentClause = new ArrayList<>(); }
                                 }
                                 if (!currentClause.isEmpty()) clauses.add(currentClause);
                                 
-                                boolean sentenceHasError = false;
-                                StringBuilder sentenceErrorHtml = new StringBuilder();
+                                boolean sentenceHasError = false; StringBuilder sentenceErrorHtml = new StringBuilder();
                                 for (List<TextBlock> clause : clauses) {
                                     if (hasError(clause)) {
                                         sentenceHasError = true;
                                         for (TextBlock b : clause) {
                                             if (b.isMutable && !b.current.equals(b.original)) {
                                                 sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(b.original).append("</s></font> <font color='#E53935'><b>").append(b.current).append("</b></font><font color='#9E9E9E'><small>(置信度: ").append(String.format("%.2f", b.conf)).append(")</small></font>");
-                                            } else {
-                                                sentenceErrorHtml.append(b.original);
-                                            }
+                                            } else { sentenceErrorHtml.append(b.original); }
                                         }
                                     }
                                 }
-                                if (sentenceHasError) {
-                                    liveErrorsHtml.append(sentenceErrorHtml.toString()).append("<br><br>");
-                                }
+                                if (sentenceHasError) liveErrorsHtml.append(sentenceErrorHtml.toString()).append("<br><br>");
                             }
-                            
                             allSentencesBlocks.add(currentSentenceBlocks);
-
-                            long now = System.currentTimeMillis();
-                            final int currentProgress = sIdx + 1;
+                            long now = System.currentTimeMillis(); final int currentProgress = sIdx + 1;
                             if (now - lastUIUpdateTime > 300 || currentProgress == sentences.length) {
                                 lastUIUpdateTime = now;
-                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" +
-                                                        (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【实时更正记录】：</font></b><br>" + liveErrorsHtml.toString() : "");
+                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【实时更正记录】：</font></b><br>" + liveErrorsHtml.toString() : "");
                                 runOnUiThread(() -> {
-                                    progressBar.setProgress(currentProgress);
-                                    outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
-                                    if (autoScrollEnabled) {
-                                        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
-                                    }
+                                    progressBar.setProgress(currentProgress); outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
+                                    if (autoScrollEnabled) scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
                                 });
                             }
                         }
-
                         lastTimeMs = System.currentTimeMillis() - startTime;
-                        
-                        runOnUiThread(() -> {
-                            renderFinalBlocks();
-                            btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true);
-                            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); 
-                        });
-
+                        runOnUiThread(() -> { renderFinalBlocks(); btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true); scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); });
                     } catch (Exception e) {
-                        final String err = e.getMessage();
-                        runOnUiThread(() -> {
-                            outputText.setText("推理运行中断: " + err);
-                            btnCheck.setEnabled(true);
-                        });
-                    } finally {
-                        runOnUiThread(() -> {
-                            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                            progressBar.setVisibility(View.INVISIBLE);
-                        });
-                    }
+                        final String err = e.getMessage(); runOnUiThread(() -> { outputText.setText("推理运行中断: " + err); btnCheck.setEnabled(true); });
+                    } finally { runOnUiThread(() -> { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.INVISIBLE); }); }
                 }).start();
             }
 
             private void showEditDialog(TextBlock b) {
                 String[] options = {"的", "地", "得", "还原为原字 (" + b.original + ")"};
-                new AlertDialog.Builder(this)
-                    .setTitle("手动修改 (当前：" + b.current + ")")
-                    .setItems(options, (dialog, which) -> {
-                        if (which == 0) b.current = "的";
-                        else if (which == 1) b.current = "地";
-                        else if (which == 2) b.current = "得";
-                        else if (which == 3) b.current = b.original;
-                        renderFinalBlocks(); 
-                    })
-                    .show();
+                new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + b.current + ")").setItems(options, (dialog, which) -> {
+                    if (which == 0) b.current = "的"; else if (which == 1) b.current = "地"; else if (which == 2) b.current = "得"; else if (which == 3) b.current = b.original;
+                    renderFinalBlocks(); 
+                }).show();
             }
 
             private void renderFinalBlocks() {
                 SpannableStringBuilder ssb = new SpannableStringBuilder();
-                
                 int currentErrors = 0;
-                for (List<TextBlock> sentence : allSentencesBlocks) {
-                    for (TextBlock b : sentence) {
-                        if (b.isMutable && !b.current.equals(b.original)) currentErrors++;
-                    }
-                }
-                
+                for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && !b.current.equals(b.original)) currentErrors++; } }
                 if (currentErrors == 0) {
                     String header = "检查完毕！未检测到“的地得”误用。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
-                    SpannableString headerSp = new SpannableString(header);
-                    headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    ssb.append(headerSp);
+                    SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(headerSp);
                 } else {
                     String header = "检查完毕！共更正 " + currentErrors + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击带下划线的字可手动修改）\n\n";
-                    SpannableString headerSp = new SpannableString(header);
-                    headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    ssb.append(headerSp);
-                    
-                    SpannableString listHeader = new SpannableString("【更正清单：】\n");
-                    listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    ssb.append(listHeader);
-                    
+                    SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(headerSp);
+                    SpannableString listHeader = new SpannableString("【更正清单：】\n"); listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(listHeader);
                     for (List<TextBlock> sentence : allSentencesBlocks) {
-                        List<List<TextBlock>> clauses = new ArrayList<>();
-                        List<TextBlock> currentClause = new ArrayList<>();
+                        List<List<TextBlock>> clauses = new ArrayList<>(); List<TextBlock> currentClause = new ArrayList<>();
                         for (TextBlock b : sentence) {
-                            currentClause.add(b);
-                            char lastChar = b.original.charAt(b.original.length() - 1);
-                            if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') {
-                                clauses.add(currentClause);
-                                currentClause = new ArrayList<>();
-                            }
+                            currentClause.add(b); char lastChar = b.original.charAt(b.original.length() - 1);
+                            if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') { clauses.add(currentClause); currentClause = new ArrayList<>(); }
                         }
                         if (!currentClause.isEmpty()) clauses.add(currentClause);
-                        
                         boolean hasAnyError = false;
                         for (List<TextBlock> clause : clauses) {
                             if (hasError(clause)) {
                                 hasAnyError = true;
                                 for (TextBlock b : clause) {
                                     if (b.isMutable && !b.current.equals(b.original)) {
-                                        int stStart = ssb.length();
-                                        ssb.append(b.original);
-                                        ssb.setSpan(new StrikethroughSpan(), stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        
-                                        ssb.append(" ");
-                                        
-                                        int newStart = ssb.length();
-                                        ssb.append(b.current);
+                                        int stStart = ssb.length(); ssb.append(b.original); ssb.setSpan(new StrikethroughSpan(), stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(" ");
+                                        int newStart = ssb.length(); ssb.append(b.current);
                                         ClickableSpan clickSpan = new ClickableSpan() {
                                             @Override public void onClick(View w) { showEditDialog(b); }
-                                            @Override public void updateDrawState(TextPaint ds) {
-                                                ds.setColor(0xFFE53935);
-                                                ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                                                ds.setUnderlineText(true);
-                                            }
+                                            @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFFE53935); ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); ds.setUnderlineText(true); }
                                         };
                                         ssb.setSpan(clickSpan, newStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        
-                                        int confStart = ssb.length();
-                                        ssb.append("(置信度: ").append(String.format("%.2f", b.conf)).append(")");
-                                        ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                    } else {
-                                        ssb.append(b.current);
-                                    }
+                                        int confStart = ssb.length(); ssb.append("(置信度: ").append(String.format("%.2f", b.conf)).append(")"); ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                    } else { ssb.append(b.current); }
                                 }
                             }
                         }
                         if (hasAnyError) ssb.append("\n\n");
                     }
-                    
-                    SpannableString sep = new SpannableString("---------------------------------\n\n");
-                    sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    ssb.append(sep);
+                    SpannableString sep = new SpannableString("---------------------------------\n\n"); sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(sep);
                 }
-                
-                SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n");
-                fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                ssb.append(fullHeader);
-                
+                SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(fullHeader);
                 for (List<TextBlock> sentence : allSentencesBlocks) {
                     for (TextBlock b : sentence) {
-                        int start = ssb.length();
-                        ssb.append(b.current);
+                        int start = ssb.length(); ssb.append(b.current);
                         if (b.isMutable) {
                             ClickableSpan span = new ClickableSpan() {
-                                @Override
-                                public void onClick(View widget) {
-                                    showEditDialog(b);
-                                }
-                                @Override
-                                public void updateDrawState(TextPaint ds) {
+                                @Override public void onClick(View widget) { showEditDialog(b); }
+                                @Override public void updateDrawState(TextPaint ds) {
                                     ds.setUnderlineText(true);
-                                    if (!b.current.equals(b.original)) {
-                                        ds.setColor(0xFFE53935); 
-                                        ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                                    } else {
-                                        ds.setColor(0xFF2196F3); 
-                                    }
+                                    if (!b.current.equals(b.original)) { ds.setColor(0xFFE53935); ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); } else { ds.setColor(0xFF2196F3); }
                                 }
                             };
                             ssb.setSpan(span, start, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                         }
                     }
                 }
-                
-                outputText.setText(ssb);
-                outputText.setMovementMethod(LinkMovementMethod.getInstance());
-                outputText.setHighlightColor(Color.TRANSPARENT);
+                outputText.setText(ssb); outputText.setMovementMethod(LinkMovementMethod.getInstance()); outputText.setHighlightColor(Color.TRANSPARENT);
             }
         }
         EOF
