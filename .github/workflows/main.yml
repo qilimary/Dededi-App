@@ -160,8 +160,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 9
-                versionName "2.7"
+                versionCode 10
+                versionName "2.8"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -316,8 +316,8 @@ jobs:
                     android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="@color/text_primary"
                     android:layout_alignParentStart="true" android:layout_centerVertical="true"/>
                 <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_alignParentEnd="true" android:layout_centerVertical="true">
-                    <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnFloat" android:layout_width="48dp" android:layout_height="48dp" 
-                        android:layout_marginEnd="8dp" android:text="悬浮窗" android:textSize="11sp" 
+                    <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnFloat" android:layout_width="36dp" android:layout_height="36dp" 
+                        android:layout_marginEnd="8dp" android:text="✓" android:textSize="16sp" 
                         android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null"/>
                     <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="wrap_content" 
                         android:minWidth="56dp" android:minHeight="32dp"
@@ -409,38 +409,26 @@ jobs:
             android:padding="8dp">
 
             <LinearLayout android:id="@+id/panelInput"
-                android:layout_width="260dp" android:layout_height="wrap_content"
+                android:layout_width="240dp" android:layout_height="wrap_content"
                 android:orientation="vertical" android:background="@color/card_bg"
-                android:padding="12dp" android:visibility="gone">
+                android:padding="10dp" android:visibility="gone">
                 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
+                <LinearLayout android:id="@+id/panelTopBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="快捷悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:textStyle="bold"/>
                     <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#4CAF50" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                     <Button android:id="@+id/btnFloatCloseAll" android:layout_width="36dp" android:layout_height="32dp" android:text="✕" android:textSize="12sp" android:backgroundTint="#E53935" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="4dp"/>
                 </LinearLayout>
 
-                <EditText android:id="@+id/editFloatInput" android:layout_width="match_parent" android:layout_height="110dp"
+                <EditText android:id="@+id/editFloatInput" android:layout_width="match_parent" android:layout_height="100dp"
                     android:hint="直接粘贴需要检查的文本..." android:gravity="top|start" android:background="@color/bg_color" android:textColor="@color/text_primary" android:padding="8dp" android:textSize="14sp"/>
                 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
-                    <Button android:id="@+id/btnFloatPaste" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="粘贴" android:textSize="12sp" android:backgroundTint="#FF9800" android:padding="0dp"/>
-                    <Button android:id="@+id/btnFloatCheck" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1.5" android:text="开始纠错" android:textSize="12sp" android:backgroundTint="#2196F3" android:padding="0dp" android:layout_marginStart="4dp"/>
-                </LinearLayout>
+                <Button android:id="@+id/btnFloatCheck" android:layout_width="match_parent" android:layout_height="40dp" android:text="开始" android:textSize="14sp" android:backgroundTint="#2196F3" android:padding="0dp" android:layout_marginTop="8dp"/>
 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="4dp">
-                    <Button android:id="@+id/btnFloatCopy" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1.5" android:text="复制结果" android:textSize="12sp" android:backgroundTint="#81C784" android:padding="0dp"/>
-                    <Button android:id="@+id/btnFloatClosePanel" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="收起" android:textSize="12sp" android:backgroundTint="#9E9E9E" android:padding="0dp" android:layout_marginStart="4dp"/>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="6dp">
+                    <Button android:id="@+id/btnFloatPaste" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="粘贴" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginEnd="2dp"/>
+                    <Button android:id="@+id/btnFloatCopy" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="复制结果" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="2dp" android:layout_marginEnd="2dp"/>
+                    <Button android:id="@+id/btnFloatSwitch" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="切换模型" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="2dp"/>
                 </LinearLayout>
-            </LinearLayout>
-
-            <LinearLayout android:id="@+id/panelProgress"
-                android:layout_width="260dp" android:layout_height="wrap_content"
-                android:orientation="vertical" android:background="@color/card_bg"
-                android:padding="12dp" android:visibility="gone"
-                android:clipToPadding="false" android:layout_marginBottom="8dp">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="后台全速纠错进度：" android:textSize="13sp" android:textColor="@color/text_secondary" android:layout_marginBottom="4dp"/>
-                <ProgressBar android:id="@+id/progFloat" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="8dp" android:progressTint="#81C784" android:max="100"/>
-                <TextView android:id="@+id/tvFloatLatestErr" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="暂无错误" android:textColor="#E53935" android:textSize="14sp" android:layout_marginTop="8dp"/>
             </LinearLayout>
 
             <FrameLayout android:id="@+id/btnCircle"
@@ -482,6 +470,8 @@ jobs:
         import android.os.Handler;
         import android.os.IBinder;
         import android.os.Looper;
+        import android.text.Editable;
+        import android.text.TextWatcher;
         import android.view.Gravity;
         import android.view.LayoutInflater;
         import android.view.MotionEvent;
@@ -500,13 +490,13 @@ jobs:
             private View floatView;
             private WindowManager.LayoutParams params;
             private View panelInput;
-            private View panelProgress;
             private EditText editFloatInput;
-            private ProgressBar progFloat;
-            private TextView tvFloatLatestErr;
             private View circleSpin;
             private TextView tvStatus;
+            private Button btnFloatSwitch;
             private boolean isChecking = false;
+            
+            private Runnable hideStatusRunnable = () -> tvStatus.setVisibility(View.INVISIBLE);
 
             @SuppressLint("ClickableViewAccessibility")
             @Override
@@ -533,20 +523,28 @@ jobs:
                 floatView = inflater.inflate(R.layout.layout_floating, null);
 
                 panelInput = floatView.findViewById(R.id.panelInput);
-                panelProgress = floatView.findViewById(R.id.panelProgress);
                 editFloatInput = floatView.findViewById(R.id.editFloatInput);
-                progFloat = floatView.findViewById(R.id.progFloat);
-                tvFloatLatestErr = floatView.findViewById(R.id.tvFloatLatestErr);
                 circleSpin = floatView.findViewById(R.id.circleSpin);
                 tvStatus = floatView.findViewById(R.id.tvStatus);
                 View btnCircle = floatView.findViewById(R.id.btnCircle);
+                View panelTopBar = floatView.findViewById(R.id.panelTopBar);
 
                 Button btnFloatPaste = floatView.findViewById(R.id.btnFloatPaste);
                 Button btnFloatCheck = floatView.findViewById(R.id.btnFloatCheck);
                 Button btnFloatCopy = floatView.findViewById(R.id.btnFloatCopy);
-                Button btnFloatClosePanel = floatView.findViewById(R.id.btnFloatClosePanel);
+                btnFloatSwitch = floatView.findViewById(R.id.btnFloatSwitch);
                 Button btnFloatJump = floatView.findViewById(R.id.btnFloatJump);
                 Button btnFloatCloseAll = floatView.findViewById(R.id.btnFloatCloseAll);
+
+                editFloatInput.addTextChangedListener(new TextWatcher() {
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override public void afterTextChanged(Editable s) {
+                        if (!isChecking) {
+                            getSharedPreferences("DedediConfig", Context.MODE_PRIVATE).edit().putString("sync_text", s.toString()).apply();
+                        }
+                    }
+                });
 
                 // 处理点击外部收起
                 floatView.setOnTouchListener((v, event) -> {
@@ -583,13 +581,15 @@ jobs:
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     if (clipboard != null) {
                         clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", editFloatInput.getText().toString()));
-                        Toast.makeText(this, "结果已复制！", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "已复制修正后的全文。", Toast.LENGTH_SHORT).show();
                     }
                 });
-
-                btnFloatClosePanel.setOnClickListener(v -> {
-                    panelInput.setVisibility(View.GONE);
-                    setFocusable(false);
+                
+                btnFloatSwitch.setOnClickListener(v -> {
+                    SharedPreferences sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
+                    boolean currentFast = sp.getBoolean("is_fast_mode", false);
+                    sp.edit().putBoolean("is_fast_mode", !currentFast).apply();
+                    Toast.makeText(this, "已切换至" + (!currentFast ? "极速" : "专业") + "模型", Toast.LENGTH_SHORT).show();
                 });
 
                 Runnable jumpToApp = () -> {
@@ -603,7 +603,6 @@ jobs:
 
                 btnFloatJump.setOnClickListener(v -> jumpToApp.run());
                 btnCircle.setOnLongClickListener(v -> { jumpToApp.run(); return true; });
-                
                 btnFloatCloseAll.setOnClickListener(v -> stopSelf());
 
                 View.OnTouchListener dragListener = new View.OnTouchListener() {
@@ -628,10 +627,14 @@ jobs:
                                 break;
                             case MotionEvent.ACTION_UP:
                                 if (!isMoved && v.getId() == R.id.btnCircle) {
-                                    if (isChecking) {
-                                        panelProgress.setVisibility(panelProgress.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
-                                    } else {
+                                    if (!isChecking) {
                                         boolean isVisible = panelInput.getVisibility() == View.VISIBLE;
+                                        if (!isVisible) {
+                                            String sync = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE).getString("sync_text", "");
+                                            if (!sync.isEmpty() && !sync.equals(editFloatInput.getText().toString())) {
+                                                editFloatInput.setText(sync);
+                                            }
+                                        }
                                         panelInput.setVisibility(isVisible ? View.GONE : View.VISIBLE);
                                         setFocusable(!isVisible);
                                     }
@@ -643,8 +646,7 @@ jobs:
                 };
 
                 btnCircle.setOnTouchListener(dragListener);
-                panelInput.setOnTouchListener(dragListener);
-                panelProgress.setOnTouchListener(dragListener);
+                panelTopBar.setOnTouchListener(dragListener);
                 
                 windowManager.addView(floatView, params);
             }
@@ -662,7 +664,10 @@ jobs:
                 new Handler(Looper.getMainLooper()).post(() -> {
                     tvStatus.setText(msg);
                     tvStatus.setVisibility(View.VISIBLE);
-                    if (autoHide) tvStatus.postDelayed(() -> tvStatus.setVisibility(View.INVISIBLE), 2500);
+                    tvStatus.removeCallbacks(hideStatusRunnable);
+                    if (autoHide) {
+                        tvStatus.postDelayed(hideStatusRunnable, 3000);
+                    }
                 });
             }
 
@@ -678,15 +683,17 @@ jobs:
                 float tDi = Float.parseFloat(sp.getString(prefix + "th2", isFastMode ? "0.80" : "0.75"));
                 float tDe3 = Float.parseFloat(sp.getString(prefix + "th3", isFastMode ? "0.80" : "0.75"));
 
-                isChecking = true; showStatus("正在后台满速纠错中……", true);
-                circleSpin.setVisibility(View.VISIBLE); tvFloatLatestErr.setText("暂无错误");
+                isChecking = true; 
+                btnFloatSwitch.setEnabled(false);
+                showStatus("正在后台满速纠错中……", false);
+                circleSpin.setVisibility(View.VISIBLE);
 
                 new Thread(() -> {
                     try {
                         String[] labels = {"的", "地", "得"};
                         String[] sentences = text.split("(?<=[。！？!?\n])");
-                        new Handler(Looper.getMainLooper()).post(() -> progFloat.setMax(sentences.length));
                         StringBuilder fullCleanText = new StringBuilder();
+                        int[] errorCount = {0};
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             String sentence = sentences[sIdx];
@@ -763,28 +770,36 @@ jobs:
                                     boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
                                     if (changed) {
                                         correctedSentence.append(pred);
-                                        final String errLog = "发现错误：" + ch + " -> " + pred;
-                                        new Handler(Looper.getMainLooper()).post(() -> tvFloatLatestErr.setText(errLog));
+                                        errorCount[0]++;
+                                        final String errLog = "修复：" + ch + "->" + pred + " (置信度:" + String.format("%.2f", maxProb) + ") | 共 " + errorCount[0] + " 处";
+                                        new Handler(Looper.getMainLooper()).post(() -> {
+                                            tvStatus.setText(errLog);
+                                            tvStatus.setVisibility(View.VISIBLE);
+                                        });
                                     } else {
                                         correctedSentence.append(ch);
                                     }
                                 }
                                 fullCleanText.append(correctedSentence.toString());
                             }
-                            final int currentProgress = sIdx + 1;
-                            new Handler(Looper.getMainLooper()).post(() -> progFloat.setProgress(currentProgress));
                         }
                         new Handler(Looper.getMainLooper()).post(() -> {
-                            isChecking = false; showStatus("已完成。", true);
+                            isChecking = false; 
+                            btnFloatSwitch.setEnabled(true);
+                            showStatus("已完成，共修复 " + errorCount[0] + " 处", true);
                             editFloatInput.setText(fullCleanText.toString());
-                            circleSpin.setVisibility(View.INVISIBLE); panelProgress.setVisibility(View.GONE);
+                            circleSpin.setVisibility(View.INVISIBLE);
                             ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                             clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
                             Toast.makeText(FloatingService.this, "已自动复制，也可直接点击悬浮球跳转查看！", Toast.LENGTH_LONG).show();
+                            
+                            getSharedPreferences("DedediConfig", Context.MODE_PRIVATE).edit().putString("sync_text", fullCleanText.toString()).apply();
                         });
                     } catch (Exception e) {
                         new Handler(Looper.getMainLooper()).post(() -> {
-                            isChecking = false; circleSpin.setVisibility(View.INVISIBLE);
+                            isChecking = false; 
+                            btnFloatSwitch.setEnabled(true);
+                            circleSpin.setVisibility(View.INVISIBLE);
                             Toast.makeText(FloatingService.this, "纠错中断: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                         });
                     }
@@ -945,7 +960,12 @@ jobs:
                 inputText.addTextChangedListener(new TextWatcher() {
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-                    @Override public void afterTextChanged(Editable s) { tvWordCount.setText(s.length() + " 字"); }
+                    @Override public void afterTextChanged(Editable s) { 
+                        tvWordCount.setText(s.length() + " 字"); 
+                        if (!hasStartedChecking) {
+                            sp.edit().putString("sync_text", s.toString()).apply();
+                        }
+                    }
                 });
 
                 handleIntent(getIntent());
@@ -1035,7 +1055,7 @@ jobs:
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     ClipData clip = ClipData.newPlainText("Corrected Article", finalTxt);
                     if (clipboard != null) clipboard.setPrimaryClip(clip);
-                    Toast.makeText(this, "已复制修正后的全文", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "已复制修正后的全文。", Toast.LENGTH_SHORT).show();
                 });
 
                 btnSaveTxt.setOnClickListener(v -> {
@@ -1057,6 +1077,22 @@ jobs:
             }
             
             @Override
+            protected void onResume() {
+                super.onResume();
+                String sync = sp.getString("sync_text", "");
+                if (!sync.isEmpty() && !sync.equals(inputText.getText().toString())) {
+                    inputText.setText(sync);
+                }
+                boolean spFast = sp.getBoolean("is_fast_mode", false);
+                if (spFast != currentIsFast) {
+                    currentIsFast = spFast;
+                    rbFast.setChecked(currentIsFast);
+                    rbPro.setChecked(!currentIsFast);
+                    loadSettings(currentIsFast);
+                }
+            }
+
+            @Override
             protected void onNewIntent(Intent intent) {
                 super.onNewIntent(intent);
                 handleIntent(intent);
@@ -1066,11 +1102,15 @@ jobs:
                 if (intent == null) return;
                 if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
                     String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
-                    if (sharedText != null) inputText.setText(sharedText);
+                    if (sharedText != null) {
+                        inputText.setText(sharedText);
+                        sp.edit().putString("sync_text", sharedText).apply();
+                    }
                 } else if (intent.hasExtra("SYNC_TEXT")) {
                     String syncText = intent.getStringExtra("SYNC_TEXT");
                     if (syncText != null && !syncText.isEmpty()) {
                         inputText.setText(syncText);
+                        sp.edit().putString("sync_text", syncText).apply();
                     }
                 }
             }
