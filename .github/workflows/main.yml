@@ -444,16 +444,27 @@ jobs:
                 <ProgressBar android:id="@+id/circleSpin" android:layout_width="match_parent" android:layout_height="match_parent" android:visibility="invisible" android:indeterminateTint="#FFFFFF" />
             </FrameLayout>
 
-            <TextView android:id="@+id/tvStatus"
+            <LinearLayout android:id="@+id/statusContainer"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:layout_below="@id/btnCircle"
                 android:background="#A0000000"
-                android:textColor="#FFFFFF"
-                android:textSize="11sp"
-                android:paddingStart="6dp" android:paddingEnd="6dp"
-                android:paddingTop="3dp" android:paddingBottom="3dp"
+                android:orientation="vertical"
                 android:visibility="invisible"
-                android:layout_marginTop="4dp"/>
+                android:minWidth="80dp"
+                android:layout_marginTop="4dp">
+                <TextView android:id="@+id/tvStatus"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:paddingStart="6dp" android:paddingEnd="6dp"
+                    android:paddingTop="3dp" android:paddingBottom="3dp"/>
+                <ProgressBar android:id="@+id/floatProgressBar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent" android:layout_height="2dp"
+                    android:progressTint="#2196F3"
+                    android:max="100" android:progress="0"
+                    android:visibility="gone"/>
+            </LinearLayout>
         </RelativeLayout>
         EOF
 
@@ -499,11 +510,13 @@ jobs:
             private EditText editFloatInput;
             private View circleSpin;
             private TextView tvStatus;
+            private View statusContainer;
+            private ProgressBar floatProgressBar;
             private Button btnFloatSwitch;
             private boolean isChecking = false;
             private volatile boolean isInterruptRequested = false;
             
-            private Runnable hideStatusRunnable = () -> tvStatus.setVisibility(View.INVISIBLE);
+            private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
 
             @SuppressLint("ClickableViewAccessibility")
             @Override
@@ -533,6 +546,8 @@ jobs:
                 editFloatInput = floatView.findViewById(R.id.editFloatInput);
                 circleSpin = floatView.findViewById(R.id.circleSpin);
                 tvStatus = floatView.findViewById(R.id.tvStatus);
+                statusContainer = floatView.findViewById(R.id.statusContainer);
+                floatProgressBar = floatView.findViewById(R.id.floatProgressBar);
                 View btnCircle = floatView.findViewById(R.id.btnCircle);
                 View panelTopBar = floatView.findViewById(R.id.panelTopBar);
 
@@ -676,10 +691,11 @@ jobs:
             private void showStatus(String msg, boolean autoHide) {
                 new Handler(Looper.getMainLooper()).post(() -> {
                     tvStatus.setText(msg);
-                    tvStatus.setVisibility(View.VISIBLE);
-                    tvStatus.removeCallbacks(hideStatusRunnable);
+                    statusContainer.setVisibility(View.VISIBLE);
+                    floatProgressBar.setVisibility(View.GONE);
+                    statusContainer.removeCallbacks(hideStatusRunnable);
                     if (autoHide) {
-                        tvStatus.postDelayed(hideStatusRunnable, 3000);
+                        statusContainer.postDelayed(hideStatusRunnable, 3000);
                     }
                 });
             }
@@ -699,7 +715,12 @@ jobs:
                 isChecking = true;
                 isInterruptRequested = false;
                 btnFloatSwitch.setEnabled(false);
+                
                 showStatus("正在纠错……", false);
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    floatProgressBar.setVisibility(View.VISIBLE);
+                    floatProgressBar.setProgress(0);
+                });
                 circleSpin.setVisibility(View.VISIBLE);
 
                 new Thread(() -> {
@@ -711,6 +732,7 @@ jobs:
                         
                         long startTime = System.currentTimeMillis();
                         List<List<MainActivity.TextBlock>> syncAllBlocks = new ArrayList<>();
+                        long lastUIUpdateTime = System.currentTimeMillis();
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             if (isInterruptRequested) {
@@ -721,6 +743,20 @@ jobs:
                                 });
                                 return;
                             }
+                            
+                            long now = System.currentTimeMillis();
+                            if (now - lastUIUpdateTime > 300 || sIdx == sentences.length - 1) {
+                                lastUIUpdateTime = now;
+                                int currentProgress = sIdx + 1;
+                                int maxProgress = sentences.length;
+                                new Handler(Looper.getMainLooper()).post(() -> {
+                                    if (!isInterruptRequested) {
+                                        floatProgressBar.setMax(maxProgress);
+                                        floatProgressBar.setProgress(currentProgress);
+                                    }
+                                });
+                            }
+
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) continue;
                             
@@ -816,12 +852,12 @@ jobs:
                                     
                                     if (changed) {
                                         errorCount[0]++;
-                                        final String errLog = "修复：" + ch + "->" + pred + " (置信度:" + String.format("%.2f", maxProb) + ") | 共 " + errorCount[0] + " 处";
+                                        final String errLog = "发现错误：" + ch + "->" + pred + " (置信度:" + String.format("%.2f", maxProb) + ") | 共 " + errorCount[0] + " 处";
                                         new Handler(Looper.getMainLooper()).post(() -> {
                                             if(!isInterruptRequested){
                                                 tvStatus.setText(errLog);
-                                                tvStatus.setVisibility(View.VISIBLE);
-                                                tvStatus.removeCallbacks(hideStatusRunnable);
+                                                statusContainer.setVisibility(View.VISIBLE);
+                                                statusContainer.removeCallbacks(hideStatusRunnable);
                                             }
                                         });
                                     }
@@ -846,7 +882,7 @@ jobs:
                             if (errorCount[0] == 0) {
                                 showStatus("未检测到错误", true);
                             } else {
-                                showStatus("已完成，共修复 " + errorCount[0] + " 处", true);
+                                showStatus("已完成，共修正 " + errorCount[0] + " 处", true);
                             }
                             editFloatInput.setText(fullCleanText.toString());
                             circleSpin.setVisibility(View.INVISIBLE);
@@ -1066,23 +1102,25 @@ jobs:
 
                 btnHelp.setOnClickListener(v -> {
                     String helpText = "【模型介绍】\n" +
-                            "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n" +
+                            "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n" +
                             "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n" +
                             "注：不同手机的速度会有不同，性能越强的手机，模型推理速度越快。\n" +
                             "模型可能会犯一些低级错误，这是神经网络的通病，在所难免。\n\n" +
                             "【温度参数】\n" +
-                            "控制AI判断的果断程度。\n" +
+                            "控制AI判断的自信（果断）程度。\n" +
                             "• 值越低（如0.5）：概率分布越尖锐。模型更自信（置信度更高），更激进，修改量可能上升，因为更不容易被拦截。\n" +
                             "• 值越高（如2.0）：概率分布越平缓。模型更保守（置信度更低），修改量可能下降，因为更容易被拦截。\n" +
-                            "• 默认0.9～1.2，适合大多数场景\n\n" +
+                            "• 默认0.9～1.2，适合大多数场景\n" +
+                            "举例：设置为0.5时，原本模棱两可的置信度会被拉高，执行修改；设置为1.5时，原本的置信度会被降低，只有模型非常确定的错误才会被修改。\n\n" +
                             "【置信度拦截阈值】\n" +
-                            "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n\n" +
+                            "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n" +
+                            "举例：设置为0.9时，模型的置信度超过0.9才会被保留，否则忽略。\n\n" +
                             "【交互与拓展功能】\n" +
-                            "• 手动修改：在检查完毕后，直接点击下方结果中带下划线的字，即可弹出菜单，允许你手动修改为其他字或还原回原字。\n" +
+                            "• 手动修改：检查完毕后，点击任意带下划线的字，即可手动修改为其他字或还原回原字。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n\n" +
                             "【悬浮窗】\n" +
-                            "开启后支持后台持续满速推理。长按悬浮球或点击面板右上角可将数据无缝同步至应用内继续操作。点击面板外可自动收起。\n\n" +
+                            "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                     new AlertDialog.Builder(this).setTitle("使用说明").setMessage(helpText).setPositiveButton("知道了", null).show();
                 });
@@ -1138,16 +1176,29 @@ jobs:
                     new AlertDialog.Builder(this).setTitle("选择保存格式").setItems(options, (dialog, which) -> {
                         saveFormat = which;
                         String textToSave = getCleanText();
+                        boolean hasCorrections = false;
+                        
                         if (textToSave.isEmpty()) {
                             textToSave = currentRaw;
                             String formatStr = options[which].split(" ")[0];
                             Toast.makeText(this, "您还没有纠错，将保存原始文本为" + formatStr + "格式", Toast.LENGTH_LONG).show();
+                        } else {
+                            for (List<TextBlock> sentence : allSentencesBlocks) {
+                                for (TextBlock b : sentence) {
+                                    if (b.isMutable && !b.current.equals(b.original)) {
+                                        hasCorrections = true; break;
+                                    }
+                                }
+                                if (hasCorrections) break;
+                            }
                         }
+                        
                         pendingSaveText = textToSave;
                         try {
                             Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                             i.addCategory(Intent.CATEGORY_OPENABLE);
-                            String fName = textToSave.equals(currentRaw) ? "原始文本" : "纠错结果";
+                            String fName = hasCorrections ? "纠错结果" : "原始文本";
+                            
                             if (which == 0) { i.setType("text/plain"); i.putExtra(Intent.EXTRA_TITLE, fName + ".txt"); } 
                             else if (which == 1) { i.setType("application/pdf"); i.putExtra(Intent.EXTRA_TITLE, fName + ".pdf"); } 
                             else if (which == 2) { i.setType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"); i.putExtra(Intent.EXTRA_TITLE, fName + ".docx"); }
