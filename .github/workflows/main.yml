@@ -162,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 5
-                versionName "2.3"
+                versionCode 7
+                versionName "2.5"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -206,6 +206,8 @@ jobs:
             <color name="card_bg">#FFFFFF</color>
             <color name="text_primary">#1A1A1A</color>
             <color name="text_secondary">#666666</color>
+            <color name="btn_light_green_bg">#E8F5E9</color>
+            <color name="btn_light_green_text">#2E7D32</color>
         </resources>
         EOF
         
@@ -230,6 +232,8 @@ jobs:
             <color name="card_bg">#1E1E1E</color>
             <color name="text_primary">#E0E0E0</color>
             <color name="text_secondary">#9E9E9E</color>
+            <color name="btn_light_green_bg">#1B5E20</color>
+            <color name="btn_light_green_text">#A5D6A7</color>
         </resources>
         EOF
 
@@ -277,7 +281,6 @@ jobs:
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
                     </intent-filter>
-                    <!-- 新增分享支持：允许从其他App接收分享文本 -->
                     <intent-filter>
                         <action android:name="android.intent.action.SEND" />
                         <category android:name="android.intent.category.DEFAULT" />
@@ -320,38 +323,56 @@ jobs:
                     <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.0" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                 </LinearLayout>
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的阈值" android:textSize="11sp" android:textColor="@color/text_secondary"/>
+                    <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
+                    </LinearLayout>
                     <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                 </LinearLayout>
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地阈值" android:textSize="11sp" android:textColor="@color/text_secondary"/>
+                    <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
+                    </LinearLayout>
                     <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                 </LinearLayout>
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得阈值" android:textSize="11sp" android:textColor="@color/text_secondary"/>
+                    <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
+                    </LinearLayout>
                     <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                 </LinearLayout>
             </LinearLayout>
 
-            <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="140dp"
-                android:hint="在此输入或者粘贴需要检查的文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg"
-                android:padding="12dp" android:textSize="15sp" android:scrollbars="vertical"/>
+            <RelativeLayout android:layout_width="match_parent" android:layout_height="140dp" android:layout_marginBottom="10dp">
+                <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="match_parent"
+                    android:hint="在此输入或者粘贴需要检查的文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg"
+                    android:padding="12dp" android:paddingBottom="24dp" android:textSize="15sp" android:scrollbars="vertical"/>
+                <TextView android:id="@+id/tvWordCount" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_alignParentBottom="true" android:layout_alignParentEnd="true" android:layout_marginEnd="8dp" android:layout_marginBottom="6dp"
+                    android:text="0 字" android:textColor="#9E9E9E" android:textSize="11sp"/>
+            </RelativeLayout>
             
             <Button android:id="@+id/btnCheck" android:layout_width="match_parent" android:layout_height="52dp"
-                android:text="开始纠错" android:textSize="16sp" android:layout_marginTop="10dp" android:layout_marginBottom="10dp" android:backgroundTint="#2196F3"/>
+                android:text="开始纠错" android:textSize="16sp" android:layout_marginTop="2dp" android:layout_marginBottom="6dp" android:backgroundTint="#2196F3"/>
+                
+            <ProgressBar android:id="@+id/progressBar" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="4dp"
+                android:progressTint="#81C784" android:max="100" android:progress="0"
+                android:layout_marginTop="-4dp" android:layout_marginBottom="6dp" android:visibility="invisible"/>
             
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginBottom="10dp">
-                <!-- 三个按钮统一为极简浅绿色，文本深绿色 -->
                 <Button android:id="@+id/btnPaste" android:layout_width="0dp" android:layout_height="48dp"
                     android:layout_weight="1" android:text="一键粘贴" android:textSize="14sp"
-                    android:backgroundTint="#E8F5E9" android:textColor="#2E7D32" android:layout_marginRight="4dp"/>
+                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
                 <Button android:id="@+id/btnCopy" android:layout_width="0dp" android:layout_height="48dp"
                     android:layout_weight="1" android:text="复制全文" android:textSize="14sp"
-                    android:backgroundTint="#E8F5E9" android:textColor="#2E7D32" android:layout_marginRight="4dp" android:enabled="false"/>
+                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp" android:enabled="false"/>
                 <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
                     android:layout_weight="1" android:text="保存TXT" android:textSize="14sp"
-                    android:backgroundTint="#E8F5E9" android:textColor="#2E7D32" android:enabled="false"/>
+                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:enabled="false"/>
             </LinearLayout>
 
             <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent">
@@ -370,18 +391,23 @@ jobs:
         import android.content.SharedPreferences;
         import android.graphics.Color;
         import android.os.Bundle;
+        import android.text.Editable;
         import android.text.Html;
         import android.text.SpannableString;
         import android.text.SpannableStringBuilder;
         import android.text.Spanned;
         import android.text.TextPaint;
+        import android.text.TextWatcher;
         import android.text.method.LinkMovementMethod;
         import android.text.style.ClickableSpan;
         import android.text.style.ForegroundColorSpan;
+        import android.text.style.StrikethroughSpan;
         import android.view.View;
+        import android.view.WindowManager;
         import android.view.inputmethod.InputMethodManager;
         import android.widget.Button;
         import android.widget.EditText;
+        import android.widget.ProgressBar;
         import android.widget.RadioButton;
         import android.widget.RadioGroup;
         import android.widget.ScrollView;
@@ -423,8 +449,9 @@ jobs:
             private long clsId=101, sepId=102, maskId=103, unkId=100, deId=0, diId=0, de2Id=0;
 
             private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3;
-            private TextView outputText;
+            private TextView outputText, tvWordCount;
             private ScrollView scrollView;
+            private ProgressBar progressBar;
             private Button btnCheck, btnCopy, btnSaveTxt, btnPaste;
             private RadioButton rbFast;
             private RadioGroup rgMode;
@@ -433,19 +460,18 @@ jobs:
             private boolean currentIsFast = false;
             private boolean hasStartedChecking = false;
 
-            // 用于存储当前页面的交互文字块
             class TextBlock {
                 String original;
                 String current;
                 boolean isMutable;
-                public TextBlock(String o, String c, boolean m) {
-                    this.original = o; this.current = c; this.isMutable = m;
+                float conf;
+                public TextBlock(String o, String c, boolean m, float f) {
+                    this.original = o; this.current = c; this.isMutable = m; this.conf = f;
                 }
             }
-            private List<TextBlock> currentBlocks = new ArrayList<>();
+            
+            private List<List<TextBlock>> allSentencesBlocks = new ArrayList<>();
             private long lastTimeMs = 0;
-            private int lastChangeCount = 0;
-            private String lastLiveErrorsHtml = "";
 
             private final String[] IGNORE_WORDS = {
                 "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
@@ -464,7 +490,9 @@ jobs:
                 
                 inputText = findViewById(R.id.inputText);
                 outputText = findViewById(R.id.outputText);
+                tvWordCount = findViewById(R.id.tvWordCount);
                 scrollView = findViewById(R.id.scrollView);
+                progressBar = findViewById(R.id.progressBar);
                 editTemp = findViewById(R.id.editTemp);
                 editThreshDe1 = findViewById(R.id.editThreshDe1);
                 editThreshDe2 = findViewById(R.id.editThreshDe2);
@@ -479,6 +507,12 @@ jobs:
 
                 currentIsFast = rbFast.isChecked();
                 loadSettings(currentIsFast);
+                
+                inputText.addTextChangedListener(new TextWatcher() {
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override public void afterTextChanged(Editable s) { tvWordCount.setText(s.length() + " 字"); }
+                });
 
                 Intent intent = getIntent();
                 if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
@@ -498,12 +532,12 @@ jobs:
                 new Thread(() -> {
                     try {
                         try {
-                            fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.3");
+                            fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.5");
                             loadVocab(fastVocab, "student_vocab.json");
                         } catch(Exception ignored) {}
                         
                         try {
-                            proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_cache_v2.3");
+                            proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_cache_v2.5");
                             loadVocab(proVocab, "roberta_vocab.json");
                             clsId = proVocab.getOrDefault("[CLS]", 101L);
                             sepId = proVocab.getOrDefault("[SEP]", 102L);
@@ -528,17 +562,10 @@ jobs:
                             "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n" +
                             "注：不同手机的速度会有不同，性能越强的手机，模型推理速度越快。\n" +
                             "神经网络可能会犯一些低级错误，这是深度学习模型的通病，在所难免。\n\n" +
-                            "【温度参数】\n" +
-                            "控制AI判断的果断程度。\n" +
-                            "• 值越低（如0.5）：概率分布越尖锐。模型更自信（置信度更高），更激进，修改量可能上升，因为更不容易被拦截。\n" +
-                            "• 值越高（如2.0）：概率分布越平缓。模型更保守（置信度更低），修改量可能下降，因为更容易被拦截。\n" +
-                            "• 默认0.9～1.2，适合大多数场景\n\n" +
-                            "【置信度拦截阈值】\n" +
-                            "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n\n" +
                             "【交互与拓展功能】\n" +
-                            "• 手动修改：在检查完毕后，直接点击下方结果中带下划线的字，即可弹出菜单，允许你手动修改为其他字或还原回原字。\n" +
-                            "• 一键粘贴：点击按钮快速读取剪贴板内容，方便快捷，无需长按粘贴。\n" +
-                            "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n\n" +
+                            "• 交互式修改：在检查完毕后，直接点击下方结果中带下划线的字，即可弹出菜单修改为其他字。而且，如果你在“更正清单”中将误杀的字还原成了原字，它会像消消乐一样从列表中自动消失！\n" +
+                            "• 一键粘贴：点击按钮快速读取剪贴板内容，无需长按。\n" +
+                            "• 系统分享：在微信、浏览器中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                     
                     new AlertDialog.Builder(this)
@@ -598,9 +625,20 @@ jobs:
                 });
             }
 
+            private boolean hasError(List<TextBlock> clause) {
+                for (TextBlock b : clause) {
+                    if (b.isMutable && !b.current.equals(b.original)) return true;
+                }
+                return false;
+            }
+
             private String getCleanText() {
                 StringBuilder sb = new StringBuilder();
-                for (TextBlock b : currentBlocks) sb.append(b.current);
+                for (List<TextBlock> sentence : allSentencesBlocks) {
+                    for (TextBlock b : sentence) {
+                        sb.append(b.current);
+                    }
+                }
                 return sb.toString();
             }
 
@@ -704,18 +742,26 @@ jobs:
 
                 new Thread(() -> {
                     try {
+                        runOnUiThread(() -> {
+                            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                            progressBar.setVisibility(View.VISIBLE);
+                            progressBar.setProgress(0);
+                        });
+
                         long startTime = System.currentTimeMillis();
                         String[] labels = {"的", "地", "得"};
                         String[] sentences = text.split("(?<=[。！？!?\n])");
                         
-                        currentBlocks.clear();
-                        int totalChangeCount = 0;
+                        runOnUiThread(() -> progressBar.setMax(sentences.length));
+
+                        allSentencesBlocks.clear();
                         StringBuilder liveErrorsHtml = new StringBuilder();
                         long lastUIUpdateTime = System.currentTimeMillis();
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) continue;
+                            List<TextBlock> currentSentenceBlocks = new ArrayList<>();
 
                             boolean[] isIgnored = new boolean[sentence.length()];
                             for (String w : IGNORE_WORDS) {
@@ -735,7 +781,7 @@ jobs:
                             }
 
                             if (!hasTarget) {
-                                currentBlocks.add(new TextBlock(sentence, sentence, false));
+                                currentSentenceBlocks.add(new TextBlock(sentence, sentence, false, 0f));
                             } else {
                                 float[] scores;
                                 int vocabSize = isFastMode ? 3 : proVocab.size();
@@ -776,12 +822,10 @@ jobs:
                                 }
 
                                 StringBuilder normalText = new StringBuilder();
-                                StringBuilder highlightedSentence = new StringBuilder(); // 用于实时打印单句上下文
-                                boolean currentSentenceHasError = false;
                                 
                                 Runnable flushNormal = () -> {
                                     if(normalText.length() > 0) {
-                                        currentBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false));
+                                        currentSentenceBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false, 0f));
                                         normalText.setLength(0);
                                     }
                                 };
@@ -791,7 +835,9 @@ jobs:
                                     
                                     if (isIgnored[i] || (ch != '的' && ch != '地' && ch != '得')) {
                                         normalText.append(ch);
-                                        highlightedSentence.append(ch);
+                                        if (ch == '，' || ch == ',' || ch == '；' || ch == ';' || ch == '、' || ch == '\n') {
+                                            flushNormal.run();
+                                        }
                                         continue;
                                     }
 
@@ -824,45 +870,64 @@ jobs:
                                     String pred = labels[maxIdx];
                                     boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
                                     
-                                    if (changed) {
-                                        totalChangeCount++;
-                                        currentSentenceHasError = true;
-                                        // 实时高亮显示片段，原字红色划线，修改后为蓝色加粗，顺带显示置信度
-                                        highlightedSentence.append("<font color='#E53935'><s>").append(ch).append("</s></font><font color='#2196F3'><b>").append(pred).append("</b></font><font color='#9E9E9E'><small>(").append(String.format("%.2f", maxProb)).append(")</small></font>");
-                                    } else {
-                                        highlightedSentence.append(ch);
-                                    }
-                                    
-                                    currentBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true));
+                                    currentSentenceBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb));
                                 }
                                 flushNormal.run();
+
+                                // 依据标点符号智能切分并重组出只有错误的子句，剔除无错的前后冗余语境
+                                List<List<TextBlock>> clauses = new ArrayList<>();
+                                List<TextBlock> currentClause = new ArrayList<>();
+                                for (TextBlock b : currentSentenceBlocks) {
+                                    currentClause.add(b);
+                                    char lastChar = b.original.charAt(b.original.length() - 1);
+                                    if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') {
+                                        clauses.add(currentClause);
+                                        currentClause = new ArrayList<>();
+                                    }
+                                }
+                                if (!currentClause.isEmpty()) clauses.add(currentClause);
                                 
-                                // 如果这句上下文有错误，将其追加进实时日志
-                                if (currentSentenceHasError) {
-                                    liveErrorsHtml.append(highlightedSentence.toString()).append("<br><br>");
+                                boolean sentenceHasError = false;
+                                StringBuilder sentenceErrorHtml = new StringBuilder();
+                                for (List<TextBlock> clause : clauses) {
+                                    if (hasError(clause)) {
+                                        sentenceHasError = true;
+                                        for (TextBlock b : clause) {
+                                            if (b.isMutable && !b.current.equals(b.original)) {
+                                                sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(b.original).append("</s></font> <font color='#E53935'><b>").append(b.current).append("</b></font><font color='#9E9E9E'><small>(置信度: ").append(String.format("%.2f", b.conf)).append(")</small></font>");
+                                            } else {
+                                                sentenceErrorHtml.append(b.original);
+                                            }
+                                        }
+                                    }
+                                }
+                                if (sentenceHasError) {
+                                    liveErrorsHtml.append(sentenceErrorHtml.toString()).append("<br><br>");
                                 }
                             }
+                            
+                            allSentencesBlocks.add(currentSentenceBlocks);
 
                             long now = System.currentTimeMillis();
-                            if (now - lastUIUpdateTime > 300) {
+                            final int currentProgress = sIdx + 1;
+                            if (now - lastUIUpdateTime > 300 || currentProgress == sentences.length) {
                                 lastUIUpdateTime = now;
-                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + (sIdx+1) + " / " + sentences.length + "<br><br>" +
+                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" +
                                                         (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【实时更正记录】：</font></b><br>" + liveErrorsHtml.toString() : "");
                                 runOnUiThread(() -> {
+                                    progressBar.setProgress(currentProgress);
                                     outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
-                                    scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); // 自动滚动到底部
+                                    scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
                                 });
                             }
                         }
 
                         lastTimeMs = System.currentTimeMillis() - startTime;
-                        lastChangeCount = totalChangeCount;
-                        lastLiveErrorsHtml = liveErrorsHtml.toString();
                         
                         runOnUiThread(() -> {
                             renderFinalBlocks();
                             btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true);
-                            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); // 检查完后自动回到顶部方便阅读
+                            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); 
                         });
 
                     } catch (Exception e) {
@@ -870,6 +935,11 @@ jobs:
                         runOnUiThread(() -> {
                             outputText.setText("推理运行中断: " + err);
                             btnCheck.setEnabled(true);
+                        });
+                    } finally {
+                        runOnUiThread(() -> {
+                            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                            progressBar.setVisibility(View.INVISIBLE);
                         });
                     }
                 }).start();
@@ -884,7 +954,7 @@ jobs:
                         else if (which == 1) b.current = "地";
                         else if (which == 2) b.current = "得";
                         else if (which == 3) b.current = b.original;
-                        renderFinalBlocks();
+                        renderFinalBlocks(); 
                     })
                     .show();
             }
@@ -892,48 +962,113 @@ jobs:
             private void renderFinalBlocks() {
                 SpannableStringBuilder ssb = new SpannableStringBuilder();
                 
-                if (lastChangeCount == 0) {
+                int currentErrors = 0;
+                for (List<TextBlock> sentence : allSentencesBlocks) {
+                    for (TextBlock b : sentence) {
+                        if (b.isMutable && !b.current.equals(b.original)) currentErrors++;
+                    }
+                }
+                
+                if (currentErrors == 0) {
                     String header = "检查完毕！未检测到“的地得”误用。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
                     SpannableString headerSp = new SpannableString(header);
                     headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     ssb.append(headerSp);
                 } else {
-                    String header = "检查完毕！共更正 " + lastChangeCount + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击全文中带下划线的字可手动修改/还原）\n\n";
+                    String header = "检查完毕！共更正 " + currentErrors + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击带下划线的字可手动修改）\n\n";
                     SpannableString headerSp = new SpannableString(header);
                     headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     ssb.append(headerSp);
                     
-                    if (!lastLiveErrorsHtml.isEmpty()) {
-                        Spanned listSp = Html.fromHtml("<b><font color='#757575'>【更正清单】：</font></b><br>" + lastLiveErrorsHtml + "<font color='#757575'>---------------------------------</font><br><br>", Html.FROM_HTML_MODE_COMPACT);
-                        ssb.append(listSp);
-                    }
-                }
-                
-                SpannableString fullHeader = new SpannableString(lastChangeCount > 0 ? "【修正后的全文】\n" : "【原文】\n");
-                fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                ssb.append(fullHeader);
-                
-                for (TextBlock b : currentBlocks) {
-                    int start = ssb.length();
-                    ssb.append(b.current);
-                    if (b.isMutable) {
-                        ClickableSpan span = new ClickableSpan() {
-                            @Override
-                            public void onClick(View widget) {
-                                showEditDialog(b);
+                    SpannableString listHeader = new SpannableString("【更正清单：】\n");
+                    listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.append(listHeader);
+                    
+                    for (List<TextBlock> sentence : allSentencesBlocks) {
+                        List<List<TextBlock>> clauses = new ArrayList<>();
+                        List<TextBlock> currentClause = new ArrayList<>();
+                        for (TextBlock b : sentence) {
+                            currentClause.add(b);
+                            char lastChar = b.original.charAt(b.original.length() - 1);
+                            if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') {
+                                clauses.add(currentClause);
+                                currentClause = new ArrayList<>();
                             }
-                            @Override
-                            public void updateDrawState(TextPaint ds) {
-                                ds.setUnderlineText(true);
-                                if (!b.current.equals(b.original)) {
-                                    ds.setColor(0xFFE53935); // AI或人工修改后为红色加粗
-                                    ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                                } else {
-                                    ds.setColor(0xFF2196F3); // 原始预测正确的保留为蓝色
+                        }
+                        if (!currentClause.isEmpty()) clauses.add(currentClause);
+                        
+                        boolean hasAnyError = false;
+                        for (List<TextBlock> clause : clauses) {
+                            if (hasError(clause)) {
+                                hasAnyError = true;
+                                for (TextBlock b : clause) {
+                                    if (b.isMutable && !b.current.equals(b.original)) {
+                                        int stStart = ssb.length();
+                                        ssb.append(b.original);
+                                        ssb.setSpan(new StrikethroughSpan(), stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        
+                                        ssb.append(" ");
+                                        
+                                        int newStart = ssb.length();
+                                        ssb.append(b.current);
+                                        ClickableSpan clickSpan = new ClickableSpan() {
+                                            @Override public void onClick(View w) { showEditDialog(b); }
+                                            @Override public void updateDrawState(TextPaint ds) {
+                                                ds.setColor(0xFFE53935);
+                                                ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                                                ds.setUnderlineText(true);
+                                            }
+                                        };
+                                        ssb.setSpan(clickSpan, newStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        
+                                        int confStart = ssb.length();
+                                        ssb.append("(置信度: ").append(String.format("%.2f", b.conf)).append(")");
+                                        ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                    } else {
+                                        ssb.append(b.current);
+                                    }
                                 }
                             }
-                        };
-                        ssb.setSpan(span, start, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        }
+                        if (hasAnyError) ssb.append("\n\n");
+                    }
+                    
+                    SpannableString sep = new SpannableString("---------------------------------\n\n");
+                    sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssb.append(sep);
+                }
+                
+                SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n");
+                fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssb.append(fullHeader);
+                
+                for (List<TextBlock> sentence : allSentencesBlocks) {
+                    for (TextBlock b : sentence) {
+                        int start = ssb.length();
+                        ssb.append(b.current);
+                        if (b.isMutable) {
+                            ClickableSpan span = new ClickableSpan() {
+                                @Override
+                                public void onClick(View widget) {
+                                    showEditDialog(b);
+                                }
+                                @Override
+                                public void updateDrawState(TextPaint ds) {
+                                    ds.setUnderlineText(true);
+                                    if (!b.current.equals(b.original)) {
+                                        ds.setColor(0xFFE53935); 
+                                        ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                                    } else {
+                                        ds.setColor(0xFF2196F3); 
+                                    }
+                                }
+                            };
+                            ssb.setSpan(span, start, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        }
                     }
                 }
                 
