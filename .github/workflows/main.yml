@@ -392,7 +392,7 @@ jobs:
                     android:layout_weight="1" android:text="复制" android:textSize="14sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp" android:enabled="false"/>
                 <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="存盘" android:textSize="14sp"
+                    android:layout_weight="1" android:text="保存" android:textSize="14sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text"/>
             </LinearLayout>
 
@@ -417,16 +417,9 @@ jobs:
                 android:padding="10dp" android:visibility="gone">
                 
                 <LinearLayout android:id="@+id/panelTopBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="快捷悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:textStyle="bold"/>
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:textStyle="bold"/>
                     <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#4CAF50" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                     <Button android:id="@+id/btnFloatCloseAll" android:layout_width="36dp" android:layout_height="32dp" android:text="✕" android:textSize="12sp" android:backgroundTint="#E53935" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="4dp"/>
-                </LinearLayout>
-
-                <LinearLayout android:id="@+id/customContextMenu" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:visibility="gone" android:background="@color/card_bg" android:paddingBottom="4dp">
-                    <Button android:id="@+id/btnMenuSelectAll" android:layout_width="0dp" android:layout_height="30dp" android:layout_weight="1" android:text="全选" android:textSize="11sp" android:backgroundTint="#E0E0E0" android:textColor="#000000" android:padding="0dp" android:layout_marginEnd="2dp" android:insetTop="0dp" android:insetBottom="0dp"/>
-                    <Button android:id="@+id/btnMenuCopy" android:layout_width="0dp" android:layout_height="30dp" android:layout_weight="1" android:text="复制" android:textSize="11sp" android:backgroundTint="#E0E0E0" android:textColor="#000000" android:padding="0dp" android:layout_marginEnd="2dp" android:insetTop="0dp" android:insetBottom="0dp"/>
-                    <Button android:id="@+id/btnMenuCut" android:layout_width="0dp" android:layout_height="30dp" android:layout_weight="1" android:text="剪切" android:textSize="11sp" android:backgroundTint="#E0E0E0" android:textColor="#000000" android:padding="0dp" android:layout_marginEnd="2dp" android:insetTop="0dp" android:insetBottom="0dp"/>
-                    <Button android:id="@+id/btnMenuPaste" android:layout_width="0dp" android:layout_height="30dp" android:layout_weight="1" android:text="粘贴" android:textSize="11sp" android:backgroundTint="#E0E0E0" android:textColor="#000000" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                 </LinearLayout>
 
                 <EditText android:id="@+id/editFloatInput" android:layout_width="match_parent" android:layout_height="100dp"
@@ -551,12 +544,6 @@ jobs:
                 Button btnFloatJump = floatView.findViewById(R.id.btnFloatJump);
                 Button btnFloatCloseAll = floatView.findViewById(R.id.btnFloatCloseAll);
                 
-                View customContextMenu = floatView.findViewById(R.id.customContextMenu);
-                Button btnMenuSelectAll = floatView.findViewById(R.id.btnMenuSelectAll);
-                Button btnMenuCopy = floatView.findViewById(R.id.btnMenuCopy);
-                Button btnMenuCut = floatView.findViewById(R.id.btnMenuCut);
-                Button btnMenuPaste = floatView.findViewById(R.id.btnMenuPaste);
-
                 editFloatInput.addTextChangedListener(new TextWatcher() {
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -566,59 +553,10 @@ jobs:
                         }
                     }
                 });
-                
-                editFloatInput.setOnLongClickListener(v -> {
-                    customContextMenu.setVisibility(View.VISIBLE);
-                    return true;
-                });
-                editFloatInput.setOnTouchListener((v, event) -> {
-                    if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                        customContextMenu.setVisibility(View.GONE);
-                    }
-                    return false;
-                });
-                
-                btnMenuSelectAll.setOnClickListener(v -> editFloatInput.selectAll());
-                btnMenuCopy.setOnClickListener(v -> {
-                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                    int start = editFloatInput.getSelectionStart(); int end = editFloatInput.getSelectionEnd();
-                    start = Math.max(0, start); end = Math.max(0, end);
-                    if (start == end) { start = 0; end = editFloatInput.length(); }
-                    int min = Math.min(start, end); int max = Math.max(start, end);
-                    if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("text", editFloatInput.getText().subSequence(min, max)));
-                    customContextMenu.setVisibility(View.GONE);
-                    Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show();
-                });
-                btnMenuCut.setOnClickListener(v -> {
-                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                    int start = editFloatInput.getSelectionStart(); int end = editFloatInput.getSelectionEnd();
-                    start = Math.max(0, start); end = Math.max(0, end);
-                    if (start != end) {
-                        int min = Math.min(start, end); int max = Math.max(start, end);
-                        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("text", editFloatInput.getText().subSequence(min, max)));
-                        editFloatInput.getText().delete(min, max);
-                    }
-                    customContextMenu.setVisibility(View.GONE);
-                    Toast.makeText(this, "已剪切", Toast.LENGTH_SHORT).show();
-                });
-                btnMenuPaste.setOnClickListener(v -> {
-                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                    if (clipboard != null && clipboard.hasPrimaryClip() && clipboard.getPrimaryClip().getItemCount() > 0) {
-                        CharSequence pasteText = clipboard.getPrimaryClip().getItemAt(0).getText();
-                        if (pasteText != null) {
-                            int start = editFloatInput.getSelectionStart(); int end = editFloatInput.getSelectionEnd();
-                            if (start < 0) start = editFloatInput.length(); if (end < 0) end = editFloatInput.length();
-                            int min = Math.min(start, end); int max = Math.max(start, end);
-                            editFloatInput.getText().replace(min, max, pasteText);
-                        }
-                    }
-                    customContextMenu.setVisibility(View.GONE);
-                });
 
                 floatView.setOnTouchListener((v, event) -> {
                     if (event.getAction() == MotionEvent.ACTION_OUTSIDE) {
                         if (panelInput.getVisibility() == View.VISIBLE) {
-                            customContextMenu.setVisibility(View.GONE);
                             panelInput.setVisibility(View.GONE);
                             setFocusable(false);
                         }
@@ -642,7 +580,6 @@ jobs:
                     if (!text.isEmpty()) {
                         setFocusable(false);
                         panelInput.setVisibility(View.GONE);
-                        customContextMenu.setVisibility(View.GONE);
                         startInference(text);
                     } else {
                         Toast.makeText(this, "文本为空", Toast.LENGTH_SHORT).show();
@@ -653,7 +590,7 @@ jobs:
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     if (clipboard != null) {
                         clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", editFloatInput.getText().toString()));
-                        Toast.makeText(this, "已复制修正后的全文。", Toast.LENGTH_SHORT).show();
+                        showStatus("已复制修正后的全文。", true);
                     }
                 });
                 
@@ -707,7 +644,7 @@ jobs:
                                             if (!sync.isEmpty() && !sync.equals(editFloatInput.getText().toString())) {
                                                 editFloatInput.setText(sync);
                                             }
-                                        } else { customContextMenu.setVisibility(View.GONE); }
+                                        }
                                         panelInput.setVisibility(isVisible ? View.GONE : View.VISIBLE);
                                         setFocusable(!isVisible);
                                     } else {
@@ -916,7 +853,7 @@ jobs:
                             ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                             clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
                             
-                            getSharedPreferences("DedediConfig", Context.MODE_PRIVATE).edit().putString("sync_text", fullCleanText.toString()).apply();
+                            getSharedPreferences("DedediConfig", Context.MODEPRIVATE).edit().putString("sync_text", fullCleanText.toString()).apply();
                         });
                     } catch (Exception e) {
                         new Handler(Looper.getMainLooper()).post(() -> {
@@ -1122,7 +1059,7 @@ jobs:
                         } catch(Exception ignored) {}
 
                         runOnUiThread(() -> {
-                            if (!hasStartedChecking) outputText.setText("AI已加载就绪。下次可直接秒开！");
+                            if (!hasStartedChecking) outputText.setText("AI已加载。");
                         });
                     } catch (Exception ignored) {}
                 }).start();
@@ -1145,7 +1082,7 @@ jobs:
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n\n" +
                             "【悬浮窗】\n" +
-                            "开启后支持后台持续推理，便于一边创作一边使用。长按悬浮球或点击面板右上角可将数据无缝同步至应用内继续操作。点击面板外可自动收起。\n\n" +
+                            "开启后支持后台持续满速推理。长按悬浮球或点击面板右上角可将数据无缝同步至应用内继续操作。点击面板外可自动收起。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                     new AlertDialog.Builder(this).setTitle("使用说明").setMessage(helpText).setPositiveButton("知道了", null).show();
                 });
@@ -1190,7 +1127,7 @@ jobs:
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     ClipData clip = ClipData.newPlainText("Corrected Article", finalTxt);
                     if (clipboard != null) clipboard.setPrimaryClip(clip);
-                    Toast.makeText(this, "你复制修正后的全文。", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "已复制修正后的全文。", Toast.LENGTH_SHORT).show();
                 });
 
                 btnSaveTxt.setOnClickListener(v -> {
@@ -1630,5 +1567,3 @@ jobs:
       with:
         name: Dededi-App-APK-Pro
         path: app/build/outputs/apk/release/app-release.apk
-
-
