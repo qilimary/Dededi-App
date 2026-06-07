@@ -777,6 +777,7 @@ jobs:
 
                 btnCircle.setOnTouchListener(dragListener);
                 panelTopBar.setOnTouchListener(dragListener);
+                panelInput.setOnTouchListener(dragListener);
                 
                 windowManager.addView(floatView, params);
             }
@@ -2005,13 +2006,23 @@ jobs:
                             for (List<TextBlock> clause : clauses) {
                                 if (hasError(clause)) {
                                     sentenceHasError = true;
+                                    List<TextBlock> errsInClause = new ArrayList<>();
+                                    for (TextBlock b : clause) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) errsInClause.add(b); }
+                                    
+                                    sentenceErrorHtml.append("<font color='#2196F3'><b>[");
+                                    for (int i = 0; i < errsInClause.size(); i++) {
+                                        sentenceErrorHtml.append(liveErrorCount + i + 1);
+                                        if (i < errsInClause.size() - 1) sentenceErrorHtml.append(",");
+                                    }
+                                    sentenceErrorHtml.append("]</b></font> ");
+                                    
                                     for (TextBlock b : clause) {
                                         String safeOrig = b.original.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
                                         String safeCurr = b.current.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
                                         if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                             liveErrorCount++;
                                             String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : "";
-                                            sentenceErrorHtml.append("<sup><font color='#757575'>[").append(liveErrorCount).append("]</font></sup><font color='#9E9E9E'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
+                                            sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
                                         } else { sentenceErrorHtml.append(safeOrig); }
                                     }
                                 }
