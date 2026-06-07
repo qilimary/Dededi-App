@@ -162,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 15
-                versionName "2.40"
+                versionCode 16
+                versionName "2.50"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -400,7 +400,7 @@ jobs:
 
             <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent">
                 <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textSize="16sp" android:background="@color/card_bg" android:padding="12dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
+                    android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
             </ScrollView>
         </LinearLayout>
         EOF
@@ -886,7 +886,7 @@ jobs:
                                     
                                     if (changed) {
                                         errorCount[0]++;
-                                        final String errLog = "发现错误：" + ch + "->" + pred + " | 共 " + errorCount[0] + " 处";
+                                        final String errLog = "发现错误：" + ch + " → " + pred + " | 共 " + errorCount[0] + " 处";
                                         syncShowStatus(errLog, false);
                                     }
                                 }
@@ -917,7 +917,7 @@ jobs:
                                                     finalSentenceBlocks.add(new MainActivity.TextBlock(sub, correct, true, 1.0f, 2));
                                                     
                                                     errorCount[0]++;
-                                                    final String errLog = "错别字替换：" + sub + " -> " + correct + " | 共 " + errorCount[0] + " 处";
+                                                    final String errLog = "发现错误：" + sub + " → " + correct + " | 共 " + errorCount[0] + " 处";
                                                     syncShowStatus(errLog, true);
                                                     
                                                     i += len;
@@ -947,7 +947,7 @@ jobs:
                                                                 finalSentenceBlocks.add(new MainActivity.TextBlock(String.valueOf(quantChar), rule.primaryQuant, true, 1.0f, 3));
                                                                 
                                                                 errorCount[0]++;
-                                                                final String errLog = "量词纠正：" + numChar + quantChar + nounChar + " -> " + numChar + rule.primaryQuant + nounChar + " | 共 " + errorCount[0] + " 处";
+                                                                final String errLog = "发现错误：" + numChar + quantChar + nounChar + " → " + numChar + rule.primaryQuant + nounChar + " | 共 " + errorCount[0] + " 处";
                                                                 syncShowStatus(errLog, true);
                                                                 
                                                                 i += 1;
@@ -1254,7 +1254,7 @@ jobs:
                     loadSettings(currentIsFast); 
                 });
 
-                outputText.setText("正在加载大模型到内存...（首次启动需解压约5秒）");
+                outputText.setText("正在加载模型...");
                 new Thread(() -> {
                     loadTypoMap(this);
                     try {
@@ -1279,7 +1279,7 @@ jobs:
 
                 btnHelp.setOnClickListener(v -> {
                     String helpText = "【模型介绍】\n" +
-                            "两款模型均只纠错“的地得”使用。但软件同样支持其他错别字纠正，作为锦上添花的功能，并不专业。\n\n" +
+                            "两款模型均只纠错“的地得”使用。但软件同样支持其他错别字纠正作为锦上添花的功能。\n\n" +
                             "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n" +
                             "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n" +
                             "注：不同手机的速度会有不同，性能越强的手机，模型推理速度越快。\n" +
@@ -1333,8 +1333,8 @@ jobs:
                     if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
                     hasStartedChecking = true; saveSettings(currentIsFast); autoScrollEnabled = true;
                     boolean isFastMode = rbFast.isChecked();
-                    if (isFastMode && fastModule == null) { Toast.makeText(this, "极速版引擎仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
-                    if (!isFastMode && proModule == null) { Toast.makeText(this, "专业版大模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                    if (isFastMode && fastModule == null) { Toast.makeText(this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                    if (!isFastMode && proModule == null) { Toast.makeText(this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
                     doInference(isFastMode);
                 });
 
@@ -1765,7 +1765,7 @@ jobs:
                         renderFinalBlocks(); 
                     }).show();
                 } else { // 错别字与量词纠错
-                    String[] options = {"采用修改 (" + b.modelCorrected + ")", "还原为原项 (" + b.original + ")"};
+                    String[] options = {"采用修改 (" + b.modelCorrected + ")", "还原 (" + b.original + ")"};
                     new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + b.current + ")").setItems(options, (dialog, which) -> {
                         String choice = (which == 0) ? b.modelCorrected : b.original;
                         b.userModified = !choice.equals(b.modelCorrected);
@@ -1810,12 +1810,12 @@ jobs:
                 
                 SpannableStringBuilder ssb = new SpannableStringBuilder();
                 if (currentErrors == 0) {
-                    String header = "检查完毕！未检测到任何问题。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
+                    String header = "检查完毕！未检测到错误。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
                     SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(headerSp);
                 } else {
-                    String header = "检查完毕！共更正 " + currentErrors + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击纠错清单编号快速跳转）\n\n";
+                    String header = "检查完毕——共更正 " + currentErrors + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击序号可快速跳转）\n\n";
                     SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(headerSp);
-                    SpannableString listHeader = new SpannableString("【更正清单：】\n"); listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(listHeader);
+                    SpannableString listHeader = new SpannableString("【纠错清单：】\n"); listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(listHeader);
                     
                     int listErrIdx = 0; 
                     for (List<TextBlock> sentence : allSentencesBlocks) {
@@ -1891,11 +1891,11 @@ jobs:
                                         ssb.append(b.current); 
                                     }
                                 }
-                                ssb.append("\n\n");
+                                ssb.append("\n"); // 改为单换行，消除过大空隙
                             }
                         }
                     }
-                    SpannableString sep = new SpannableString("---------------------------------\n\n"); sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(sep);
+                    SpannableString sep = new SpannableString("\n---------------------------------\n\n"); sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(sep);
                 }
                 
                 SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(fullHeader);
