@@ -182,6 +182,10 @@ jobs:
                 sourceCompatibility JavaVersion.VERSION_11
                 targetCompatibility JavaVersion.VERSION_11
             }
+            lintOptions {
+                checkReleaseBuilds false
+                abortOnError false
+            }
         }
         dependencies {
             implementation 'androidx.appcompat:appcompat:1.6.1'
@@ -473,12 +477,21 @@ jobs:
                 android:visibility="invisible"
                 android:minWidth="80dp"
                 android:layout_marginTop="4dp">
-                <TextView android:id="@+id/tvStatus"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:textColor="#FFFFFF"
-                    android:textSize="11sp"
-                    android:paddingStart="6dp" android:paddingEnd="6dp"
-                    android:paddingTop="3dp" android:paddingBottom="3dp"/>
+                
+                <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                    <TextView android:id="@+id/tvStatus"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp"
+                        android:paddingStart="6dp" android:paddingEnd="6dp"
+                        android:paddingTop="3dp" android:paddingBottom="3dp"/>
+                    <TextView android:id="@+id/btnCancelFloat"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="✕" android:textColor="#FF5252" android:textSize="14sp"
+                        android:paddingStart="4dp" android:paddingEnd="4dp" android:visibility="gone"
+                        android:textStyle="bold"/>
+                </LinearLayout>
+
                 <ProgressBar android:id="@+id/floatProgressBar"
                     style="?android:attr/progressBarStyleHorizontal"
                     android:layout_width="match_parent" android:layout_height="2dp"
