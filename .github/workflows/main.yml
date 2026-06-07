@@ -1,3 +1,4 @@
+
 name: Build Android APK
 
 on:
@@ -92,6 +93,7 @@ jobs:
         cp sys_core_p.dat app/src/main/assets/
         cp student_vocab.json app/src/main/assets/ || true
         cp roberta_vocab.json app/src/main/assets/
+        cp 错别字.txt app/src/main/assets/ || true
 
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
@@ -160,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 12
-                versionName "2.10"
+                versionCode 14
+                versionName "2.30"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -522,6 +524,8 @@ jobs:
             @Override
             public void onCreate() {
                 super.onCreate();
+                MainActivity.loadTypoMap(this);
+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     NotificationChannel channel = new NotificationChannel("float_chan", "悬浮窗后台服务", NotificationManager.IMPORTANCE_LOW);
                     getSystemService(NotificationManager.class).createNotificationChannel(channel);
@@ -778,8 +782,7 @@ jobs:
                             }
                             
                             if (!hasTarget) {
-                                currentSentenceBlocks.add(new MainActivity.TextBlock(sentence, sentence, false, 0f));
-                                fullCleanText.append(sentence);
+                                currentSentenceBlocks.add(new MainActivity.TextBlock(sentence, sentence, false, 0f, 0));
                             } else {
                                 float[] scores;
                                 int vocabSize = isFastMode ? 3 : MainActivity.proVocab.size();
@@ -816,7 +819,7 @@ jobs:
                                 StringBuilder normalText = new StringBuilder();
                                 Runnable flushNormal = () -> {
                                     if(normalText.length() > 0) { 
-                                        currentSentenceBlocks.add(new MainActivity.TextBlock(normalText.toString(), normalText.toString(), false, 0f)); 
+                                        currentSentenceBlocks.add(new MainActivity.TextBlock(normalText.toString(), normalText.toString(), false, 0f, 0)); 
                                         normalText.setLength(0); 
                                     }
                                 };
@@ -848,7 +851,7 @@ jobs:
                                     String pred = labels[maxIdx];
                                     boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
                                     
-                                    currentSentenceBlocks.add(new MainActivity.TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb));
+                                    currentSentenceBlocks.add(new MainActivity.TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb, 1));
                                     
                                     if (changed) {
                                         errorCount[0]++;
@@ -863,15 +866,103 @@ jobs:
                                     }
                                 }
                                 flushNormal.run();
-                                
-                                for (MainActivity.TextBlock b : currentSentenceBlocks) {
-                                    fullCleanText.append(b.current);
+                            }
+
+                            // 独立插入 错别字与量词 扫描环节 (针对正常文本块)
+                            List<MainActivity.TextBlock> finalSentenceBlocks = new ArrayList<>();
+                            for (MainActivity.TextBlock b : currentSentenceBlocks) {
+                                if (b.isMutable) {
+                                    finalSentenceBlocks.add(b);
+                                } else {
+                                    int i = 0;
+                                    StringBuilder normalBuf = new StringBuilder();
+                                    while (i < b.original.length()) {
+                                        boolean matchedTypo = false;
+                                        boolean matchedQuant = false;
+                                        
+                                        if (MainActivity.maxTypoLen > 0) {
+                                            for (int len = Math.min(MainActivity.maxTypoLen, b.original.length() - i); len >= MainActivity.minTypoLen; len--) {
+                                                String sub = b.original.substring(i, i + len);
+                                                if (MainActivity.typoMap.containsKey(sub)) {
+                                                    if (normalBuf.length() > 0) {
+                                                        finalSentenceBlocks.add(new MainActivity.TextBlock(normalBuf.toString(), normalBuf.toString(), false, 0f, 0));
+                                                        normalBuf.setLength(0);
+                                                    }
+                                                    String correct = MainActivity.typoMap.get(sub);
+                                                    finalSentenceBlocks.add(new MainActivity.TextBlock(sub, correct, true, 1.0f, 2));
+                                                    
+                                                    errorCount[0]++;
+                                                    final String errLog = "错别字替换：" + sub + "->" + correct + " | 共 " + errorCount[0] + " 处";
+                                                    new Handler(Looper.getMainLooper()).post(() -> {
+                                                        if(!isInterruptRequested){
+                                                            tvStatus.setText(errLog);
+                                                            statusContainer.setVisibility(View.VISIBLE);
+                                                            statusContainer.removeCallbacks(hideStatusRunnable);
+                                                        }
+                                                    });
+                                                    
+                                                    i += len;
+                                                    matchedTypo = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        
+                                        // 绝对量词匹配逻辑
+                                        if (!matchedTypo && i > 0 && i + 1 < b.original.length()) {
+                                            if (normalBuf.length() > 0) {
+                                                char numChar = normalBuf.charAt(normalBuf.length() - 1);
+                                                char quantChar = b.original.charAt(i);
+                                                char nounChar = b.original.charAt(i + 1);
+                                                
+                                                if (MainActivity.KNOWN_QUANTS.indexOf(quantChar) >= 0 && MainActivity.NUMS.indexOf(numChar) >= 0) {
+                                                    if (MainActivity.quantRules.containsKey(nounChar)) {
+                                                        MainActivity.QuantifierRule rule = MainActivity.quantRules.get(nounChar);
+                                                        if (rule.allowedQuants.indexOf(quantChar) < 0) {
+                                                            char nextC = (i + 2 < b.original.length()) ? b.original.charAt(i + 2) : '\0';
+                                                            if (MainActivity.isSafeCharAfterNoun(nextC)) {
+                                                                if (normalBuf.length() > 0) {
+                                                                    finalSentenceBlocks.add(new MainActivity.TextBlock(normalBuf.toString(), normalBuf.toString(), false, 0f, 0));
+                                                                    normalBuf.setLength(0);
+                                                                }
+                                                                finalSentenceBlocks.add(new MainActivity.TextBlock(String.valueOf(quantChar), rule.primaryQuant, true, 1.0f, 3));
+                                                                
+                                                                errorCount[0]++;
+                                                                final String errLog = "量词纠正：" + numChar + quantChar + nounChar + "->" + numChar + rule.primaryQuant + nounChar + " | 共 " + errorCount[0] + " 处";
+                                                                new Handler(Looper.getMainLooper()).post(() -> {
+                                                                    if(!isInterruptRequested){
+                                                                        tvStatus.setText(errLog);
+                                                                        statusContainer.setVisibility(View.VISIBLE);
+                                                                        statusContainer.removeCallbacks(hideStatusRunnable);
+                                                                    }
+                                                                });
+                                                                
+                                                                i += 1;
+                                                                matchedQuant = true;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        if (!matchedTypo && !matchedQuant) {
+                                            normalBuf.append(b.original.charAt(i));
+                                            i++;
+                                        }
+                                    }
+                                    if (normalBuf.length() > 0) {
+                                        finalSentenceBlocks.add(new MainActivity.TextBlock(normalBuf.toString(), normalBuf.toString(), false, 0f, 0));
+                                    }
                                 }
                             }
-                            syncAllBlocks.add(currentSentenceBlocks);
+                            
+                            for (MainActivity.TextBlock b : finalSentenceBlocks) {
+                                fullCleanText.append(b.current);
+                            }
+                            syncAllBlocks.add(finalSentenceBlocks);
                         }
                         
-                        // Sync result variables to MainActivity
                         MainActivity.allSentencesBlocks = syncAllBlocks;
                         MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
                         MainActivity.hasNewFloatResult = true;
@@ -918,6 +1009,7 @@ jobs:
         import android.os.Bundle;
         import android.text.Editable;
         import android.text.Html;
+        import android.text.Layout;
         import android.text.SpannableString;
         import android.text.SpannableStringBuilder;
         import android.text.Spanned;
@@ -946,9 +1038,11 @@ jobs:
         import org.pytorch.LiteModuleLoader;
         import org.pytorch.Module;
         import org.pytorch.Tensor;
+        import java.io.BufferedReader;
         import java.io.File;
         import java.io.FileOutputStream;
         import java.io.InputStream;
+        import java.io.InputStreamReader;
         import java.io.OutputStream;
         import java.nio.charset.StandardCharsets;
         import java.util.ArrayList;
@@ -972,6 +1066,39 @@ jobs:
             public static Module proModule = null;
             public static Map<String, Long> proVocab = new HashMap<>();
             public static long clsId=101, sepId=102, maskId=103, unkId=100, deId=0, diId=0, de2Id=0;
+
+            public static Map<String, String> typoMap = new HashMap<>();
+            public static int maxTypoLen = 0;
+            public static int minTypoLen = Integer.MAX_VALUE;
+            public static boolean typoMapLoaded = false;
+
+            // 量词规则系统
+            public static class QuantifierRule {
+                public String primaryQuant;
+                public String allowedQuants;
+                public QuantifierRule(String p, String a) { primaryQuant = p; allowedQuants = a; }
+            }
+            public static final Map<Character, QuantifierRule> quantRules = new HashMap<>();
+            static {
+                quantRules.put('牛', new QuantifierRule("头", "头"));
+                quantRules.put('马', new QuantifierRule("匹", "匹"));
+                quantRules.put('狗', new QuantifierRule("只", "只条"));
+                quantRules.put('猫', new QuantifierRule("只", "只"));
+                quantRules.put('猪', new QuantifierRule("头", "头口"));
+                quantRules.put('羊', new QuantifierRule("只", "只"));
+                quantRules.put('鸟', new QuantifierRule("只", "只"));
+                quantRules.put('鱼', new QuantifierRule("条", "条尾"));
+                quantRules.put('车', new QuantifierRule("辆", "辆部台"));
+            }
+            public static final String NUMS = "一二两三四五六七八九十百千万这那几某";
+            public static final String KNOWN_QUANTS = "个只条头匹辆部台口尾座把本名位";
+            
+            public static boolean isSafeCharAfterNoun(char c) {
+                if (c == '\0') return true;
+                if (c < '\u4E00' || c > '\u9FFF') return true;
+                String safeChars = "的了着过是在被把让给对和与同或就也都还很太真会能可要想走跑跳吃喝咬叫哭笑我看你他她它们这那\n";
+                return safeChars.indexOf(c) >= 0;
+            }
 
             public static final String[] IGNORE_WORDS = {
                 "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
@@ -1000,14 +1127,42 @@ jobs:
             public static class TextBlock {
                 String original, current;
                 boolean isMutable; float conf;
-                public TextBlock(String o, String c, boolean m, float f) {
-                    this.original = o; this.current = c; this.isMutable = m; this.conf = f;
+                int type; // 0=None, 1=DeDiDe, 2=Typo, 3=Quantifier
+                public TextBlock(String o, String c, boolean m, float f, int t) {
+                    this.original = o; this.current = c; this.isMutable = m; this.conf = f; this.type = t;
                 }
             }
             
             public static List<List<TextBlock>> allSentencesBlocks = new ArrayList<>();
             public static long lastTimeMs = 0;
             public static boolean hasNewFloatResult = false;
+
+            public static synchronized void loadTypoMap(Context ctx) {
+                if (typoMapLoaded) return;
+                try {
+                    InputStream is = ctx.getAssets().open("错别字.txt");
+                    BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        line = line.trim();
+                        if (line.isEmpty()) continue;
+                        String[] parts = line.split("\\s+");
+                        if (parts.length >= 2) {
+                            String err = parts[0];
+                            String corr = parts[1];
+                            if (!err.equals(corr)) {
+                                typoMap.put(err, corr);
+                                maxTypoLen = Math.max(maxTypoLen, err.length());
+                                minTypoLen = Math.min(minTypoLen, err.length());
+                            }
+                        }
+                    }
+                    br.close();
+                    if (minTypoLen == Integer.MAX_VALUE) minTypoLen = 0;
+                    typoMapLoaded = true;
+                } catch (Exception e) {
+                }
+            }
 
             @Override
             protected void onCreate(Bundle savedInstanceState) {
@@ -1080,6 +1235,7 @@ jobs:
 
                 outputText.setText("正在加载大模型到内存...（首次启动需解压约5秒）");
                 new Thread(() -> {
+                    loadTypoMap(this);
                     try {
                         try {
                             if (fastModule == null) fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.5");
@@ -1116,12 +1272,14 @@ jobs:
                             "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n" +
                             "举例：设置为0.9时，模型的置信度超过0.9才会被保留，否则忽略。\n\n" +
                             "【交互与拓展功能】\n" +
-                            "• 手动修改：检查完毕后，点击任意带下划线的字，即可手动修改为其他字或还原回原字。\n" +
+                            "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
+                            "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
+                            
                     new AlertDialog.Builder(this).setTitle("使用说明").setMessage(helpText).setPositiveButton("知道了", null).show();
                 });
 
@@ -1413,7 +1571,7 @@ jobs:
                             }
 
                             if (!hasTarget) {
-                                currentSentenceBlocks.add(new TextBlock(sentence, sentence, false, 0f));
+                                currentSentenceBlocks.add(new TextBlock(sentence, sentence, false, 0f, 0));
                             } else {
                                 float[] scores;
                                 int vocabSize = isFastMode ? 3 : proVocab.size();
@@ -1446,7 +1604,7 @@ jobs:
 
                                 StringBuilder normalText = new StringBuilder();
                                 Runnable flushNormal = () -> {
-                                    if(normalText.length() > 0) { currentSentenceBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false, 0f)); normalText.setLength(0); }
+                                    if(normalText.length() > 0) { currentSentenceBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false, 0f, 0)); normalText.setLength(0); }
                                 };
 
                                 for (int i = 0; i < sentence.length(); i++) {
@@ -1472,31 +1630,104 @@ jobs:
                                     float threshold = maxIdx == 1 ? tDi : (maxIdx == 2 ? tDe3 : tDe);
                                     String pred = labels[maxIdx];
                                     boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
-                                    currentSentenceBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb));
+                                    currentSentenceBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb, 1));
                                 }
                                 flushNormal.run();
+                            }
 
-                                List<List<TextBlock>> clauses = new ArrayList<>(); List<TextBlock> currentClause = new ArrayList<>();
-                                for (TextBlock b : currentSentenceBlocks) {
-                                    currentClause.add(b); char lastChar = b.original.charAt(b.original.length() - 1);
-                                    if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') { clauses.add(currentClause); currentClause = new ArrayList<>(); }
-                                }
-                                if (!currentClause.isEmpty()) clauses.add(currentClause);
-                                
-                                boolean sentenceHasError = false; StringBuilder sentenceErrorHtml = new StringBuilder();
-                                for (List<TextBlock> clause : clauses) {
-                                    if (hasError(clause)) {
-                                        sentenceHasError = true;
-                                        for (TextBlock b : clause) {
-                                            if (b.isMutable && !b.current.equals(b.original)) {
-                                                sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(b.original).append("</s></font> <font color='#E53935'><b>").append(b.current).append("</b></font><font color='#9E9E9E'><small>(置信度: ").append(String.format("%.2f", b.conf)).append(")</small></font>");
-                                            } else { sentenceErrorHtml.append(b.original); }
+                            // 独立插入 错别字与量词 扫描环节 (针对正常文本块)
+                            List<TextBlock> finalSentenceBlocks = new ArrayList<>();
+                            for (TextBlock b : currentSentenceBlocks) {
+                                if (b.isMutable) {
+                                    finalSentenceBlocks.add(b);
+                                } else {
+                                    int i = 0;
+                                    StringBuilder normalBuf = new StringBuilder();
+                                    while (i < b.original.length()) {
+                                        boolean matchedTypo = false;
+                                        boolean matchedQuant = false;
+                                        
+                                        if (maxTypoLen > 0) {
+                                            for (int len = Math.min(maxTypoLen, b.original.length() - i); len >= minTypoLen; len--) {
+                                                String sub = b.original.substring(i, i + len);
+                                                if (typoMap.containsKey(sub)) {
+                                                    if (normalBuf.length() > 0) {
+                                                        finalSentenceBlocks.add(new TextBlock(normalBuf.toString(), normalBuf.toString(), false, 0f, 0));
+                                                        normalBuf.setLength(0);
+                                                    }
+                                                    String correct = typoMap.get(sub);
+                                                    finalSentenceBlocks.add(new TextBlock(sub, correct, true, 1.0f, 2));
+                                                    i += len;
+                                                    matchedTypo = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        
+                                        // 绝对量词匹配逻辑
+                                        if (!matchedTypo && i > 0 && i + 1 < b.original.length()) {
+                                            if (normalBuf.length() > 0) {
+                                                char numChar = normalBuf.charAt(normalBuf.length() - 1);
+                                                char quantChar = b.original.charAt(i);
+                                                char nounChar = b.original.charAt(i + 1);
+                                                
+                                                if (KNOWN_QUANTS.indexOf(quantChar) >= 0 && NUMS.indexOf(numChar) >= 0) {
+                                                    if (quantRules.containsKey(nounChar)) {
+                                                        QuantifierRule rule = quantRules.get(nounChar);
+                                                        if (rule.allowedQuants.indexOf(quantChar) < 0) {
+                                                            char nextC = (i + 2 < b.original.length()) ? b.original.charAt(i + 2) : '\0';
+                                                            if (isSafeCharAfterNoun(nextC)) {
+                                                                if (normalBuf.length() > 0) {
+                                                                    finalSentenceBlocks.add(new TextBlock(normalBuf.toString(), normalBuf.toString(), false, 0f, 0));
+                                                                    normalBuf.setLength(0);
+                                                                }
+                                                                finalSentenceBlocks.add(new TextBlock(String.valueOf(quantChar), rule.primaryQuant, true, 1.0f, 3));
+                                                                i += 1;
+                                                                matchedQuant = true;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        if (!matchedTypo && !matchedQuant) {
+                                            normalBuf.append(b.original.charAt(i));
+                                            i++;
                                         }
                                     }
+                                    if (normalBuf.length() > 0) {
+                                        finalSentenceBlocks.add(new TextBlock(normalBuf.toString(), normalBuf.toString(), false, 0f, 0));
+                                    }
                                 }
-                                if (sentenceHasError) liveErrorsHtml.append(sentenceErrorHtml.toString()).append("<br><br>");
                             }
-                            allSentencesBlocks.add(currentSentenceBlocks);
+                            
+                            // 更新并准备输出
+                            List<List<TextBlock>> clauses = new ArrayList<>(); List<TextBlock> currentClause = new ArrayList<>();
+                            for (TextBlock b : finalSentenceBlocks) {
+                                currentClause.add(b); char lastChar = b.original.charAt(b.original.length() - 1);
+                                if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') { clauses.add(currentClause); currentClause = new ArrayList<>(); }
+                            }
+                            if (!currentClause.isEmpty()) clauses.add(currentClause);
+                            
+                            boolean sentenceHasError = false; StringBuilder sentenceErrorHtml = new StringBuilder();
+                            for (List<TextBlock> clause : clauses) {
+                                if (hasError(clause)) {
+                                    sentenceHasError = true;
+                                    for (TextBlock b : clause) {
+                                        if (b.isMutable && !b.current.equals(b.original)) {
+                                            String confStr = "";
+                                            if (b.type == 2) confStr = "规则替换";
+                                            else if (b.type == 3) confStr = "量词纠正";
+                                            else confStr = "置信度: " + String.format("%.2f", b.conf);
+                                            sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(b.original).append("</s></font> <font color='#E53935'><b>").append(b.current).append("</b></font><font color='#9E9E9E'><small>(").append(confStr).append(")</small></font>");
+                                        } else { sentenceErrorHtml.append(b.original); }
+                                    }
+                                }
+                            }
+                            if (sentenceHasError) liveErrorsHtml.append(sentenceErrorHtml.toString()).append("<br><br>");
+                            
+                            allSentencesBlocks.add(finalSentenceBlocks);
                             long now = System.currentTimeMillis(); final int currentProgress = sIdx + 1;
                             if (now - lastUIUpdateTime > 300 || currentProgress == sentences.length) {
                                 lastUIUpdateTime = now;
@@ -1516,24 +1747,58 @@ jobs:
             }
 
             private void showEditDialog(TextBlock b) {
-                String[] options = {"的", "地", "得", "还原为原字 (" + b.original + ")"};
-                new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + b.current + ")").setItems(options, (dialog, which) -> {
-                    if (which == 0) b.current = "的"; else if (which == 1) b.current = "地"; else if (which == 2) b.current = "得"; else if (which == 3) b.current = b.original;
-                    renderFinalBlocks(); 
-                }).show();
+                if (b.type == 1) { // 的地得
+                    String[] options = {"的", "地", "得", "还原为原字 (" + b.original + ")"};
+                    new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + b.current + ")").setItems(options, (dialog, which) -> {
+                        if (which == 0) b.current = "的"; else if (which == 1) b.current = "地"; else if (which == 2) b.current = "得"; else if (which == 3) b.current = b.original;
+                        renderFinalBlocks(); 
+                    }).show();
+                } else { // 错别字与量词纠错
+                    String[] options = {"还原为原项 (" + b.original + ")"};
+                    new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + b.current + ")").setItems(options, (dialog, which) -> {
+                        if (which == 0) b.current = b.original;
+                        renderFinalBlocks(); 
+                    }).show();
+                }
             }
 
             private void renderFinalBlocks() {
-                SpannableStringBuilder ssb = new SpannableStringBuilder();
                 int currentErrors = 0;
                 for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && !b.current.equals(b.original)) currentErrors++; } }
+                
+                final int[] baseOffsetObj = {0}; 
+                
+                SpannableStringBuilder ssbFull = new SpannableStringBuilder();
+                List<Integer> errorOffsets = new ArrayList<>();
+                for (List<TextBlock> sentence : allSentencesBlocks) {
+                    for (TextBlock b : sentence) {
+                        if (b.isMutable && !b.current.equals(b.original)) {
+                            errorOffsets.add(ssbFull.length());
+                        }
+                        int start = ssbFull.length(); ssbFull.append(b.current);
+                        if (b.isMutable) {
+                            ClickableSpan span = new ClickableSpan() {
+                                @Override public void onClick(View widget) { showEditDialog(b); }
+                                @Override public void updateDrawState(TextPaint ds) {
+                                    ds.setUnderlineText(true);
+                                    if (!b.current.equals(b.original)) { ds.setColor(0xFFE53935); ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); } else { ds.setColor(0xFF2196F3); }
+                                }
+                            };
+                            ssbFull.setSpan(span, start, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        }
+                    }
+                }
+                
+                SpannableStringBuilder ssb = new SpannableStringBuilder();
                 if (currentErrors == 0) {
-                    String header = "检查完毕！未检测到“的地得”误用。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
+                    String header = "检查完毕！未检测到任何问题。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
                     SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(headerSp);
                 } else {
-                    String header = "检查完毕！共更正 " + currentErrors + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击带下划线的字可手动修改）\n\n";
+                    String header = "检查完毕！共更正 " + currentErrors + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击纠错清单编号快速跳转）\n\n";
                     SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(headerSp);
                     SpannableString listHeader = new SpannableString("【更正清单：】\n"); listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(listHeader);
+                    
+                    int listErrIdx = 0; 
                     for (List<TextBlock> sentence : allSentencesBlocks) {
                         List<List<TextBlock>> clauses = new ArrayList<>(); List<TextBlock> currentClause = new ArrayList<>();
                         for (TextBlock b : sentence) {
@@ -1547,14 +1812,42 @@ jobs:
                                 hasAnyError = true;
                                 for (TextBlock b : clause) {
                                     if (b.isMutable && !b.current.equals(b.original)) {
-                                        int stStart = ssb.length(); ssb.append(b.original); ssb.setSpan(new StrikethroughSpan(), stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(" ");
+                                        final int currentErrIdx = listErrIdx;
+                                        int stStart = ssb.length();
+                                        
+                                        ssb.append("[").append(String.valueOf(currentErrIdx + 1)).append("] ");
+                                        ClickableSpan jumpSpan = new ClickableSpan() {
+                                            @Override public void onClick(View w) {
+                                                if (currentErrIdx < errorOffsets.size()) {
+                                                    int absOff = baseOffsetObj[0] + errorOffsets.get(currentErrIdx);
+                                                    Layout layout = outputText.getLayout();
+                                                    if (layout != null) {
+                                                        int line = layout.getLineForOffset(absOff);
+                                                        int y = layout.getLineTop(line);
+                                                        scrollView.smoothScrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
+                                                    }
+                                                }
+                                            }
+                                            @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
+                                        };
+                                        ssb.setSpan(jumpSpan, stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        
+                                        int oldTextStart = ssb.length(); ssb.append(b.original); ssb.setSpan(new StrikethroughSpan(), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(" ");
                                         int newStart = ssb.length(); ssb.append(b.current);
                                         ClickableSpan clickSpan = new ClickableSpan() {
                                             @Override public void onClick(View w) { showEditDialog(b); }
                                             @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFFE53935); ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); ds.setUnderlineText(true); }
                                         };
                                         ssb.setSpan(clickSpan, newStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        int confStart = ssb.length(); ssb.append("(置信度: ").append(String.format("%.2f", b.conf)).append(")"); ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        
+                                        String confStr = "";
+                                        if (b.type == 2) confStr = "规则替换";
+                                        else if (b.type == 3) confStr = "量词纠正";
+                                        else confStr = "置信度: " + String.format("%.2f", b.conf);
+                                        
+                                        int confStart = ssb.length(); ssb.append("(").append(confStr).append(")"); ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        
+                                        listErrIdx++;
                                     } else { ssb.append(b.current); }
                                 }
                             }
@@ -1563,22 +1856,12 @@ jobs:
                     }
                     SpannableString sep = new SpannableString("---------------------------------\n\n"); sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(sep);
                 }
+                
                 SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(fullHeader);
-                for (List<TextBlock> sentence : allSentencesBlocks) {
-                    for (TextBlock b : sentence) {
-                        int start = ssb.length(); ssb.append(b.current);
-                        if (b.isMutable) {
-                            ClickableSpan span = new ClickableSpan() {
-                                @Override public void onClick(View widget) { showEditDialog(b); }
-                                @Override public void updateDrawState(TextPaint ds) {
-                                    ds.setUnderlineText(true);
-                                    if (!b.current.equals(b.original)) { ds.setColor(0xFFE53935); ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); } else { ds.setColor(0xFF2196F3); }
-                                }
-                            };
-                            ssb.setSpan(span, start, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        }
-                    }
-                }
+                
+                baseOffsetObj[0] = ssb.length();
+                ssb.append(ssbFull);
+                
                 outputText.setText(ssb); outputText.setMovementMethod(LinkMovementMethod.getInstance()); outputText.setHighlightColor(Color.TRANSPARENT);
             }
         }
