@@ -1,5 +1,4 @@
 
-
 name: Build Android APK
 
 on:
@@ -163,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 18
-                versionName "2.70"
+                versionCode 19
+                versionName "2.80"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -312,8 +311,8 @@ jobs:
                         <data android:mimeType="text/plain" />
                     </intent-filter>
                 </activity>
-                <!-- 新增用于悬浮窗透明接收文件的Activity，加了taskAffinity让它支持独立后台打开不覆盖主APP -->
-                <activity android:name=".ImportActivity" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:taskAffinity="com.app.dededi.ImportTask" />
+                <!-- 用于悬浮窗透明静默接收文件的Activity -->
+                <activity android:name=".ImportActivity" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />
                 <service android:name=".FloatingService" android:exported="false" />
             </application>
         </manifest>
@@ -439,8 +438,8 @@ jobs:
                 
                 <LinearLayout android:id="@+id/panelTopBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:textStyle="bold"/>
-                    <Button android:id="@+id/btnFloatImport" android:layout_width="36dp" android:layout_height="32dp" android:text="导入" android:textSize="12sp" android:backgroundTint="#03A9F4" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginEnd="4dp"/>
-                    <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#03A9F4" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
+                    <Button android:id="@+id/btnFloatImport" android:layout_width="36dp" android:layout_height="32dp" android:text="导入" android:textSize="12sp" android:backgroundTint="#FF9800" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginEnd="4dp"/>
+                    <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#4CAF50" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                     <Button android:id="@+id/btnFloatCloseAll" android:layout_width="36dp" android:layout_height="32dp" android:text="✕" android:textSize="12sp" android:backgroundTint="#E53935" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="4dp"/>
                 </LinearLayout>
 
@@ -547,32 +546,12 @@ jobs:
         package com.app.dededi;
         import android.app.Activity;
         import android.content.Intent;
-        import android.graphics.Color;
         import android.os.Bundle;
-        import android.view.Gravity;
-        import android.view.ViewGroup;
-        import android.view.Window;
-        import android.widget.LinearLayout;
-        import android.widget.ProgressBar;
-        import android.widget.TextView;
 
         public class ImportActivity extends Activity {
-            private LinearLayout loadingLayout;
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
-                requestWindowFeature(Window.FEATURE_NO_TITLE);
-                loadingLayout = new LinearLayout(this);
-                loadingLayout.setOrientation(LinearLayout.VERTICAL);
-                loadingLayout.setGravity(Gravity.CENTER);
-                loadingLayout.setBackgroundColor(Color.parseColor("#99000000"));
-                ProgressBar pb = new ProgressBar(this);
-                TextView tv = new TextView(this);
-                tv.setText("正在读取并解析文件..."); tv.setTextColor(Color.WHITE); tv.setPadding(0, 30, 0, 0);
-                loadingLayout.addView(pb); loadingLayout.addView(tv);
-                setContentView(loadingLayout, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                loadingLayout.setVisibility(android.view.View.GONE);
-
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("*/*");
                 intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
@@ -582,16 +561,19 @@ jobs:
             @Override
             protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                 if (requestCode == 103 && resultCode == RESULT_OK && data != null && data.getData() != null) {
-                    loadingLayout.setVisibility(android.view.View.VISIBLE);
+                    Intent loadingIntent = new Intent(this, FloatingService.class);
+                    loadingIntent.setAction("ACTION_IMPORT_LOADING");
+                    startService(loadingIntent);
+                    
                     new Thread(() -> {
                         try {
-                            String text = FileUtil.readFile(ImportActivity.this, data.getData());
-                            Intent intent = new Intent(ImportActivity.this, FloatingService.class);
+                            String text = FileUtil.readFile(this, data.getData());
+                            Intent intent = new Intent(this, FloatingService.class);
                             intent.setAction("ACTION_IMPORT_RESULT");
                             intent.putExtra("imported_text", text);
                             startService(intent);
                         } catch (Exception ignored) {}
-                        runOnUiThread(() -> finish());
+                        runOnUiThread(this::finish);
                     }).start();
                 } else { finish(); }
             }
@@ -613,6 +595,7 @@ jobs:
         import android.graphics.PixelFormat;
         import android.os.Build;
         import android.os.Handler;
+        import android.os.IBinder;
         import android.os.Looper;
         import android.text.Editable;
         import android.text.TextWatcher;
@@ -642,7 +625,6 @@ jobs:
             private View statusContainer;
             private ProgressBar floatProgressBar;
             private Button btnFloatSwitch;
-            private TextView btnCancelFloat;
             private boolean isChecking = false;
             private volatile boolean isInterruptRequested = false;
             
@@ -653,13 +635,21 @@ jobs:
 
             @Override
             public int onStartCommand(Intent intent, int flags, int startId) {
-                if (intent != null && "ACTION_IMPORT_RESULT".equals(intent.getAction())) {
-                    String text = intent.getStringExtra("imported_text");
-                    if (text != null && !text.isEmpty()) {
-                        editFloatInput.setText(text);
-                        setFocusable(false);
-                        panelInput.setVisibility(View.GONE);
-                        startInference(text);
+                if (intent != null) {
+                    if ("ACTION_IMPORT_LOADING".equals(intent.getAction())) {
+                        showStatus("正在读取并解析文件...", false);
+                        circleSpin.setVisibility(View.VISIBLE);
+                    } else if ("ACTION_IMPORT_RESULT".equals(intent.getAction())) {
+                        String text = intent.getStringExtra("imported_text");
+                        if (text != null && !text.isEmpty()) {
+                            editFloatInput.setText(text);
+                            setFocusable(false);
+                            panelInput.setVisibility(View.GONE);
+                            startInference(text);
+                        } else {
+                            circleSpin.setVisibility(View.INVISIBLE);
+                            showStatus("读取失败或内容为空", true);
+                        }
                     }
                 }
                 return super.onStartCommand(intent, flags, startId);
@@ -697,7 +687,6 @@ jobs:
                 tvStatus = floatView.findViewById(R.id.tvStatus);
                 statusContainer = floatView.findViewById(R.id.statusContainer);
                 floatProgressBar = floatView.findViewById(R.id.floatProgressBar);
-                btnCancelFloat = floatView.findViewById(R.id.btnCancelFloat);
                 View btnCircle = floatView.findViewById(R.id.btnCircle);
                 View panelTopBar = floatView.findViewById(R.id.panelTopBar);
 
@@ -732,8 +721,8 @@ jobs:
                 });
 
                 btnFloatImport.setOnClickListener(v -> {
-                    Intent intent = new Intent(FloatingService.this, ImportActivity.class);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+                    Intent intent = new Intent(this, ImportActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(intent);
                     panelInput.setVisibility(View.GONE);
                     setFocusable(false);
@@ -758,12 +747,6 @@ jobs:
                     } else {
                         Toast.makeText(this, "文本为空", Toast.LENGTH_SHORT).show();
                     }
-                });
-
-                btnCancelFloat.setOnClickListener(v -> {
-                    isInterruptRequested = true;
-                    btnCancelFloat.setVisibility(View.GONE);
-                    showStatus("已中断", true);
                 });
 
                 btnFloatCopy.setOnClickListener(v -> {
@@ -839,7 +822,6 @@ jobs:
                                         setFocusable(!isVisible);
                                     } else {
                                         isInterruptRequested = true;
-                                        btnCancelFloat.setVisibility(View.GONE);
                                         showStatus("已中断", true);
                                     }
                                 }
@@ -924,7 +906,6 @@ jobs:
                 new Handler(Looper.getMainLooper()).post(() -> {
                     floatProgressBar.setVisibility(View.VISIBLE);
                     floatProgressBar.setProgress(0);
-                    btnCancelFloat.setVisibility(View.VISIBLE);
                 });
                 circleSpin.setVisibility(View.VISIBLE);
 
@@ -945,7 +926,6 @@ jobs:
                                     isChecking = false;
                                     btnFloatSwitch.setEnabled(true);
                                     circleSpin.setVisibility(View.INVISIBLE);
-                                    btnCancelFloat.setVisibility(View.GONE);
                                 });
                                 return;
                             }
@@ -1159,7 +1139,6 @@ jobs:
                         new Handler(Looper.getMainLooper()).post(() -> {
                             isChecking = false; 
                             btnFloatSwitch.setEnabled(true);
-                            btnCancelFloat.setVisibility(View.GONE);
                             if (errorCount[0] == 0) {
                                 showStatus("未检测到错误", true);
                             } else {
@@ -1174,7 +1153,6 @@ jobs:
                             isChecking = false; 
                             btnFloatSwitch.setEnabled(true);
                             circleSpin.setVisibility(View.INVISIBLE);
-                            btnCancelFloat.setVisibility(View.GONE);
                             Toast.makeText(FloatingService.this, "纠错中断: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                         });
                     }
@@ -1504,8 +1482,8 @@ jobs:
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
-                            "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n\n" +
-                            "• 导入文件：支持格式：txt、docx。导入会提取文字纠错，表格类文件请慎重，可能会破坏原有格式。\n" +
+                            "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n" +
+                            "• 文件导入：支持格式：txt、docx。精准提取里面的字符纠错。如果有表格类格式慎重纠错，会破坏排版。\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
@@ -1522,7 +1500,7 @@ jobs:
                 });
 
                 btnImport.setOnClickListener(v -> {
-                    Toast.makeText(MainActivity.this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "支持导入 txt、docx 格式文件", Toast.LENGTH_SHORT).show();
                     Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                     intent.setType("*/*");
                     String[] mimetypes = {"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"};
@@ -1561,15 +1539,15 @@ jobs:
                     
                     boolean isFastMode = rbFast.isChecked();
                     if (tempVal > 0.0f) {
-                        if (isFastMode && fastModule == null) { Toast.makeText(MainActivity.this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
-                        if (!isFastMode && proModule == null) { Toast.makeText(MainActivity.this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                        if (isFastMode && fastModule == null) { Toast.makeText(this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                        if (!isFastMode && proModule == null) { Toast.makeText(this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
                     } else {
-                        Toast.makeText(MainActivity.this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                     }
                     
                     isCheckingMain = true;
                     isInterruptRequestedMain = false;
-                    btnCheck.setText("取消");
+                    btnCheck.setText("取消纠错");
                     
                     doInference(isFastMode);
                 });
@@ -1826,7 +1804,7 @@ jobs:
                         runOnUiThread(() -> progressBar.setMax(sentences.length));
                         allSentencesBlocks.clear(); StringBuilder liveErrorsHtml = new StringBuilder(); long lastUIUpdateTime = System.currentTimeMillis();
                         int liveErrorCount = 0; 
-                        final int[] lastScrolledErrorCount = {0};
+                        int lastScrolledErrorCount = 0; 
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             if (isInterruptRequestedMain) {
@@ -2030,14 +2008,15 @@ jobs:
                                 (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "") + 
                                 "<br><b><font color='#757575'>【全文预览】：</font></b><br>" + liveTextHtml;
                                 
-                                final boolean shouldScroll = (liveErrorCount > lastScrolledErrorCount[0]) && autoScrollEnabled;
-                                if (shouldScroll) {
-                                    lastScrolledErrorCount[0] = liveErrorCount;
+                                boolean shouldScroll = false;
+                                if (liveErrorCount > lastScrolledErrorCount) {
+                                    shouldScroll = true;
+                                    lastScrolledErrorCount = liveErrorCount;
                                 }
-                                
+
                                 runOnUiThread(() -> {
                                     progressBar.setProgress(currentProgress); outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
-                                    if (shouldScroll) scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
+                                    if (autoScrollEnabled && shouldScroll) scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
                                 });
                             }
                         }
