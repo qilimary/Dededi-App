@@ -1292,51 +1292,56 @@ jobs:
                     if (name != null && name.toLowerCase().endsWith(".docx")) {
                         java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(context.getContentResolver().openInputStream(uri));
                         java.util.zip.ZipEntry entry;
-                        StringBuilder textBuilder = new StringBuilder();
+                        String xmlContent = null;
+                        // 第一步：完整读取 word/document.xml 到字符串，避免流二次读取问题
                         while ((entry = zis.getNextEntry()) != null) {
                             if (entry.getName().equals("word/document.xml")) {
-                                try {
-                                    // 使用 XML Pull 解析，只取 <w:t> 内的文本，完全避免标签混入
-                                    org.xmlpull.v1.XmlPullParserFactory factory = org.xmlpull.v1.XmlPullParserFactory.newInstance();
-                                    org.xmlpull.v1.XmlPullParser parser = factory.newPullParser();
-                                    parser.setInput(new java.io.InputStreamReader(zis, StandardCharsets.UTF_8));
-                                    int eventType = parser.getEventType();
-                                    boolean inText = false;
-                                    while (eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
-                                        if (eventType == org.xmlpull.v1.XmlPullParser.START_TAG && "t".equals(parser.getName())) {
-                                            inText = true;
-                                        } else if (eventType == org.xmlpull.v1.XmlPullParser.TEXT && inText) {
-                                            textBuilder.append(parser.getText());
-                                        } else if (eventType == org.xmlpull.v1.XmlPullParser.END_TAG && "t".equals(parser.getName())) {
-                                            inText = false;
-                                        }
-                                        eventType = parser.next();
-                                    }
-                                } catch (Exception e) {
-                                    // 极端情况降级为原正则方式，并追加标签清理
-                                    java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(zis, StandardCharsets.UTF_8));
-                                    String line;
-                                    StringBuilder sb = new StringBuilder();
-                                    while ((line = br.readLine()) != null) {
-                                        sb.append(line);
-                                    }
-                                    String xml = sb.toString();
-                                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("<w:t[^>]*>(.*?)</w:t>", java.util.regex.Pattern.DOTALL).matcher(xml);
-                                    while (m.find()) {
-                                        textBuilder.append(m.group(1));
-                                    }
+                                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                                byte[] buffer = new byte[4096];
+                                int len;
+                                while ((len = zis.read(buffer)) != -1) {
+                                    baos.write(buffer, 0, len);
                                 }
+                                xmlContent = baos.toString("UTF-8");
                                 break;
                             }
                         }
                         zis.close();
-                        // 最终保险：清除一切残留尖括号标签，并还原实体
+                        if (xmlContent == null) return "";
+            
+                        StringBuilder textBuilder = new StringBuilder();
+                        // 第二步：优先使用 XML 解析器精准提取
+                        try {
+                            org.xmlpull.v1.XmlPullParserFactory factory = org.xmlpull.v1.XmlPullParserFactory.newInstance();
+                            org.xmlpull.v1.XmlPullParser parser = factory.newPullParser();
+                            parser.setInput(new java.io.StringReader(xmlContent));
+                            int eventType = parser.getEventType();
+                            boolean inText = false;
+                            while (eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                                if (eventType == org.xmlpull.v1.XmlPullParser.START_TAG && "t".equals(parser.getName())) {
+                                    inText = true;
+                                } else if (eventType == org.xmlpull.v1.XmlPullParser.TEXT && inText) {
+                                    textBuilder.append(parser.getText());
+                                } else if (eventType == org.xmlpull.v1.XmlPullParser.END_TAG && "t".equals(parser.getName())) {
+                                    inText = false;
+                                }
+                                eventType = parser.next();
+                            }
+                        } catch (Exception e) {
+                            // 第三步：解析失败时降级为正则（使用同一份 xmlContent，保证有数据）
+                            java.util.regex.Matcher m = java.util.regex.Pattern.compile("<w:t[^>]*>(.*?)</w:t>", java.util.regex.Pattern.DOTALL).matcher(xmlContent);
+                            while (m.find()) {
+                                textBuilder.append(m.group(1));
+                            }
+                        }
+            
+                        // 最终清理：去除任何残留尖括号标签，并还原 XML 实体
                         String raw = textBuilder.toString();
                         raw = raw.replaceAll("<[^>]+>", "");
                         raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
                         return raw;
                     } else {
-                        // 普通文本文件（txt）逻辑保持不变
+                        // 普通文本文件（txt）
                         java.io.InputStream is = context.getContentResolver().openInputStream(uri);
                         java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(is, StandardCharsets.UTF_8));
                         StringBuilder sb = new StringBuilder();
