@@ -1,4 +1,5 @@
 
+
 name: Build Android APK
 
 on:
@@ -311,8 +312,8 @@ jobs:
                         <data android:mimeType="text/plain" />
                     </intent-filter>
                 </activity>
-                <!-- 新增用于悬浮窗透明接收文件的Activity -->
-                <activity android:name=".ImportActivity" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />
+                <!-- 新增用于悬浮窗透明接收文件的Activity，加了taskAffinity让它支持独立后台打开不覆盖主APP -->
+                <activity android:name=".ImportActivity" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:taskAffinity="" />
                 <service android:name=".FloatingService" android:exported="false" />
             </application>
         </manifest>
@@ -438,8 +439,8 @@ jobs:
                 
                 <LinearLayout android:id="@+id/panelTopBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:textStyle="bold"/>
-                    <Button android:id="@+id/btnFloatImport" android:layout_width="36dp" android:layout_height="32dp" android:text="导入" android:textSize="12sp" android:backgroundTint="#FF9800" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginEnd="4dp"/>
-                    <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#4CAF50" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
+                    <Button android:id="@+id/btnFloatImport" android:layout_width="36dp" android:layout_height="32dp" android:text="导入" android:textSize="12sp" android:backgroundTint="#03A9F4" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginEnd="4dp"/>
+                    <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#03A9F4" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                     <Button android:id="@+id/btnFloatCloseAll" android:layout_width="36dp" android:layout_height="32dp" android:text="✕" android:textSize="12sp" android:backgroundTint="#E53935" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="4dp"/>
                 </LinearLayout>
 
@@ -473,15 +474,12 @@ jobs:
                 android:visibility="invisible"
                 android:minWidth="80dp"
                 android:layout_marginTop="4dp">
-                <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                    <TextView android:id="@+id/tvStatus"
-                        android:layout_width="wrap_content" android:layout_height="wrap_content"
-                        android:textColor="#FFFFFF"
-                        android:textSize="11sp"
-                        android:paddingStart="6dp" android:paddingEnd="6dp"
-                        android:paddingTop="3dp" android:paddingBottom="3dp"/>
-                    <TextView android:id="@+id/btnCancelFloat" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=" ✖ " android:textColor="#ff5252" android:textSize="14sp" android:textStyle="bold" android:visibility="gone" android:paddingEnd="6dp" android:clickable="true" android:focusable="true"/>
-                </LinearLayout>
+                <TextView android:id="@+id/tvStatus"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:paddingStart="6dp" android:paddingEnd="6dp"
+                    android:paddingTop="3dp" android:paddingBottom="3dp"/>
                 <ProgressBar android:id="@+id/floatProgressBar"
                     style="?android:attr/progressBarStyleHorizontal"
                     android:layout_width="match_parent" android:layout_height="2dp"
@@ -615,7 +613,6 @@ jobs:
         import android.graphics.PixelFormat;
         import android.os.Build;
         import android.os.Handler;
-        import android.os.IBinder;
         import android.os.Looper;
         import android.text.Editable;
         import android.text.TextWatcher;
@@ -736,7 +733,7 @@ jobs:
 
                 btnFloatImport.setOnClickListener(v -> {
                     Intent intent = new Intent(this, ImportActivity.class);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
                     startActivity(intent);
                     panelInput.setVisibility(View.GONE);
                     setFocusable(false);
@@ -1490,7 +1487,7 @@ jobs:
                     String helpText = "【模型介绍】\n" +
                             "两款模型均只纠错“的地得”使用。但软件同样支持其他错别字纠正作为锦上添花的功能。\n\n" +
                             "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n" +
-                            "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n" +
+                            "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n\n" +
                             "注：不同手机的速度会有不同，性能越强的手机，模型推理速度越快。\n" +
                             "模型可能会犯一些低级错误，这是神经网络的通病，在所难免。\n\n" +
                             "【温度参数】\n" +
@@ -1508,6 +1505,7 @@ jobs:
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
                             "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n\n" +
+                            "• 导入文件：支持格式：txt、docx。导入会提取文字纠错，表格类文件请慎重，可能会破坏原有格式。\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
@@ -1524,6 +1522,7 @@ jobs:
                 });
 
                 btnImport.setOnClickListener(v -> {
+                    Toast.makeText(this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
                     Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                     intent.setType("*/*");
                     String[] mimetypes = {"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"};
@@ -1570,8 +1569,7 @@ jobs:
                     
                     isCheckingMain = true;
                     isInterruptRequestedMain = false;
-                    btnCheck.setText("✖ 取消纠错");
-                    btnCheck.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFE53935)); // 红色警告色
+                    btnCheck.setText("取消");
                     
                     doInference(isFastMode);
                 });
@@ -1828,6 +1826,7 @@ jobs:
                         runOnUiThread(() -> progressBar.setMax(sentences.length));
                         allSentencesBlocks.clear(); StringBuilder liveErrorsHtml = new StringBuilder(); long lastUIUpdateTime = System.currentTimeMillis();
                         int liveErrorCount = 0; 
+                        final int[] lastScrolledErrorCount = {0};
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             if (isInterruptRequestedMain) {
@@ -1835,7 +1834,6 @@ jobs:
                                     outputText.setText("已取消纠错。");
                                     isCheckingMain = false;
                                     btnCheck.setText("开始纠错");
-                                    btnCheck.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2196F3));
                                     btnCheck.setEnabled(true);
                                     progressBar.setVisibility(View.INVISIBLE);
                                 });
@@ -2032,9 +2030,14 @@ jobs:
                                 (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "") + 
                                 "<br><b><font color='#757575'>【全文预览】：</font></b><br>" + liveTextHtml;
                                 
+                                final boolean shouldScroll = (liveErrorCount > lastScrolledErrorCount[0]) && autoScrollEnabled;
+                                if (shouldScroll) {
+                                    lastScrolledErrorCount[0] = liveErrorCount;
+                                }
+                                
                                 runOnUiThread(() -> {
                                     progressBar.setProgress(currentProgress); outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
-                                    if (autoScrollEnabled) scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
+                                    if (shouldScroll) scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
                                 });
                             }
                         }
@@ -2042,7 +2045,6 @@ jobs:
                         runOnUiThread(() -> { 
                             isCheckingMain = false;
                             btnCheck.setText("开始纠错");
-                            btnCheck.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2196F3));
                             renderFinalBlocks(); 
                             btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true); 
                             scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); 
@@ -2052,7 +2054,6 @@ jobs:
                             outputText.setText("推理运行中断: " + err); 
                             isCheckingMain = false;
                             btnCheck.setText("开始纠错");
-                            btnCheck.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2196F3));
                             btnCheck.setEnabled(true); btnSaveTxt.setEnabled(true); 
                         });
                     } finally { runOnUiThread(() -> { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.INVISIBLE); }); }
