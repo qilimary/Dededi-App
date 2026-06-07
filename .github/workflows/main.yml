@@ -407,11 +407,15 @@ jobs:
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text"/>
             </LinearLayout>
 
-            <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent"
-                android:scrollbarSize="16dp" android:scrollbarThumbVertical="@drawable/scrollbar_thumb" android:fadeScrollbars="false">
-                <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
-            </ScrollView>
+            <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
+                <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent"
+                    android:scrollbarSize="16dp" android:scrollbarThumbVertical="@drawable/scrollbar_thumb" android:fadeScrollbars="false">
+                    <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
+                </ScrollView>
+                <!-- 新增：右侧专属的隐形触摸隔离层，强行接管所有滑动，绝对跟手！ -->
+                <View android:id="@+id/scrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end"/>
+            </FrameLayout>
         </LinearLayout>
         EOF
 
@@ -1234,46 +1238,37 @@ jobs:
                 Button btnHelp = findViewById(R.id.btnHelp);
                 View btnFloat = findViewById(R.id.btnFloat);
 
-                float density = getResources().getDisplayMetrics().density;
-                final int touchArea = (int) (40 * density); // 右侧40dp为拖拽感应区
-
-                scrollView.setOnTouchListener((v, event) -> {
+                View scrollTouchArea = findViewById(R.id.scrollTouchArea);
+                scrollTouchArea.setOnTouchListener((v, event) -> {
                     int action = event.getActionMasked();
                     View child = scrollView.getChildAt(0);
-                    boolean handled = false;
-                    
                     if (child != null) {
                         int maxScrollY = child.getHeight() - scrollView.getHeight();
                         if (maxScrollY > 0) {
-                            if (action == MotionEvent.ACTION_DOWN) {
-                                // 判定是否在右侧感应区按下手指（准备触发拖拽）
-                                if (event.getX() >= scrollView.getWidth() - touchArea) {
-                                    isDraggingScrollbar = true;
-                                } else {
-                                    isDraggingScrollbar = false;
-                                }
-                            }
-                            
-                            if (isDraggingScrollbar) {
-                                // 根据手指的Y坐标计算进度百分比，并立刻滚动页面
-                                float y = Math.max(0, Math.min(event.getY(), scrollView.getHeight()));
-                                float ratio = y / scrollView.getHeight();
-                                scrollView.scrollTo(0, (int) (ratio * maxScrollY));
-                                handled = true; // 拦截事件，避免触发正常的点击和滑动
-                            }
+                            float y = Math.max(0, Math.min(event.getY(), v.getHeight()));
+                            float ratio = y / v.getHeight();
+                            // 强行滑动 ScrollView，实现完美跟手
+                            scrollView.scrollTo(0, (int) (ratio * maxScrollY));
                         }
                     }
-
                     if (action == MotionEvent.ACTION_DOWN) {
-                        isTouchingScrollView = true; 
-                        autoScrollEnabled = false;
+                        isTouchingScrollView = true; autoScrollEnabled = false;
                     } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                         isTouchingScrollView = false;
-                        isDraggingScrollbar = false; // 松手结束拖拽
                         if (!scrollView.canScrollVertically(1)) autoScrollEnabled = true;
                     }
-                    
-                    return handled;
+                    return true; // 强制拦截该区域所有事件
+                });
+
+                // 恢复普通文本区域的滑动打断判定
+                scrollView.setOnTouchListener((v, event) -> {
+                    if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                        isTouchingScrollView = true; autoScrollEnabled = false;
+                    } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                        isTouchingScrollView = false;
+                        if (!scrollView.canScrollVertically(1)) autoScrollEnabled = true;
+                    }
+                    return false;
                 });
 
                 scrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
@@ -1800,7 +1795,7 @@ jobs:
                             
                             allSentencesBlocks.add(finalSentenceBlocks);
                             long now = System.currentTimeMillis(); final int currentProgress = sIdx + 1;
-                            if (now - lastUIUpdateTime > 300 || currentProgress == sentences.length) {
+                            if (now - lastUIUpdateTime > 300) {
                                 lastUIUpdateTime = now;
                                 final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "");
                                 runOnUiThread(() -> {
