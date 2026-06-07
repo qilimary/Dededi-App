@@ -408,9 +408,9 @@ jobs:
             </LinearLayout>
 
             <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent"
-                android:scrollbarSize="8dp" android:scrollbarThumbVertical="@drawable/scrollbar_thumb" android:fadeScrollbars="false">
+                android:scrollbarSize="16dp" android:scrollbarThumbVertical="@drawable/scrollbar_thumb" android:fadeScrollbars="false">
                 <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
+                    android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
             </ScrollView>
         </LinearLayout>
         EOF
@@ -1147,6 +1147,7 @@ jobs:
             private boolean hasStartedChecking = false;
             private boolean autoScrollEnabled = true;
             private boolean isTouchingScrollView = false;
+            private boolean isDraggingScrollbar = false; // 新增：用于记录是否正在拖拽滚动条
             private int saveFormat = 0; 
             private String pendingSaveText = "";
 
@@ -1228,14 +1229,46 @@ jobs:
                 Button btnHelp = findViewById(R.id.btnHelp);
                 View btnFloat = findViewById(R.id.btnFloat);
 
+                float density = getResources().getDisplayMetrics().density;
+                final int touchArea = (int) (40 * density); // 右侧40dp为拖拽感应区
+
                 scrollView.setOnTouchListener((v, event) -> {
-                    if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                        isTouchingScrollView = true; autoScrollEnabled = false;
-                    } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                    int action = event.getActionMasked();
+                    View child = scrollView.getChildAt(0);
+                    boolean handled = false;
+                    
+                    if (child != null) {
+                        int maxScrollY = child.getHeight() - scrollView.getHeight();
+                        if (maxScrollY > 0) {
+                            if (action == MotionEvent.ACTION_DOWN) {
+                                // 判定是否在右侧感应区按下手指（准备触发拖拽）
+                                if (event.getX() >= scrollView.getWidth() - touchArea) {
+                                    isDraggingScrollbar = true;
+                                } else {
+                                    isDraggingScrollbar = false;
+                                }
+                            }
+                            
+                            if (isDraggingScrollbar) {
+                                // 根据手指的Y坐标计算进度百分比，并立刻滚动页面
+                                float y = Math.max(0, Math.min(event.getY(), scrollView.getHeight()));
+                                float ratio = y / scrollView.getHeight();
+                                scrollView.scrollTo(0, (int) (ratio * maxScrollY));
+                                handled = true; // 拦截事件，避免触发正常的点击和滑动
+                            }
+                        }
+                    }
+
+                    if (action == MotionEvent.ACTION_DOWN) {
+                        isTouchingScrollView = true; 
+                        autoScrollEnabled = false;
+                    } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                         isTouchingScrollView = false;
+                        isDraggingScrollbar = false; // 松手结束拖拽
                         if (!scrollView.canScrollVertically(1)) autoScrollEnabled = true;
                     }
-                    return false;
+                    
+                    return handled;
                 });
 
                 scrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
@@ -1868,12 +1901,14 @@ jobs:
                                                 int lineEnd = layout.getLineEnd(line);
                                                 if (outputText.getText() instanceof Spannable) {
                                                     Spannable spanText = (Spannable) outputText.getText();
-                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x409E9E9E); 
+                                                    // 透明度从 40 调整到 60，让颜色稍明显一点，配合慢动作更好看
+                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
                                                     spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                                     Handler handler = new Handler(Looper.getMainLooper());
-                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); outputText.invalidate(); }, 250);
-                                                    handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); outputText.invalidate(); }, 400);
-                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); outputText.invalidate(); }, 650);
+                                                    // 将时间全部翻倍拉长，让闪烁动画变得缓和
+                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); outputText.invalidate(); }, 500);
+                                                    handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); outputText.invalidate(); }, 800);
+                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); outputText.invalidate(); }, 1300);
                                                 }
                                             }
                                         }
