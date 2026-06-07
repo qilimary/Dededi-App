@@ -1292,34 +1292,51 @@ jobs:
                     if (name != null && name.toLowerCase().endsWith(".docx")) {
                         java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(context.getContentResolver().openInputStream(uri));
                         java.util.zip.ZipEntry entry;
-                        StringBuilder sb = new StringBuilder();
+                        StringBuilder textBuilder = new StringBuilder();
                         while ((entry = zis.getNextEntry()) != null) {
                             if (entry.getName().equals("word/document.xml")) {
-                                java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(zis, StandardCharsets.UTF_8));
-                                String line;
-                                while ((line = br.readLine()) != null) {
-                                    sb.append(line);
+                                try {
+                                    // 使用 XML Pull 解析，只取 <w:t> 内的文本，完全避免标签混入
+                                    org.xmlpull.v1.XmlPullParserFactory factory = org.xmlpull.v1.XmlPullParserFactory.newInstance();
+                                    org.xmlpull.v1.XmlPullParser parser = factory.newPullParser();
+                                    parser.setInput(new java.io.InputStreamReader(zis, StandardCharsets.UTF_8));
+                                    int eventType = parser.getEventType();
+                                    boolean inText = false;
+                                    while (eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                                        if (eventType == org.xmlpull.v1.XmlPullParser.START_TAG && "t".equals(parser.getName())) {
+                                            inText = true;
+                                        } else if (eventType == org.xmlpull.v1.XmlPullParser.TEXT && inText) {
+                                            textBuilder.append(parser.getText());
+                                        } else if (eventType == org.xmlpull.v1.XmlPullParser.END_TAG && "t".equals(parser.getName())) {
+                                            inText = false;
+                                        }
+                                        eventType = parser.next();
+                                    }
+                                } catch (Exception e) {
+                                    // 极端情况降级为原正则方式，并追加标签清理
+                                    java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(zis, StandardCharsets.UTF_8));
+                                    String line;
+                                    StringBuilder sb = new StringBuilder();
+                                    while ((line = br.readLine()) != null) {
+                                        sb.append(line);
+                                    }
+                                    String xml = sb.toString();
+                                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("<w:t[^>]*>(.*?)</w:t>", java.util.regex.Pattern.DOTALL).matcher(xml);
+                                    while (m.find()) {
+                                        textBuilder.append(m.group(1));
+                                    }
                                 }
                                 break;
                             }
                         }
                         zis.close();
-                        String xml = sb.toString();
-                        StringBuilder text = new StringBuilder();
-                        java.util.regex.Matcher m = java.util.regex.Pattern.compile("<w:p[^>]*>(.*?)</w:p>", java.util.regex.Pattern.DOTALL).matcher(xml);
-                        while (m.find()) {
-                            String p = m.group(1);
-                            java.util.regex.Matcher tm = java.util.regex.Pattern.compile("<w:t[^>]*>(.*?)</w:t>", java.util.regex.Pattern.DOTALL).matcher(p);
-                            boolean added = false;
-                            while (tm.find()) {
-                                String unescaped = tm.group(1).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
-                                text.append(unescaped);
-                                added = true;
-                            }
-                            if (added) text.append("\n");
-                        }
-                        return text.toString();
+                        // 最终保险：清除一切残留尖括号标签，并还原实体
+                        String raw = textBuilder.toString();
+                        raw = raw.replaceAll("<[^>]+>", "");
+                        raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
+                        return raw;
                     } else {
+                        // 普通文本文件（txt）逻辑保持不变
                         java.io.InputStream is = context.getContentResolver().openInputStream(uri);
                         java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(is, StandardCharsets.UTF_8));
                         StringBuilder sb = new StringBuilder();
