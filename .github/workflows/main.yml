@@ -162,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 17
-                versionName "2.60"
+                versionCode 18
+                versionName "2.70"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -311,6 +311,8 @@ jobs:
                         <data android:mimeType="text/plain" />
                     </intent-filter>
                 </activity>
+                <!-- 新增用于悬浮窗透明接收文件的Activity -->
+                <activity android:name=".ImportActivity" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />
                 <service android:name=".FloatingService" android:exported="false" />
             </application>
         </manifest>
@@ -393,6 +395,9 @@ jobs:
             
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginBottom="10dp">
+                <Button android:id="@+id/btnImport" android:layout_width="0dp" android:layout_height="48dp"
+                    android:layout_weight="1" android:text="导入" android:textSize="14sp"
+                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
                 <Button android:id="@+id/btnPaste" android:layout_width="0dp" android:layout_height="48dp"
                     android:layout_weight="1" android:text="粘贴" android:textSize="14sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
@@ -413,7 +418,6 @@ jobs:
                     <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
                 </ScrollView>
-                <!-- 新增：右侧专属的隐形触摸隔离层，强行接管所有滑动，绝对跟手！ -->
                 <View android:id="@+id/scrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end"/>
             </FrameLayout>
         </LinearLayout>
@@ -434,6 +438,7 @@ jobs:
                 
                 <LinearLayout android:id="@+id/panelTopBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:textStyle="bold"/>
+                    <Button android:id="@+id/btnFloatImport" android:layout_width="36dp" android:layout_height="32dp" android:text="导入" android:textSize="12sp" android:backgroundTint="#FF9800" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginEnd="4dp"/>
                     <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#4CAF50" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                     <Button android:id="@+id/btnFloatCloseAll" android:layout_width="36dp" android:layout_height="32dp" android:text="✕" android:textSize="12sp" android:backgroundTint="#E53935" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="4dp"/>
                 </LinearLayout>
@@ -468,12 +473,15 @@ jobs:
                 android:visibility="invisible"
                 android:minWidth="80dp"
                 android:layout_marginTop="4dp">
-                <TextView android:id="@+id/tvStatus"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:textColor="#FFFFFF"
-                    android:textSize="11sp"
-                    android:paddingStart="6dp" android:paddingEnd="6dp"
-                    android:paddingTop="3dp" android:paddingBottom="3dp"/>
+                <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                    <TextView android:id="@+id/tvStatus"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp"
+                        android:paddingStart="6dp" android:paddingEnd="6dp"
+                        android:paddingTop="3dp" android:paddingBottom="3dp"/>
+                    <TextView android:id="@+id/btnCancelFloat" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=" ✖ " android:textColor="#ff5252" android:textSize="14sp" android:textStyle="bold" android:visibility="gone" android:paddingEnd="6dp" android:clickable="true" android:focusable="true"/>
+                </LinearLayout>
                 <ProgressBar android:id="@+id/floatProgressBar"
                     style="?android:attr/progressBarStyleHorizontal"
                     android:layout_width="match_parent" android:layout_height="2dp"
@@ -482,6 +490,114 @@ jobs:
                     android:visibility="gone"/>
             </LinearLayout>
         </RelativeLayout>
+        EOF
+        
+        cat << 'EOF' > app/src/main/java/com/app/dededi/FileUtil.java
+        package com.app.dededi;
+        import android.content.Context;
+        import android.net.Uri;
+        import java.io.InputStream;
+        import java.io.ByteArrayOutputStream;
+        import java.nio.charset.StandardCharsets;
+        import java.util.zip.ZipInputStream;
+        import java.util.zip.ZipEntry;
+        import java.io.BufferedReader;
+        import java.io.InputStreamReader;
+        import android.database.Cursor;
+        import android.provider.OpenableColumns;
+
+        public class FileUtil {
+            public static String readFile(Context context, Uri uri) throws Exception {
+                InputStream is = context.getContentResolver().openInputStream(uri);
+                if (is == null) return "";
+                String name = "";
+                Cursor cursor = context.getContentResolver().query(uri, null, null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex >= 0) name = cursor.getString(nameIndex);
+                    cursor.close();
+                }
+                StringBuilder sb = new StringBuilder();
+                if (name.toLowerCase().endsWith(".docx")) {
+                    ZipInputStream zis = new ZipInputStream(is);
+                    ZipEntry entry;
+                    while ((entry = zis.getNextEntry()) != null) {
+                        if (entry.getName().equals("word/document.xml")) {
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            byte[] buffer = new byte[8192]; int count;
+                            while ((count = zis.read(buffer)) != -1) baos.write(buffer, 0, count);
+                            String xml = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+                            String extractedText = xml.replaceAll("</w:p>", "\n").replaceAll("<[^>]+>", "")
+                                    .replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">")
+                                    .replaceAll("&quot;", "\"").replaceAll("&apos;", "'");
+                            sb.append(extractedText);
+                        }
+                    }
+                    zis.close();
+                } else {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line).append("\n");
+                    br.close();
+                }
+                return sb.toString().trim();
+            }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/app/dededi/ImportActivity.java
+        package com.app.dededi;
+        import android.app.Activity;
+        import android.content.Intent;
+        import android.graphics.Color;
+        import android.os.Bundle;
+        import android.view.Gravity;
+        import android.view.ViewGroup;
+        import android.view.Window;
+        import android.widget.LinearLayout;
+        import android.widget.ProgressBar;
+        import android.widget.TextView;
+
+        public class ImportActivity extends Activity {
+            private LinearLayout loadingLayout;
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                requestWindowFeature(Window.FEATURE_NO_TITLE);
+                loadingLayout = new LinearLayout(this);
+                loadingLayout.setOrientation(LinearLayout.VERTICAL);
+                loadingLayout.setGravity(Gravity.CENTER);
+                loadingLayout.setBackgroundColor(Color.parseColor("#99000000"));
+                ProgressBar pb = new ProgressBar(this);
+                TextView tv = new TextView(this);
+                tv.setText("正在读取并解析文件..."); tv.setTextColor(Color.WHITE); tv.setPadding(0, 30, 0, 0);
+                loadingLayout.addView(pb); loadingLayout.addView(tv);
+                setContentView(loadingLayout, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                loadingLayout.setVisibility(android.view.View.GONE);
+
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+                startActivityForResult(intent, 103);
+            }
+
+            @Override
+            protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                if (requestCode == 103 && resultCode == RESULT_OK && data != null && data.getData() != null) {
+                    loadingLayout.setVisibility(android.view.View.VISIBLE);
+                    new Thread(() -> {
+                        try {
+                            String text = FileUtil.readFile(this, data.getData());
+                            Intent intent = new Intent(this, FloatingService.class);
+                            intent.setAction("ACTION_IMPORT_RESULT");
+                            intent.putExtra("imported_text", text);
+                            startService(intent);
+                        } catch (Exception ignored) {}
+                        runOnUiThread(this::finish);
+                    }).start();
+                } else { finish(); }
+            }
+        }
         EOF
 
         cat << 'EOF' > app/src/main/java/com/app/dededi/FloatingService.java
@@ -529,6 +645,7 @@ jobs:
             private View statusContainer;
             private ProgressBar floatProgressBar;
             private Button btnFloatSwitch;
+            private TextView btnCancelFloat;
             private boolean isChecking = false;
             private volatile boolean isInterruptRequested = false;
             
@@ -536,6 +653,20 @@ jobs:
             private boolean lastStatusWasTypo = false;
             
             private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
+
+            @Override
+            public int onStartCommand(Intent intent, int flags, int startId) {
+                if (intent != null && "ACTION_IMPORT_RESULT".equals(intent.getAction())) {
+                    String text = intent.getStringExtra("imported_text");
+                    if (text != null && !text.isEmpty()) {
+                        editFloatInput.setText(text);
+                        setFocusable(false);
+                        panelInput.setVisibility(View.GONE);
+                        startInference(text);
+                    }
+                }
+                return super.onStartCommand(intent, flags, startId);
+            }
 
             @SuppressLint("ClickableViewAccessibility")
             @Override
@@ -569,6 +700,7 @@ jobs:
                 tvStatus = floatView.findViewById(R.id.tvStatus);
                 statusContainer = floatView.findViewById(R.id.statusContainer);
                 floatProgressBar = floatView.findViewById(R.id.floatProgressBar);
+                btnCancelFloat = floatView.findViewById(R.id.btnCancelFloat);
                 View btnCircle = floatView.findViewById(R.id.btnCircle);
                 View panelTopBar = floatView.findViewById(R.id.panelTopBar);
 
@@ -577,6 +709,7 @@ jobs:
                 Button btnFloatCheck = floatView.findViewById(R.id.btnFloatCheck);
                 Button btnFloatCopy = floatView.findViewById(R.id.btnFloatCopy);
                 btnFloatSwitch = floatView.findViewById(R.id.btnFloatSwitch);
+                Button btnFloatImport = floatView.findViewById(R.id.btnFloatImport);
                 Button btnFloatJump = floatView.findViewById(R.id.btnFloatJump);
                 Button btnFloatCloseAll = floatView.findViewById(R.id.btnFloatCloseAll);
                 
@@ -601,6 +734,14 @@ jobs:
                     return false;
                 });
 
+                btnFloatImport.setOnClickListener(v -> {
+                    Intent intent = new Intent(this, ImportActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    panelInput.setVisibility(View.GONE);
+                    setFocusable(false);
+                });
+
                 btnFloatPaste.setOnClickListener(v -> {
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     if (clipboard != null && clipboard.hasPrimaryClip() && clipboard.getPrimaryClip().getItemCount() > 0) {
@@ -620,6 +761,12 @@ jobs:
                     } else {
                         Toast.makeText(this, "文本为空", Toast.LENGTH_SHORT).show();
                     }
+                });
+
+                btnCancelFloat.setOnClickListener(v -> {
+                    isInterruptRequested = true;
+                    btnCancelFloat.setVisibility(View.GONE);
+                    showStatus("已中断", true);
                 });
 
                 btnFloatCopy.setOnClickListener(v -> {
@@ -650,7 +797,13 @@ jobs:
                 };
 
                 btnFloatJump.setOnClickListener(v -> jumpToApp.run());
-                btnCircle.setOnLongClickListener(v -> { jumpToApp.run(); return true; });
+                
+                final boolean[] isLongPressed = {false};
+                btnCircle.setOnLongClickListener(v -> { 
+                    isLongPressed[0] = true;
+                    jumpToApp.run(); 
+                    return true; 
+                });
                 btnFloatCloseAll.setOnClickListener(v -> stopSelf());
 
                 View.OnTouchListener dragListener = new View.OnTouchListener() {
@@ -662,7 +815,9 @@ jobs:
                             case MotionEvent.ACTION_DOWN:
                                 initialX = params.x; initialY = params.y;
                                 initialTouchX = event.getRawX(); initialTouchY = event.getRawY();
-                                isMoved = false; return false;
+                                isMoved = false;
+                                isLongPressed[0] = false;
+                                return false;
                             case MotionEvent.ACTION_MOVE:
                                 int dx = (int) (event.getRawX() - initialTouchX);
                                 int dy = (int) (event.getRawY() - initialTouchY);
@@ -674,7 +829,7 @@ jobs:
                                 }
                                 break;
                             case MotionEvent.ACTION_UP:
-                                if (!isMoved && v.getId() == R.id.btnCircle) {
+                                if (!isMoved && !isLongPressed[0] && v.getId() == R.id.btnCircle) {
                                     if (!isChecking) {
                                         boolean isVisible = panelInput.getVisibility() == View.VISIBLE;
                                         if (!isVisible) {
@@ -687,6 +842,7 @@ jobs:
                                         setFocusable(!isVisible);
                                     } else {
                                         isInterruptRequested = true;
+                                        btnCancelFloat.setVisibility(View.GONE);
                                         showStatus("已中断", true);
                                     }
                                 }
@@ -771,6 +927,7 @@ jobs:
                 new Handler(Looper.getMainLooper()).post(() -> {
                     floatProgressBar.setVisibility(View.VISIBLE);
                     floatProgressBar.setProgress(0);
+                    btnCancelFloat.setVisibility(View.VISIBLE);
                 });
                 circleSpin.setVisibility(View.VISIBLE);
 
@@ -791,6 +948,7 @@ jobs:
                                     isChecking = false;
                                     btnFloatSwitch.setEnabled(true);
                                     circleSpin.setVisibility(View.INVISIBLE);
+                                    btnCancelFloat.setVisibility(View.GONE);
                                 });
                                 return;
                             }
@@ -1004,6 +1162,7 @@ jobs:
                         new Handler(Looper.getMainLooper()).post(() -> {
                             isChecking = false; 
                             btnFloatSwitch.setEnabled(true);
+                            btnCancelFloat.setVisibility(View.GONE);
                             if (errorCount[0] == 0) {
                                 showStatus("未检测到错误", true);
                             } else {
@@ -1018,6 +1177,7 @@ jobs:
                             isChecking = false; 
                             btnFloatSwitch.setEnabled(true);
                             circleSpin.setVisibility(View.INVISIBLE);
+                            btnCancelFloat.setVisibility(View.GONE);
                             Toast.makeText(FloatingService.this, "纠错中断: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                         });
                     }
@@ -1147,7 +1307,7 @@ jobs:
             private TextView outputText, tvWordCount;
             private ScrollView scrollView;
             private ProgressBar progressBar;
-            private Button btnCheck, btnCopy, btnSaveTxt, btnPaste, btnClear;
+            private Button btnCheck, btnCopy, btnSaveTxt, btnPaste, btnClear, btnImport;
             private RadioButton rbFast, rbPro;
             private RadioGroup rgMode;
 
@@ -1156,7 +1316,8 @@ jobs:
             private boolean hasStartedChecking = false;
             private boolean autoScrollEnabled = true;
             private boolean isTouchingScrollView = false;
-            private boolean isDraggingScrollbar = false; // 新增：用于记录是否正在拖拽滚动条
+            private volatile boolean isCheckingMain = false;
+            private volatile boolean isInterruptRequestedMain = false;
             private int saveFormat = 0; 
             private String pendingSaveText = "";
 
@@ -1228,6 +1389,7 @@ jobs:
                 editThreshDe2 = findViewById(R.id.editThreshDe2);
                 editThreshDe3 = findViewById(R.id.editThreshDe3);
                 btnCheck = findViewById(R.id.btnCheck);
+                btnImport = findViewById(R.id.btnImport);
                 btnPaste = findViewById(R.id.btnPaste);
                 btnClear = findViewById(R.id.btnClear);
                 btnCopy = findViewById(R.id.btnCopy);
@@ -1361,6 +1523,14 @@ jobs:
                     }
                 });
 
+                btnImport.setOnClickListener(v -> {
+                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.setType("*/*");
+                    String[] mimetypes = {"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"};
+                    intent.putExtra(Intent.EXTRA_MIME_TYPES, mimetypes);
+                    startActivityForResult(intent, 102);
+                });
+
                 btnPaste.setOnClickListener(v -> {
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     if (clipboard != null && clipboard.hasPrimaryClip() && clipboard.getPrimaryClip().getItemCount() > 0) {
@@ -1379,6 +1549,12 @@ jobs:
                 btnCheck.setOnClickListener(v -> {
                     InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+                    
+                    if (isCheckingMain) {
+                        isInterruptRequestedMain = true;
+                        return;
+                    }
+                    
                     hasStartedChecking = true; saveSettings(currentIsFast); autoScrollEnabled = true;
                     
                     float tempVal = 1.0f;
@@ -1391,6 +1567,12 @@ jobs:
                     } else {
                         Toast.makeText(this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                     }
+                    
+                    isCheckingMain = true;
+                    isInterruptRequestedMain = false;
+                    btnCheck.setText("✖ 取消纠错");
+                    btnCheck.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFE53935)); // 红色警告色
+                    
                     doInference(isFastMode);
                 });
 
@@ -1526,6 +1708,29 @@ jobs:
                         startFloatingService();
                     } else { Toast.makeText(this, "悬浮窗权限未被授予，无法开启", Toast.LENGTH_SHORT).show(); }
                 }
+                if (requestCode == 102 && resultCode == RESULT_OK && data != null && data.getData() != null) {
+                    progressBar.setVisibility(View.VISIBLE);
+                    progressBar.setIndeterminate(true);
+                    btnImport.setEnabled(false);
+                    new Thread(() -> {
+                        try {
+                            String text = FileUtil.readFile(this, data.getData());
+                            runOnUiThread(() -> {
+                                inputText.setText(text);
+                                Toast.makeText(this, "导入成功，已自动开始纠错", Toast.LENGTH_SHORT).show();
+                                btnCheck.performClick(); 
+                            });
+                        } catch (Exception e) {
+                            runOnUiThread(() -> Toast.makeText(this, "读取文件失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                        } finally {
+                            runOnUiThread(() -> {
+                                progressBar.setIndeterminate(false);
+                                progressBar.setVisibility(View.INVISIBLE);
+                                btnImport.setEnabled(true);
+                            });
+                        }
+                    }).start();
+                }
                 if (requestCode == 101 && resultCode == RESULT_OK && data != null && data.getData() != null) {
                     try {
                         OutputStream os = getContentResolver().openOutputStream(data.getData());
@@ -1605,7 +1810,7 @@ jobs:
                 String text = inputText.getText().toString();
                 if (text.isEmpty()) return;
 
-                btnCheck.setEnabled(false); btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
+                btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
                 final float temp, tDe, tDi, tDe3;
                 float t1 = 1.0f, t2 = 0.70f, t3 = 0.75f, t4 = 0.75f;
                 try {
@@ -1622,8 +1827,21 @@ jobs:
                         String[] sentences = text.split("(?<=[。！？!?\n])");
                         runOnUiThread(() -> progressBar.setMax(sentences.length));
                         allSentencesBlocks.clear(); StringBuilder liveErrorsHtml = new StringBuilder(); long lastUIUpdateTime = System.currentTimeMillis();
+                        int liveErrorCount = 0; 
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
+                            if (isInterruptRequestedMain) {
+                                runOnUiThread(() -> {
+                                    outputText.setText("已取消纠错。");
+                                    isCheckingMain = false;
+                                    btnCheck.setText("开始纠错");
+                                    btnCheck.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2196F3));
+                                    btnCheck.setEnabled(true);
+                                    progressBar.setVisibility(View.INVISIBLE);
+                                });
+                                return;
+                            }
+                            
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) continue;
                             List<TextBlock> currentSentenceBlocks = new ArrayList<>();
@@ -1639,7 +1857,6 @@ jobs:
                                 if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { hasTarget = true; break; }
                             }
 
-                            // 如果温度设为0及以下，直接跳过模型推理，当作没有目标字处理，直接交给后续错别字规则引擎
                             if (!hasTarget || temp <= 0.0f) {
                                 currentSentenceBlocks.add(new TextBlock(sentence, sentence, false, 0f, 0));
                             } else {
@@ -1785,19 +2002,36 @@ jobs:
                                 if (hasError(clause)) {
                                     sentenceHasError = true;
                                     for (TextBlock b : clause) {
+                                        String safeOrig = b.original.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+                                        String safeCurr = b.current.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
                                         if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
-                                            sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(b.original).append("</s></font> <font color='#E53935'><b>").append(b.current).append("</b></font>");
-                                        } else { sentenceErrorHtml.append(b.original); }
+                                            liveErrorCount++;
+                                            String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : "";
+                                            sentenceErrorHtml.append("<sup><font color='#757575'>[").append(liveErrorCount).append("]</font></sup><font color='#9E9E9E'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
+                                        } else { sentenceErrorHtml.append(safeOrig); }
                                     }
                                 }
                             }
                             if (sentenceHasError) liveErrorsHtml.append(sentenceErrorHtml.toString()).append("<br><br>");
                             
                             allSentencesBlocks.add(finalSentenceBlocks);
+
+                            // 实时拼接并展示已经修正后的全文预览
+                            StringBuilder liveFullText = new StringBuilder();
+                            for (List<TextBlock> sent : allSentencesBlocks) {
+                                for (TextBlock tb : sent) {
+                                    liveFullText.append(tb.current.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"));
+                                }
+                            }
+                            String liveTextHtml = liveFullText.toString().replace("\n", "<br>");
+
                             long now = System.currentTimeMillis(); final int currentProgress = sIdx + 1;
                             if (now - lastUIUpdateTime > 300) {
                                 lastUIUpdateTime = now;
-                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "");
+                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + 
+                                (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "") + 
+                                "<br><b><font color='#757575'>【全文预览】：</font></b><br>" + liveTextHtml;
+                                
                                 runOnUiThread(() -> {
                                     progressBar.setProgress(currentProgress); outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
                                     if (autoScrollEnabled) scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
@@ -1805,9 +2039,22 @@ jobs:
                             }
                         }
                         lastTimeMs = System.currentTimeMillis() - startTime;
-                        runOnUiThread(() -> { renderFinalBlocks(); btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true); scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); });
+                        runOnUiThread(() -> { 
+                            isCheckingMain = false;
+                            btnCheck.setText("开始纠错");
+                            btnCheck.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2196F3));
+                            renderFinalBlocks(); 
+                            btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true); 
+                            scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); 
+                        });
                     } catch (Exception e) {
-                        final String err = e.getMessage(); runOnUiThread(() -> { outputText.setText("推理运行中断: " + err); btnCheck.setEnabled(true); btnSaveTxt.setEnabled(true); });
+                        final String err = e.getMessage(); runOnUiThread(() -> { 
+                            outputText.setText("推理运行中断: " + err); 
+                            isCheckingMain = false;
+                            btnCheck.setText("开始纠错");
+                            btnCheck.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2196F3));
+                            btnCheck.setEnabled(true); btnSaveTxt.setEnabled(true); 
+                        });
                     } finally { runOnUiThread(() -> { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.INVISIBLE); }); }
                 }).start();
             }
