@@ -310,9 +310,53 @@ jobs:
                         <data android:mimeType="text/plain" />
                     </intent-filter>
                 </activity>
+                <!-- 全透明隐形界面，专门用于接管系统的文件选择器 -->
+                <activity android:name=".FilePickerActivity" 
+                          android:theme="@android:style/Theme.Translucent.NoTitleBar" 
+                          android:excludeFromRecents="true" />
                 <service android:name=".FloatingService" android:exported="false" />
             </application>
         </manifest>
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/app/dededi/FilePickerActivity.java
+        package com.app.dededi;
+        import android.app.Activity;
+        import android.content.Intent;
+        import android.net.Uri;
+        import android.os.Bundle;
+        import android.widget.Toast;
+
+        public class FilePickerActivity extends Activity {
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                Toast.makeText(this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+                startActivityForResult(intent, 103);
+            }
+
+            @Override
+            protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                super.onActivityResult(requestCode, resultCode, data);
+                if (requestCode == 103 && resultCode == RESULT_OK && data != null) {
+                    Uri uri = data.getData();
+                    if (uri != null) {
+                        String text = MainActivity.extractTextFromUri(this, uri);
+                        if (text != null && !text.trim().isEmpty()) {
+                            Intent serviceIntent = new Intent(this, FloatingService.class);
+                            serviceIntent.putExtra("IMPORTED_TEXT", text);
+                            startService(serviceIntent);
+                        } else {
+                            Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                }
+                finish();
+            }
+        }
         EOF
 
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
@@ -445,7 +489,7 @@ jobs:
                 <Button android:id="@+id/btnFloatCheck" android:layout_width="match_parent" android:layout_height="40dp" android:text="开始" android:textSize="14sp" android:backgroundTint="#2196F3" android:padding="0dp" android:layout_marginTop="8dp"/>
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="6dp">
-                    <Button android:id="@+id/btnFloatImport" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="导入" android:textSize="12sp" android:backgroundTint="#03A9F4" android:textColor="#FFFFFF" android:padding="0dp" android:layout_marginEnd="1dp"/>
+                    <Button android:id="@+id/btnFloatImport" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="导入" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginEnd="1dp"/>
                     <Button android:id="@+id/btnFloatPaste" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="粘贴" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginEnd="1dp"/>
                     <Button android:id="@+id/btnFloatClear" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="清空" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="1dp" android:layout_marginEnd="1dp"/>
                     <Button android:id="@+id/btnFloatCopy" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="复制" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="1dp" android:layout_marginEnd="1dp"/>
@@ -539,6 +583,22 @@ jobs:
             
             private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
 
+            @Override
+            public int onStartCommand(Intent intent, int flags, int startId) {
+                if (intent != null && intent.hasExtra("IMPORTED_TEXT")) {
+                    String text = intent.getStringExtra("IMPORTED_TEXT");
+                    if (editFloatInput != null) {
+                        editFloatInput.setText(text);
+                        Toast.makeText(this, "导入成功", Toast.LENGTH_SHORT).show();
+                        if (panelInput != null && panelInput.getVisibility() != View.VISIBLE) {
+                            panelInput.setVisibility(View.VISIBLE);
+                            setFocusable(true);
+                        }
+                    }
+                }
+                return super.onStartCommand(intent, flags, startId);
+            }
+
             @SuppressLint("ClickableViewAccessibility")
             @Override
             public void onCreate() {
@@ -605,12 +665,9 @@ jobs:
                 });
 
                 btnFloatImport.setOnClickListener(v -> {
-                    Intent intent = new Intent(FloatingService.this, MainActivity.class);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    intent.putExtra("TRIGGER_IMPORT", true);
+                    Intent intent = new Intent(FloatingService.this, FilePickerActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(intent);
-                    panelInput.setVisibility(View.GONE);
-                    setFocusable(false);
                 });
 
                 btnFloatPaste.setOnClickListener(v -> {
@@ -1227,7 +1284,7 @@ jobs:
                 }
             }
 
-            private String extractTextFromUri(Context context, android.net.Uri uri) {
+            public static String extractTextFromUri(Context context, android.net.Uri uri) {
                 try {
                     String name = getFileName(context, uri);
                     if (name != null && name.toLowerCase().endsWith(".docx")) {
@@ -1277,7 +1334,7 @@ jobs:
                 }
             }
 
-            private String getFileName(Context context, android.net.Uri uri) {
+            public static String getFileName(Context context, android.net.Uri uri) {
                 String result = null;
                 if (uri.getScheme().equals("content")) {
                     try (android.database.Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) {
@@ -1586,11 +1643,7 @@ jobs:
             
             private void handleIntent(Intent intent) {
                 if (intent == null) return;
-                if (intent.getBooleanExtra("TRIGGER_IMPORT", false)) {
-                    intent.removeExtra("TRIGGER_IMPORT");
-                    Toast.makeText(this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
-                    openFilePicker();
-                } else if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
+                if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
                     String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
                     if (sharedText != null) {
                         inputText.setText(sharedText);
