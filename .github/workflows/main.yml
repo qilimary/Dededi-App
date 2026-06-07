@@ -744,11 +744,15 @@ jobs:
             private void startInference(String text) {
                 SharedPreferences sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
                 boolean isFastMode = sp.getBoolean("is_fast_mode", false);
-                if (isFastMode && MainActivity.fastModule == null) { Toast.makeText(this, "极速引擎未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return; }
-                if (!isFastMode && MainActivity.proModule == null) { Toast.makeText(this, "专业大模型未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return; }
-
                 String prefix = isFastMode ? "fast_" : "pro_";
                 float temp = Float.parseFloat(sp.getString(prefix + "temp", isFastMode ? "1.2" : "1.0"));
+
+                if (temp > 0.0f) {
+                    if (isFastMode && MainActivity.fastModule == null) { Toast.makeText(this, "极速引擎未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return; }
+                    if (!isFastMode && MainActivity.proModule == null) { Toast.makeText(this, "专业大模型未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return; }
+                } else {
+                    Toast.makeText(this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
+                }
                 float tDe = Float.parseFloat(sp.getString(prefix + "th1", isFastMode ? "0.80" : "0.70"));
                 float tDi = Float.parseFloat(sp.getString(prefix + "th2", isFastMode ? "0.80" : "0.75"));
                 float tDe3 = Float.parseFloat(sp.getString(prefix + "th3", isFastMode ? "0.80" : "0.75"));
@@ -820,7 +824,8 @@ jobs:
                                 if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { hasTarget = true; break; }
                             }
                             
-                            if (!hasTarget) {
+                            // 如果温度设为0及以下，同样跳过悬浮窗中的大模型推理
+                            if (!hasTarget || temp <= 0.0f) {
                                 currentSentenceBlocks.add(new MainActivity.TextBlock(sentence, sentence, false, 0f, 0));
                             } else {
                                 float[] scores;
@@ -1379,9 +1384,17 @@ jobs:
                     InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
                     hasStartedChecking = true; saveSettings(currentIsFast); autoScrollEnabled = true;
+                    
+                    float tempVal = 1.0f;
+                    try { tempVal = Float.parseFloat(editTemp.getText().toString()); } catch (Exception ignored) {}
+                    
                     boolean isFastMode = rbFast.isChecked();
-                    if (isFastMode && fastModule == null) { Toast.makeText(this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
-                    if (!isFastMode && proModule == null) { Toast.makeText(this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                    if (tempVal > 0.0f) {
+                        if (isFastMode && fastModule == null) { Toast.makeText(this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                        if (!isFastMode && proModule == null) { Toast.makeText(this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                    } else {
+                        Toast.makeText(this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
+                    }
                     doInference(isFastMode);
                 });
 
@@ -1630,7 +1643,8 @@ jobs:
                                 if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { hasTarget = true; break; }
                             }
 
-                            if (!hasTarget) {
+                            // 如果温度设为0及以下，直接跳过模型推理，当作没有目标字处理，直接交给后续错别字规则引擎
+                            if (!hasTarget || temp <= 0.0f) {
                                 currentSentenceBlocks.add(new TextBlock(sentence, sentence, false, 0f, 0));
                             } else {
                                 float[] scores;
