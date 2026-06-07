@@ -726,9 +726,8 @@ jobs:
                         tvStatus.setText(msg);
                         statusContainer.setVisibility(View.VISIBLE);
                         statusContainer.removeCallbacks(hideStatusRunnable);
-                        if (isTypo) {
-                            statusContainer.postDelayed(hideStatusRunnable, 2500);
-                        }
+                        // 【修改点】：不再区分是否为错别字，统一将所有错误的驻留时间延长至 5 秒（5000毫秒）
+                        statusContainer.postDelayed(hideStatusRunnable, 5000);
                     }
                 });
             }
@@ -886,7 +885,8 @@ jobs:
                                     
                                     if (changed) {
                                         errorCount[0]++;
-                                        final String errLog = "发现错误：" + ch + " → " + pred + " | 共 " + errorCount[0] + " 处";
+                                        // 【修改点】：把置信度加回字符串中
+                                        final String errLog = "发现错误：" + ch + " → " + pred + " (置信度:" + String.format("%.2f", maxProb) + ") | 共 " + errorCount[0] + " 处";
                                         syncShowStatus(errLog, false);
                                     }
                                 }
@@ -979,6 +979,11 @@ jobs:
                         MainActivity.allSentencesBlocks = syncAllBlocks;
                         MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
                         MainActivity.hasNewFloatResult = true;
+                        
+                        // 【修改点】：如果存在错误，强制后台线程等待 1 秒，确保最后一条错误能在屏幕上至少展示 1 秒
+                        if (errorCount[0] > 0) {
+                            try { Thread.sleep(1000); } catch (Exception e) {}
+                        }
                         
                         new Handler(Looper.getMainLooper()).post(() -> {
                             isChecking = false; 
@@ -1740,7 +1745,7 @@ jobs:
                             long now = System.currentTimeMillis(); final int currentProgress = sIdx + 1;
                             if (now - lastUIUpdateTime > 300 || currentProgress == sentences.length) {
                                 lastUIUpdateTime = now;
-                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【实时更正记录】：</font></b><br>" + liveErrorsHtml.toString() : "");
+                                final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "");
                                 runOnUiThread(() -> {
                                     progressBar.setProgress(currentProgress); outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
                                     if (autoScrollEnabled) scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
