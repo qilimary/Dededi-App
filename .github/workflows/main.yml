@@ -313,7 +313,7 @@ jobs:
                     </intent-filter>
                 </activity>
                 <!-- 新增用于悬浮窗透明接收文件的Activity，加了taskAffinity让它支持独立后台打开不覆盖主APP -->
-                <activity android:name=".ImportActivity" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:taskAffinity="" />
+                <activity android:name=".ImportActivity" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:taskAffinity="com.app.dededi.ImportTask" />
                 <service android:name=".FloatingService" android:exported="false" />
             </application>
         </manifest>
@@ -585,13 +585,13 @@ jobs:
                     loadingLayout.setVisibility(android.view.View.VISIBLE);
                     new Thread(() -> {
                         try {
-                            String text = FileUtil.readFile(this, data.getData());
-                            Intent intent = new Intent(this, FloatingService.class);
+                            String text = FileUtil.readFile(ImportActivity.this, data.getData());
+                            Intent intent = new Intent(ImportActivity.this, FloatingService.class);
                             intent.setAction("ACTION_IMPORT_RESULT");
                             intent.putExtra("imported_text", text);
                             startService(intent);
                         } catch (Exception ignored) {}
-                        runOnUiThread(this::finish);
+                        runOnUiThread(() -> finish());
                     }).start();
                 } else { finish(); }
             }
@@ -732,7 +732,7 @@ jobs:
                 });
 
                 btnFloatImport.setOnClickListener(v -> {
-                    Intent intent = new Intent(this, ImportActivity.class);
+                    Intent intent = new Intent(FloatingService.this, ImportActivity.class);
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
                     startActivity(intent);
                     panelInput.setVisibility(View.GONE);
@@ -1522,7 +1522,7 @@ jobs:
                 });
 
                 btnImport.setOnClickListener(v -> {
-                    Toast.makeText(this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
                     Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                     intent.setType("*/*");
                     String[] mimetypes = {"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"};
@@ -1561,10 +1561,10 @@ jobs:
                     
                     boolean isFastMode = rbFast.isChecked();
                     if (tempVal > 0.0f) {
-                        if (isFastMode && fastModule == null) { Toast.makeText(this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
-                        if (!isFastMode && proModule == null) { Toast.makeText(this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                        if (isFastMode && fastModule == null) { Toast.makeText(MainActivity.this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                        if (!isFastMode && proModule == null) { Toast.makeText(MainActivity.this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
                     } else {
-                        Toast.makeText(this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
+                        Toast.makeText(MainActivity.this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                     }
                     
                     isCheckingMain = true;
