@@ -1,4 +1,3 @@
-
 name: Build Android APK
 
 on:
@@ -162,8 +161,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 19
-                versionName "2.80"
+                versionCode 17
+                versionName "2.60"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -181,10 +180,6 @@ jobs:
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_11
                 targetCompatibility JavaVersion.VERSION_11
-            }
-            lintOptions {
-                checkReleaseBuilds false
-                abortOnError false
             }
         }
         dependencies {
@@ -315,8 +310,6 @@ jobs:
                         <data android:mimeType="text/plain" />
                     </intent-filter>
                 </activity>
-                <!-- 用于悬浮窗透明静默接收文件的Activity -->
-                <activity android:name=".ImportActivity" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />
                 <service android:name=".FloatingService" android:exported="false" />
             </application>
         </manifest>
@@ -400,19 +393,19 @@ jobs:
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginBottom="10dp">
                 <Button android:id="@+id/btnImport" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="导入" android:textSize="14sp"
+                    android:layout_weight="1" android:text="导入" android:textSize="13sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
                 <Button android:id="@+id/btnPaste" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="粘贴" android:textSize="14sp"
+                    android:layout_weight="1" android:text="粘贴" android:textSize="13sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
                 <Button android:id="@+id/btnClear" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="清空" android:textSize="14sp"
+                    android:layout_weight="1" android:text="清空" android:textSize="13sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
                 <Button android:id="@+id/btnCopy" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="复制" android:textSize="14sp"
+                    android:layout_weight="1" android:text="复制" android:textSize="13sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp" android:enabled="false"/>
                 <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="保存" android:textSize="14sp"
+                    android:layout_weight="1" android:text="保存" android:textSize="13sp"
                     android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text"/>
             </LinearLayout>
 
@@ -442,8 +435,7 @@ jobs:
                 
                 <LinearLayout android:id="@+id/panelTopBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:textStyle="bold"/>
-                    <Button android:id="@+id/btnFloatImport" android:layout_width="36dp" android:layout_height="32dp" android:text="导入" android:textSize="12sp" android:backgroundTint="#FF9800" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginEnd="4dp"/>
-                    <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#4CAF50" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
+                    <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#03A9F4" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                     <Button android:id="@+id/btnFloatCloseAll" android:layout_width="36dp" android:layout_height="32dp" android:text="✕" android:textSize="12sp" android:backgroundTint="#E53935" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="4dp"/>
                 </LinearLayout>
 
@@ -453,10 +445,11 @@ jobs:
                 <Button android:id="@+id/btnFloatCheck" android:layout_width="match_parent" android:layout_height="40dp" android:text="开始" android:textSize="14sp" android:backgroundTint="#2196F3" android:padding="0dp" android:layout_marginTop="8dp"/>
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="6dp">
+                    <Button android:id="@+id/btnFloatImport" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="导入" android:textSize="12sp" android:backgroundTint="#03A9F4" android:textColor="#FFFFFF" android:padding="0dp" android:layout_marginEnd="1dp"/>
                     <Button android:id="@+id/btnFloatPaste" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="粘贴" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginEnd="1dp"/>
                     <Button android:id="@+id/btnFloatClear" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="清空" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="1dp" android:layout_marginEnd="1dp"/>
-                    <Button android:id="@+id/btnFloatCopy" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="复制结果" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="1dp" android:layout_marginEnd="1dp"/>
-                    <Button android:id="@+id/btnFloatSwitch" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="切换模型" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="1dp"/>
+                    <Button android:id="@+id/btnFloatCopy" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="复制" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="1dp" android:layout_marginEnd="1dp"/>
+                    <Button android:id="@+id/btnFloatSwitch" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:text="切换" android:textSize="12sp" android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:padding="0dp" android:layout_marginStart="1dp"/>
                 </LinearLayout>
             </LinearLayout>
 
@@ -477,21 +470,12 @@ jobs:
                 android:visibility="invisible"
                 android:minWidth="80dp"
                 android:layout_marginTop="4dp">
-                
-                <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                    <TextView android:id="@+id/tvStatus"
-                        android:layout_width="wrap_content" android:layout_height="wrap_content"
-                        android:textColor="#FFFFFF"
-                        android:textSize="11sp"
-                        android:paddingStart="6dp" android:paddingEnd="6dp"
-                        android:paddingTop="3dp" android:paddingBottom="3dp"/>
-                    <TextView android:id="@+id/btnCancelFloat"
-                        android:layout_width="wrap_content" android:layout_height="wrap_content"
-                        android:text="✕" android:textColor="#FF5252" android:textSize="14sp"
-                        android:paddingStart="4dp" android:paddingEnd="4dp" android:visibility="gone"
-                        android:textStyle="bold"/>
-                </LinearLayout>
-
+                <TextView android:id="@+id/tvStatus"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:paddingStart="6dp" android:paddingEnd="6dp"
+                    android:paddingTop="3dp" android:paddingBottom="3dp"/>
                 <ProgressBar android:id="@+id/floatProgressBar"
                     style="?android:attr/progressBarStyleHorizontal"
                     android:layout_width="match_parent" android:layout_height="2dp"
@@ -500,97 +484,6 @@ jobs:
                     android:visibility="gone"/>
             </LinearLayout>
         </RelativeLayout>
-        EOF
-        
-        cat << 'EOF' > app/src/main/java/com/app/dededi/FileUtil.java
-        package com.app.dededi;
-        import android.content.Context;
-        import android.net.Uri;
-        import java.io.InputStream;
-        import java.io.ByteArrayOutputStream;
-        import java.nio.charset.StandardCharsets;
-        import java.util.zip.ZipInputStream;
-        import java.util.zip.ZipEntry;
-        import java.io.BufferedReader;
-        import java.io.InputStreamReader;
-        import android.database.Cursor;
-        import android.provider.OpenableColumns;
-
-        public class FileUtil {
-            public static String readFile(Context context, Uri uri) throws Exception {
-                InputStream is = context.getContentResolver().openInputStream(uri);
-                if (is == null) return "";
-                String name = "";
-                Cursor cursor = context.getContentResolver().query(uri, null, null, null, null);
-                if (cursor != null && cursor.moveToFirst()) {
-                    int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                    if (nameIndex >= 0) name = cursor.getString(nameIndex);
-                    cursor.close();
-                }
-                StringBuilder sb = new StringBuilder();
-                if (name.toLowerCase().endsWith(".docx")) {
-                    ZipInputStream zis = new ZipInputStream(is);
-                    ZipEntry entry;
-                    while ((entry = zis.getNextEntry()) != null) {
-                        if (entry.getName().equals("word/document.xml")) {
-                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                            byte[] buffer = new byte[8192]; int count;
-                            while ((count = zis.read(buffer)) != -1) baos.write(buffer, 0, count);
-                            String xml = new String(baos.toByteArray(), StandardCharsets.UTF_8);
-                            String extractedText = xml.replaceAll("</w:p>", "\n").replaceAll("<[^>]+>", "")
-                                    .replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">")
-                                    .replaceAll("&quot;", "\"").replaceAll("&apos;", "'");
-                            sb.append(extractedText);
-                        }
-                    }
-                    zis.close();
-                } else {
-                    BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-                    String line;
-                    while ((line = br.readLine()) != null) sb.append(line).append("\n");
-                    br.close();
-                }
-                return sb.toString().trim();
-            }
-        }
-        EOF
-
-        cat << 'EOF' > app/src/main/java/com/app/dededi/ImportActivity.java
-        package com.app.dededi;
-        import android.app.Activity;
-        import android.content.Intent;
-        import android.os.Bundle;
-
-        public class ImportActivity extends Activity {
-            @Override
-            protected void onCreate(Bundle savedInstanceState) {
-                super.onCreate(savedInstanceState);
-                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                intent.setType("*/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
-                startActivityForResult(intent, 103);
-            }
-
-            @Override
-            protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-                if (requestCode == 103 && resultCode == RESULT_OK && data != null && data.getData() != null) {
-                    Intent loadingIntent = new Intent(this, FloatingService.class);
-                    loadingIntent.setAction("ACTION_IMPORT_LOADING");
-                    startService(loadingIntent);
-                    
-                    new Thread(() -> {
-                        try {
-                            String text = FileUtil.readFile(this, data.getData());
-                            Intent intent = new Intent(this, FloatingService.class);
-                            intent.setAction("ACTION_IMPORT_RESULT");
-                            intent.putExtra("imported_text", text);
-                            startService(intent);
-                        } catch (Exception ignored) {}
-                        runOnUiThread(this::finish);
-                    }).start();
-                } else { finish(); }
-            }
-        }
         EOF
 
         cat << 'EOF' > app/src/main/java/com/app/dededi/FloatingService.java
@@ -646,28 +539,6 @@ jobs:
             
             private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
 
-            @Override
-            public int onStartCommand(Intent intent, int flags, int startId) {
-                if (intent != null) {
-                    if ("ACTION_IMPORT_LOADING".equals(intent.getAction())) {
-                        showStatus("正在读取并解析文件...", false);
-                        circleSpin.setVisibility(View.VISIBLE);
-                    } else if ("ACTION_IMPORT_RESULT".equals(intent.getAction())) {
-                        String text = intent.getStringExtra("imported_text");
-                        if (text != null && !text.isEmpty()) {
-                            editFloatInput.setText(text);
-                            setFocusable(false);
-                            panelInput.setVisibility(View.GONE);
-                            startInference(text);
-                        } else {
-                            circleSpin.setVisibility(View.INVISIBLE);
-                            showStatus("读取失败或内容为空", true);
-                        }
-                    }
-                }
-                return super.onStartCommand(intent, flags, startId);
-            }
-
             @SuppressLint("ClickableViewAccessibility")
             @Override
             public void onCreate() {
@@ -703,12 +574,12 @@ jobs:
                 View btnCircle = floatView.findViewById(R.id.btnCircle);
                 View panelTopBar = floatView.findViewById(R.id.panelTopBar);
 
+                Button btnFloatImport = floatView.findViewById(R.id.btnFloatImport);
                 Button btnFloatPaste = floatView.findViewById(R.id.btnFloatPaste);
                 Button btnFloatClear = floatView.findViewById(R.id.btnFloatClear);
                 Button btnFloatCheck = floatView.findViewById(R.id.btnFloatCheck);
                 Button btnFloatCopy = floatView.findViewById(R.id.btnFloatCopy);
                 btnFloatSwitch = floatView.findViewById(R.id.btnFloatSwitch);
-                Button btnFloatImport = floatView.findViewById(R.id.btnFloatImport);
                 Button btnFloatJump = floatView.findViewById(R.id.btnFloatJump);
                 Button btnFloatCloseAll = floatView.findViewById(R.id.btnFloatCloseAll);
                 
@@ -734,8 +605,9 @@ jobs:
                 });
 
                 btnFloatImport.setOnClickListener(v -> {
-                    Intent intent = new Intent(this, ImportActivity.class);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    Intent intent = new Intent(FloatingService.this, MainActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    intent.putExtra("TRIGGER_IMPORT", true);
                     startActivity(intent);
                     panelInput.setVisibility(View.GONE);
                     setFocusable(false);
@@ -871,7 +743,6 @@ jobs:
                 });
             }
             
-            // 带有延时避让逻辑的显示
             private void syncShowStatus(String msg, boolean isTypo) {
                 long now = System.currentTimeMillis();
                 if (lastStatusWasTypo) {
@@ -976,7 +847,6 @@ jobs:
                                 if ((c == '的' || c == '地' || c == '得') && !isIgnored[i]) { hasTarget = true; break; }
                             }
                             
-                            // 如果温度设为0及以下，同样跳过悬浮窗中的大模型推理
                             if (!hasTarget || temp <= 0.0f) {
                                 currentSentenceBlocks.add(new MainActivity.TextBlock(sentence, sentence, false, 0f, 0));
                             } else {
@@ -1058,7 +928,6 @@ jobs:
                                 flushNormal.run();
                             }
 
-                            // 独立插入 错别字与量词 扫描环节 (针对正常文本块)
                             List<MainActivity.TextBlock> finalSentenceBlocks = new ArrayList<>();
                             for (MainActivity.TextBlock b : currentSentenceBlocks) {
                                 if (b.isMutable) {
@@ -1092,7 +961,6 @@ jobs:
                                             }
                                         }
                                         
-                                        // 绝对量词匹配逻辑
                                         if (!matchedTypo && i > 0 && i + 1 < b.original.length()) {
                                             if (normalBuf.length() > 0) {
                                                 char numChar = normalBuf.charAt(normalBuf.length() - 1);
@@ -1255,7 +1123,6 @@ jobs:
             public static int minTypoLen = Integer.MAX_VALUE;
             public static boolean typoMapLoaded = false;
 
-            // 量词规则系统
             public static class QuantifierRule {
                 public String primaryQuant;
                 public String allowedQuants;
@@ -1304,15 +1171,15 @@ jobs:
             private boolean hasStartedChecking = false;
             private boolean autoScrollEnabled = true;
             private boolean isTouchingScrollView = false;
+            private boolean isDraggingScrollbar = false; 
             private volatile boolean isCheckingMain = false;
-            private volatile boolean isInterruptRequestedMain = false;
             private int saveFormat = 0; 
             private String pendingSaveText = "";
 
             public static class TextBlock {
                 String original, current, modelCorrected;
                 boolean isMutable; float conf;
-                int type; // 0=None, 1=DeDiDe, 2=Typo, 3=Quantifier
+                int type; 
                 boolean userModified = false;
                 public TextBlock(String o, String c, boolean m, float f, int t) {
                     this.original = o; this.current = c; this.isMutable = m; this.conf = f; this.type = t;
@@ -1360,6 +1227,82 @@ jobs:
                 }
             }
 
+            private String extractTextFromUri(Context context, android.net.Uri uri) {
+                try {
+                    String name = getFileName(context, uri);
+                    if (name != null && name.toLowerCase().endsWith(".docx")) {
+                        java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(context.getContentResolver().openInputStream(uri));
+                        java.util.zip.ZipEntry entry;
+                        StringBuilder sb = new StringBuilder();
+                        while ((entry = zis.getNextEntry()) != null) {
+                            if (entry.getName().equals("word/document.xml")) {
+                                java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(zis, StandardCharsets.UTF_8));
+                                String line;
+                                while ((line = br.readLine()) != null) {
+                                    sb.append(line);
+                                }
+                                break;
+                            }
+                        }
+                        zis.close();
+                        String xml = sb.toString();
+                        StringBuilder text = new StringBuilder();
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile("<w:p[^>]*>(.*?)</w:p>", java.util.regex.Pattern.DOTALL).matcher(xml);
+                        while (m.find()) {
+                            String p = m.group(1);
+                            java.util.regex.Matcher tm = java.util.regex.Pattern.compile("<w:t[^>]*>(.*?)</w:t>", java.util.regex.Pattern.DOTALL).matcher(p);
+                            boolean added = false;
+                            while (tm.find()) {
+                                String unescaped = tm.group(1).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
+                                text.append(unescaped);
+                                added = true;
+                            }
+                            if (added) text.append("\n");
+                        }
+                        return text.toString();
+                    } else {
+                        java.io.InputStream is = context.getContentResolver().openInputStream(uri);
+                        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(is, StandardCharsets.UTF_8));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            sb.append(line).append("\n");
+                        }
+                        br.close();
+                        return sb.toString();
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return "";
+                }
+            }
+
+            private String getFileName(Context context, android.net.Uri uri) {
+                String result = null;
+                if (uri.getScheme().equals("content")) {
+                    try (android.database.Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) {
+                        if (cursor != null && cursor.moveToFirst()) {
+                            result = cursor.getString(cursor.getColumnIndexOrThrow(android.provider.OpenableColumns.DISPLAY_NAME));
+                        }
+                    } catch (Exception e) {}
+                }
+                if (result == null) {
+                    result = uri.getPath();
+                    int cut = result.lastIndexOf('/');
+                    if (cut != -1) {
+                        result = result.substring(cut + 1);
+                    }
+                }
+                return result;
+            }
+
+            private void openFilePicker() {
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+                startActivityForResult(intent, 102);
+            }
+
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
@@ -1397,7 +1340,6 @@ jobs:
                         if (maxScrollY > 0) {
                             float y = Math.max(0, Math.min(event.getY(), v.getHeight()));
                             float ratio = y / v.getHeight();
-                            // 强行滑动 ScrollView，实现完美跟手
                             scrollView.scrollTo(0, (int) (ratio * maxScrollY));
                         }
                     }
@@ -1407,10 +1349,9 @@ jobs:
                         isTouchingScrollView = false;
                         if (!scrollView.canScrollVertically(1)) autoScrollEnabled = true;
                     }
-                    return true; // 强制拦截该区域所有事件
+                    return true;
                 });
 
-                // 恢复普通文本区域的滑动打断判定
                 scrollView.setOnTouchListener((v, event) -> {
                     if (event.getAction() == MotionEvent.ACTION_DOWN) {
                         isTouchingScrollView = true; autoScrollEnabled = false;
@@ -1478,7 +1419,7 @@ jobs:
                     String helpText = "【模型介绍】\n" +
                             "两款模型均只纠错“的地得”使用。但软件同样支持其他错别字纠正作为锦上添花的功能。\n\n" +
                             "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n" +
-                            "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n\n" +
+                            "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n" +
                             "注：不同手机的速度会有不同，性能越强的手机，模型推理速度越快。\n" +
                             "模型可能会犯一些低级错误，这是神经网络的通病，在所难免。\n\n" +
                             "【温度参数】\n" +
@@ -1495,8 +1436,7 @@ jobs:
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
-                            "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n" +
-                            "• 文件导入：支持格式：txt、docx。精准提取里面的字符纠错。如果有表格类格式慎重纠错，会破坏排版。\n" +
+                            "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
@@ -1513,12 +1453,8 @@ jobs:
                 });
 
                 btnImport.setOnClickListener(v -> {
-                    Toast.makeText(this, "支持导入 txt、docx 格式文件", Toast.LENGTH_SHORT).show();
-                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                    intent.setType("*/*");
-                    String[] mimetypes = {"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"};
-                    intent.putExtra(Intent.EXTRA_MIME_TYPES, mimetypes);
-                    startActivityForResult(intent, 102);
+                    Toast.makeText(this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
+                    openFilePicker();
                 });
 
                 btnPaste.setOnClickListener(v -> {
@@ -1534,17 +1470,21 @@ jobs:
                     allSentencesBlocks.clear();
                     outputText.setText("");
                     btnCopy.setEnabled(false);
+                    btnSaveTxt.setEnabled(false);
+                    if (isCheckingMain) {
+                        isCheckingMain = false;
+                    }
                 });
 
                 btnCheck.setOnClickListener(v -> {
                     InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                     if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
-                    
+
                     if (isCheckingMain) {
-                        isInterruptRequestedMain = true;
+                        isCheckingMain = false;
                         return;
                     }
-                    
+
                     hasStartedChecking = true; saveSettings(currentIsFast); autoScrollEnabled = true;
                     
                     float tempVal = 1.0f;
@@ -1557,11 +1497,9 @@ jobs:
                     } else {
                         Toast.makeText(this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                     }
-                    
+
                     isCheckingMain = true;
-                    isInterruptRequestedMain = false;
-                    btnCheck.setText("取消纠错");
-                    
+                    btnCheck.setText("取消");
                     doInference(isFastMode);
                 });
 
@@ -1635,6 +1573,7 @@ jobs:
                     renderFinalBlocks();
                     btnCopy.setEnabled(true);
                     btnCheck.setEnabled(true);
+                    btnSaveTxt.setEnabled(true);
                     scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP));
                 }
             }
@@ -1647,7 +1586,11 @@ jobs:
             
             private void handleIntent(Intent intent) {
                 if (intent == null) return;
-                if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
+                if (intent.getBooleanExtra("TRIGGER_IMPORT", false)) {
+                    intent.removeExtra("TRIGGER_IMPORT");
+                    Toast.makeText(this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
+                    openFilePicker();
+                } else if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType())) {
                     String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
                     if (sharedText != null) {
                         inputText.setText(sharedText);
@@ -1697,28 +1640,17 @@ jobs:
                         startFloatingService();
                     } else { Toast.makeText(this, "悬浮窗权限未被授予，无法开启", Toast.LENGTH_SHORT).show(); }
                 }
-                if (requestCode == 102 && resultCode == RESULT_OK && data != null && data.getData() != null) {
-                    progressBar.setVisibility(View.VISIBLE);
-                    progressBar.setIndeterminate(true);
-                    btnImport.setEnabled(false);
-                    new Thread(() -> {
-                        try {
-                            String text = FileUtil.readFile(this, data.getData());
-                            runOnUiThread(() -> {
-                                inputText.setText(text);
-                                Toast.makeText(this, "导入成功，已自动开始纠错", Toast.LENGTH_SHORT).show();
-                                btnCheck.performClick(); 
-                            });
-                        } catch (Exception e) {
-                            runOnUiThread(() -> Toast.makeText(this, "读取文件失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                        } finally {
-                            runOnUiThread(() -> {
-                                progressBar.setIndeterminate(false);
-                                progressBar.setVisibility(View.INVISIBLE);
-                                btnImport.setEnabled(true);
-                            });
+                if (requestCode == 102 && resultCode == RESULT_OK && data != null) {
+                    android.net.Uri uri = data.getData();
+                    if (uri != null) {
+                        String text = extractTextFromUri(this, uri);
+                        if (text != null && !text.trim().isEmpty()) {
+                            inputText.setText(text);
+                            Toast.makeText(this, "导入成功", Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
                         }
-                    }).start();
+                    }
                 }
                 if (requestCode == 101 && resultCode == RESULT_OK && data != null && data.getData() != null) {
                     try {
@@ -1797,7 +1729,11 @@ jobs:
 
             private void doInference(boolean isFastMode) {
                 String text = inputText.getText().toString();
-                if (text.isEmpty()) return;
+                if (text.isEmpty()) {
+                    isCheckingMain = false;
+                    btnCheck.setText("开始纠错");
+                    return;
+                }
 
                 btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
                 final float temp, tDe, tDi, tDe3;
@@ -1817,20 +1753,18 @@ jobs:
                         runOnUiThread(() -> progressBar.setMax(sentences.length));
                         allSentencesBlocks.clear(); StringBuilder liveErrorsHtml = new StringBuilder(); long lastUIUpdateTime = System.currentTimeMillis();
                         int liveErrorCount = 0; 
-                        int lastScrolledErrorCount = 0; 
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
-                            if (isInterruptRequestedMain) {
+                            if (!isCheckingMain) {
                                 runOnUiThread(() -> {
                                     outputText.setText("已取消纠错。");
-                                    isCheckingMain = false;
                                     btnCheck.setText("开始纠错");
                                     btnCheck.setEnabled(true);
                                     progressBar.setVisibility(View.INVISIBLE);
                                 });
                                 return;
                             }
-                            
+
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) continue;
                             List<TextBlock> currentSentenceBlocks = new ArrayList<>();
@@ -1911,7 +1845,6 @@ jobs:
                                 flushNormal.run();
                             }
 
-                            // 独立插入 错别字与量词 扫描环节 (针对正常文本块)
                             List<TextBlock> finalSentenceBlocks = new ArrayList<>();
                             for (TextBlock b : currentSentenceBlocks) {
                                 if (b.isMutable) {
@@ -1940,7 +1873,6 @@ jobs:
                                             }
                                         }
                                         
-                                        // 绝对量词匹配逻辑
                                         if (!matchedTypo && i > 0 && i + 1 < b.original.length()) {
                                             if (normalBuf.length() > 0) {
                                                 char numChar = normalBuf.charAt(normalBuf.length() - 1);
@@ -1978,7 +1910,6 @@ jobs:
                                 }
                             }
                             
-                            // 更新并准备输出
                             List<List<TextBlock>> clauses = new ArrayList<>(); List<TextBlock> currentClause = new ArrayList<>();
                             for (TextBlock b : finalSentenceBlocks) {
                                 currentClause.add(b); char lastChar = b.original.charAt(b.original.length() - 1);
@@ -2005,7 +1936,6 @@ jobs:
                             
                             allSentencesBlocks.add(finalSentenceBlocks);
 
-                            // 实时拼接并展示已经修正后的全文预览
                             StringBuilder liveFullText = new StringBuilder();
                             for (List<TextBlock> sent : allSentencesBlocks) {
                                 for (TextBlock tb : sent) {
@@ -2019,17 +1949,29 @@ jobs:
                                 lastUIUpdateTime = now;
                                 final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + 
                                 (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "") + 
-                                "<br><b><font color='#757575'>【全文预览】：</font></b><br>" + liveTextHtml;
+                                "<br><b><font color='#757575'>【实时预览修正全文】：</font></b><br>" + liveTextHtml;
                                 
-                                boolean shouldScroll = false;
-                                if (liveErrorCount > lastScrolledErrorCount) {
-                                    shouldScroll = true;
-                                    lastScrolledErrorCount = liveErrorCount;
-                                }
-
+                                final int currentErrorCount = liveErrorCount;
                                 runOnUiThread(() -> {
                                     progressBar.setProgress(currentProgress); outputText.setText(Html.fromHtml(progHtml, Html.FROM_HTML_MODE_COMPACT));
-                                    if (autoScrollEnabled && shouldScroll) scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN)); 
+                                    if (autoScrollEnabled) {
+                                        scrollView.post(() -> {
+                                            if (currentErrorCount > 0) {
+                                                Layout layout = outputText.getLayout();
+                                                if (layout != null) {
+                                                    String textStr = outputText.getText().toString();
+                                                    int offset = textStr.indexOf("【实时预览修正全文】：");
+                                                    if (offset != -1) {
+                                                        int line = layout.getLineForOffset(offset);
+                                                        int y = layout.getLineTop(line);
+                                                        scrollView.scrollTo(0, Math.max(0, y - scrollView.getHeight() + 150));
+                                                    }
+                                                }
+                                            } else {
+                                                scrollView.scrollTo(0, 0);
+                                            }
+                                        });
+                                    }
                                 });
                             }
                         }
@@ -2038,22 +1980,25 @@ jobs:
                             isCheckingMain = false;
                             btnCheck.setText("开始纠错");
                             renderFinalBlocks(); 
-                            btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true); 
+                            btnCheck.setEnabled(true); 
+                            btnCopy.setEnabled(true); 
+                            btnSaveTxt.setEnabled(true); 
                             scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); 
                         });
                     } catch (Exception e) {
                         final String err = e.getMessage(); runOnUiThread(() -> { 
-                            outputText.setText("推理运行中断: " + err); 
                             isCheckingMain = false;
                             btnCheck.setText("开始纠错");
-                            btnCheck.setEnabled(true); btnSaveTxt.setEnabled(true); 
+                            outputText.setText("推理运行中断: " + err); 
+                            btnCheck.setEnabled(true); 
+                            btnSaveTxt.setEnabled(true); 
                         });
                     } finally { runOnUiThread(() -> { getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.INVISIBLE); }); }
                 }).start();
             }
 
             private void showEditDialog(TextBlock b) {
-                if (b.type == 1) { // 的地得
+                if (b.type == 1) { 
                     String[] options = {"的", "地", "得", "还原为原字 (" + b.original + ")"};
                     new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + b.current + ")").setItems(options, (dialog, which) -> {
                         String choice = which == 0 ? "的" : (which == 1 ? "地" : (which == 2 ? "得" : b.original));
@@ -2061,7 +2006,7 @@ jobs:
                         b.current = choice;
                         renderFinalBlocks(); 
                     }).show();
-                } else { // 错别字与量词纠错
+                } else { 
                     String[] options = {"采用修改 (" + b.modelCorrected + ")", "还原 (" + b.original + ")"};
                     new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + b.current + ")").setItems(options, (dialog, which) -> {
                         String choice = (which == 0) ? b.modelCorrected : b.original;
@@ -2092,8 +2037,8 @@ jobs:
                                 @Override public void updateDrawState(TextPaint ds) {
                                     ds.setUnderlineText(true);
                                     if (!b.current.equals(b.original)) { 
-                                        if (b.userModified) ds.setColor(0xFF4CAF50); // 绿色 (用户修改)
-                                        else ds.setColor(0xFFE53935); // 红色 (AI/规则判定)
+                                        if (b.userModified) ds.setColor(0xFF4CAF50); 
+                                        else ds.setColor(0xFFE53935); 
                                         ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); 
                                     } else { 
                                         ds.setColor(0xFF2196F3); 
@@ -2151,11 +2096,9 @@ jobs:
                                                 int lineEnd = layout.getLineEnd(line);
                                                 if (outputText.getText() instanceof Spannable) {
                                                     Spannable spanText = (Spannable) outputText.getText();
-                                                    // 透明度从 40 调整到 60，让颜色稍明显一点，配合慢动作更好看
                                                     BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
                                                     spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                                     Handler handler = new Handler(Looper.getMainLooper());
-                                                    // 将时间全部翻倍拉长，让闪烁动画变得缓和
                                                     handler.postDelayed(() -> { spanText.removeSpan(flashSpan); outputText.invalidate(); }, 500);
                                                     handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); outputText.invalidate(); }, 800);
                                                     handler.postDelayed(() -> { spanText.removeSpan(flashSpan); outputText.invalidate(); }, 1300);
@@ -2181,8 +2124,8 @@ jobs:
                                             @Override public void onClick(View w) { showEditDialog(b); }
                                             @Override public void updateDrawState(TextPaint ds) { 
                                                 if (!b.current.equals(b.original)) { 
-                                                    if (b.userModified) ds.setColor(0xFF4CAF50); // 绿色 (用户修改)
-                                                    else ds.setColor(0xFFE53935); // 红色
+                                                    if (b.userModified) ds.setColor(0xFF4CAF50); 
+                                                    else ds.setColor(0xFFE53935); 
                                                     ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); 
                                                 } else { ds.setColor(0xFF2196F3); }
                                                 ds.setUnderlineText(true); 
@@ -2202,7 +2145,7 @@ jobs:
                                         ssb.append(b.current); 
                                     }
                                 }
-                                ssb.append("\n"); // 改为单换行，消除过大空隙
+                                ssb.append("\n"); 
                             }
                         }
                     }
