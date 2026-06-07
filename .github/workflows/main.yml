@@ -313,7 +313,9 @@ jobs:
                 <!-- 全透明隐形界面，专门用于接管系统的文件选择器 -->
                 <activity android:name=".FilePickerActivity" 
                           android:theme="@android:style/Theme.Translucent.NoTitleBar" 
+                          android:taskAffinity="com.app.dededi.filepicker"
                           android:excludeFromRecents="true" />
+                
                 <service android:name=".FloatingService" android:exported="false" />
             </application>
         </manifest>
@@ -1492,6 +1494,7 @@ jobs:
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
+                            "• 导入文件：支持txt和docx格式。由于仅提取文件的文本，表格类内容会被打乱，如格式特殊请慎重选择。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
                             "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n\n" +
                             "【悬浮窗】\n" +
@@ -2002,7 +2005,7 @@ jobs:
                                 lastUIUpdateTime = now;
                                 final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + 
                                 (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "") + 
-                                "<br><b><font color='#757575'>【实时预览修正全文】：</font></b><br>" + liveTextHtml;
+                                "<br><b><font color='#757575'>【发现错误】：</font></b><br>" + liveTextHtml;
                                 
                                 final int currentErrorCount = liveErrorCount;
                                 runOnUiThread(() -> {
@@ -2013,7 +2016,7 @@ jobs:
                                                 Layout layout = outputText.getLayout();
                                                 if (layout != null) {
                                                     String textStr = outputText.getText().toString();
-                                                    int offset = textStr.indexOf("【实时预览修正全文】：");
+                                                    int offset = textStr.indexOf("【发现错误】：");
                                                     if (offset != -1) {
                                                         int line = layout.getLineForOffset(offset);
                                                         int y = layout.getLineTop(line);
