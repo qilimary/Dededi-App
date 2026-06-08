@@ -368,15 +368,18 @@ jobs:
                     Uri uri = data.getData();
                     if (uri != null) {
                         Toast.makeText(this, "正在处理导入文件...", Toast.LENGTH_SHORT).show();
-                        MainActivity.extractTextFromUriAsync(this, uri, text -> {
-                            if (text != null && !text.trim().isEmpty()) {
-                                Intent serviceIntent = new Intent(this, FloatingService.class);
-                                serviceIntent.putExtra("IMPORTED_TEXT", text);
-                                startService(serviceIntent);
-                            } else {
-                                Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
+                        MainActivity.extractTextFromUriAsync(this, uri, new MainActivity.TextExtractCallback() {
+                            @Override public void onProgress(int progress, int max) {}
+                            @Override public void onExtracted(String text) {
+                                if (text != null && !text.trim().isEmpty()) {
+                                    Intent serviceIntent = new Intent(FilePickerActivity.this, FloatingService.class);
+                                    serviceIntent.putExtra("IMPORTED_TEXT", text);
+                                    startService(serviceIntent);
+                                } else {
+                                    Toast.makeText(FilePickerActivity.this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
+                                }
+                                finish();
                             }
-                            finish();
                         });
                         return; // Async call handles finish
                     }
@@ -718,22 +721,36 @@ jobs:
                     SharedPreferences sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
                     String historyStr = sp.getString("history_records", "[]");
                     org.json.JSONArray historyArray = new org.json.JSONArray(historyStr);
+                    int currentHash = text.hashCode();
                     
                     if (historyArray.length() > 0) {
                         org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
-                        if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) {
-                            return; 
-                        }
+                        if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) return;
+                        if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) return; 
+                    }
+                    
+                    String fileName = "hist_" + System.currentTimeMillis() + ".txt";
+                    try (java.io.FileOutputStream fos = openFileOutput(fileName, Context.MODE_PRIVATE)) {
+                        fos.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     }
                     
                     org.json.JSONObject newRecord = new org.json.JSONObject();
                     newRecord.put("time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
-                    newRecord.put("text", text);
+                    newRecord.put("fileName", fileName);
+                    newRecord.put("preview", text.length() > 20 ? text.substring(0, 20).replace("\n", " ") + "..." : text.replace("\n", " "));
+                    newRecord.put("textHash", currentHash);
+                    
                     org.json.JSONArray newArray = new org.json.JSONArray();
                     newArray.put(newRecord);
                     int limit = Math.min(historyArray.length(), 49);
                     for (int i = 0; i < limit; i++) {
                         newArray.put(historyArray.getJSONObject(i));
+                    }
+                    if (historyArray.length() >= 50) {
+                        org.json.JSONObject dropRecord = historyArray.getJSONObject(49);
+                        if (dropRecord.has("fileName")) {
+                            new java.io.File(getFilesDir(), dropRecord.getString("fileName")).delete();
+                        }
                     }
                     sp.edit().putString("history_records", newArray.toString()).apply();
                 } catch (Exception e) {}
@@ -1458,6 +1475,7 @@ jobs:
             public static boolean hasNewFloatResult = false;
 
             public interface TextExtractCallback {
+                void onProgress(int progress, int max);
                 void onExtracted(String text);
             }
 
@@ -1524,12 +1542,12 @@ jobs:
                         if ((name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".bmp") || name.endsWith(".webp"))) ||
                             (mimeType != null && mimeType.startsWith("image/"))) {
                             Bitmap bitmap = android.provider.MediaStore.Images.Media.getBitmap(context.getContentResolver(), uri);
-                            String result = performOcrOnBitmap(bitmap, context);
+                            String result = performOcrOnBitmap(bitmap, context, callback);
                             new Handler(Looper.getMainLooper()).post(() -> callback.onExtracted(result));
                             return;
                         }
                         else if ((name != null && name.endsWith(".pdf")) || "application/pdf".equals(mimeType)) {
-                            String result = performOcrOnPdf(uri, context);
+                            String result = performOcrOnPdf(uri, context, callback);
                             new Handler(Looper.getMainLooper()).post(() -> callback.onExtracted(result));
                             return;
                         }
@@ -1561,7 +1579,7 @@ jobs:
                 return sb.toString();
             }
 
-            public static String performOcrOnBitmap(Bitmap fullBitmap, Context context) throws Exception {
+            public static String performOcrOnBitmap(Bitmap fullBitmap, Context context, TextExtractCallback callback) throws Exception {
                 TextRecognizer recognizer = TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
                 StringBuilder fullText = new StringBuilder();
 
@@ -1573,7 +1591,7 @@ jobs:
                         chunks.add(Bitmap.createBitmap(fullBitmap, 0, currentY, fullBitmap.getWidth(), fullBitmap.getHeight() - currentY));
                         break;
                     }
-                    int searchStart = Math.max(currentY + maxH - 800, currentY + 10);
+                    int searchStart = Math.max(currentY + maxH - 1500, currentY + 10);
                     int searchEnd = currentY + maxH;
                     int splitY = searchEnd;
                     int bestBlankHeight = 0;
@@ -1598,7 +1616,12 @@ jobs:
                     currentY = splitY;
                 }
 
-                for (Bitmap chunk : chunks) {
+                for (int i = 0; i < chunks.size(); i++) {
+                    Bitmap chunk = chunks.get(i);
+                    if (callback != null) {
+                        final int prog = i + 1; final int max = chunks.size();
+                        new Handler(Looper.getMainLooper()).post(() -> callback.onProgress(prog, max));
+                    }
                     InputImage image = InputImage.fromBitmap(chunk, 0);
                     Task<Text> result = recognizer.process(image);
                     Text text = Tasks.await(result);
@@ -1608,13 +1631,18 @@ jobs:
                 return cleanOcrText(fixPunctuation(fullText.toString()));
             }
 
-            public static String performOcrOnPdf(android.net.Uri uri, Context context) throws Exception {
+            public static String performOcrOnPdf(android.net.Uri uri, Context context, TextExtractCallback callback) throws Exception {
                 TextRecognizer recognizer = TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
                 StringBuilder fullText = new StringBuilder();
                 android.os.ParcelFileDescriptor pfd = context.getContentResolver().openFileDescriptor(uri, "r");
                 if (pfd != null) {
                     android.graphics.pdf.PdfRenderer renderer = new android.graphics.pdf.PdfRenderer(pfd);
-                    for(int i = 0; i < renderer.getPageCount(); i++) {
+                    int pageCount = renderer.getPageCount();
+                    for(int i = 0; i < pageCount; i++) {
+                        if (callback != null) {
+                            final int prog = i + 1;
+                            new Handler(Looper.getMainLooper()).post(() -> callback.onProgress(prog, pageCount));
+                        }
                         android.graphics.pdf.PdfRenderer.Page page = renderer.openPage(i);
                         Bitmap bitmap = Bitmap.createBitmap(page.getWidth() * 2, page.getHeight() * 2, Bitmap.Config.ARGB_8888);
                         bitmap.eraseColor(Color.WHITE);
@@ -1797,23 +1825,36 @@ jobs:
                 try {
                     String historyStr = sp.getString("history_records", "[]");
                     JSONArray historyArray = new JSONArray(historyStr);
+                    int currentHash = text.hashCode();
                     
                     if (historyArray.length() > 0) {
                         JSONObject lastRecord = historyArray.getJSONObject(0);
-                        if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) {
-                            return; 
-                        }
+                        if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) return;
+                        if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) return; 
+                    }
+                    
+                    String fileName = "hist_" + System.currentTimeMillis() + ".txt";
+                    try (java.io.FileOutputStream fos = openFileOutput(fileName, Context.MODE_PRIVATE)) {
+                        fos.write(text.getBytes(StandardCharsets.UTF_8));
                     }
                     
                     JSONObject newRecord = new JSONObject();
                     newRecord.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
-                    newRecord.put("text", text);
+                    newRecord.put("fileName", fileName);
+                    newRecord.put("preview", text.length() > 20 ? text.substring(0, 20).replace("\n", " ") + "..." : text.replace("\n", " "));
+                    newRecord.put("textHash", currentHash);
                     
                     JSONArray newArray = new JSONArray();
                     newArray.put(newRecord);
                     int limit = Math.min(historyArray.length(), 49);
                     for (int i = 0; i < limit; i++) {
                         newArray.put(historyArray.getJSONObject(i));
+                    }
+                    if (historyArray.length() >= 50) {
+                        JSONObject dropRecord = historyArray.getJSONObject(49);
+                        if (dropRecord.has("fileName")) {
+                            new java.io.File(getFilesDir(), dropRecord.getString("fileName")).delete();
+                        }
                     }
                     sp.edit().putString("history_records", newArray.toString()).apply();
                     renderHistoryUI();
@@ -1939,7 +1980,7 @@ jobs:
 
                 tvTitle.setOnClickListener(v -> {
                     String helpText = "【模型介绍】\n" +
-                            "两款模型均只纠错“的地得”使用。但软件同样支持其他错别字纠正作为锦上添花的功能。\n\n" +
+                            "两款模型均只纠错“的地得”使用。但软件同样支持其他错别字纠正，作为锦上添花的功能。\n\n" +
                             "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n" +
                             "专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n" +
                             "注：不同手机的速度会有不同，性能越强的手机，模型推理速度越快。\n" +
@@ -1952,18 +1993,20 @@ jobs:
                             "举例：设置为0.5时，原本模棱两可的置信度会被拉高，执行修改；设置为1.5时，原本的置信度会被降低，只有模型非常确定的错误才会被修改。\n\n" +
                             "【置信度拦截阈值】\n" +
                             "只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n" +
-                            "举例：设置为0.9时，模型的置信度超过0.9才会被保留，否则忽略。\n\n" +
+                            "举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n" +
                             "【交互与拓展功能】\n" +
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n" +
+                            "  不建议导入多个过长的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n" +
                             "• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
-                            "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n" +
+                            "• 关闭模型：将任意模型温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n" +
                             "• 历史记录：最多保存近50条。\n\n" +
                             " 【错词库】\n" +
-                            "  你自己定义规则，这些规则会在之后的纠错中自动应用，优先级高于模型。\n" +
-                            "  使用方法：直接在原始文本输入，例如“慢慢地”，相当于白名单，模型在遇到后不会再修改。如果在“修改后”里添加“慢慢的”，则之后文本里所有“慢慢地”都会被自动修改为“慢慢的”。\n" +
+                            "  手动定义规则，这些规则会在纠错中自动应用。\n" +
+                            "  使用方法：1.在“原始文本”框输入例如“慢慢地”，直接提交。等效于白名单，模型在遇到该词后不会再修改。\n" +
+                            "  2.在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n" +
                             "• 自定义的规优先级高于模型。\n\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
@@ -2132,6 +2175,13 @@ jobs:
                     new AlertDialog.Builder(this)
                         .setMessage("是否清空全部历史记录？")
                         .setPositiveButton("是", (d, w) -> {
+                            try {
+                                JSONArray arr = new JSONArray(sp.getString("history_records", "[]"));
+                                for(int i=0; i<arr.length(); i++) {
+                                    JSONObject o = arr.getJSONObject(i);
+                                    if (o.has("fileName")) new java.io.File(getFilesDir(), o.getString("fileName")).delete();
+                                }
+                            } catch(Exception e) {}
                             sp.edit().putString("history_records", "[]").apply();
                             renderHistoryUI();
                         })
@@ -2212,8 +2262,11 @@ jobs:
                     for(int i=0; i<arr.length(); i++){
                         JSONObject obj = arr.getJSONObject(i);
                         String time = obj.getString("time");
-                        String text = obj.getString("text");
-                        String preview = text.length() > 20 ? text.substring(0, 20).replace("\n", " ") + "..." : text.replace("\n", " ");
+                        String preview = obj.has("preview") ? obj.getString("preview") : "";
+                        if (preview.isEmpty() && obj.has("text")) {
+                            String text = obj.getString("text");
+                            preview = text.length() > 20 ? text.substring(0, 20).replace("\n", " ") + "..." : text.replace("\n", " ");
+                        }
                         
                         LinearLayout itemLayout = new LinearLayout(this);
                         itemLayout.setOrientation(LinearLayout.VERTICAL);
@@ -2234,7 +2287,21 @@ jobs:
                         itemLayout.addView(tvPreview);
                         
                         itemLayout.setOnClickListener(v -> {
-                            inputText.setText(text);
+                            String fullText = "";
+                            if (obj.has("text")) {
+                                fullText = obj.getString("text");
+                            } else if (obj.has("fileName")) {
+                                try {
+                                    java.io.InputStream is = openFileInput(obj.getString("fileName"));
+                                    java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(is, StandardCharsets.UTF_8));
+                                    StringBuilder sb = new StringBuilder(); String line;
+                                    while ((line = br.readLine()) != null) { sb.append(line).append("\n"); }
+                                    br.close();
+                                    fullText = sb.toString();
+                                    if (fullText.endsWith("\n")) fullText = fullText.substring(0, fullText.length() - 1);
+                                } catch (Exception e) {}
+                            }
+                            inputText.setText(fullText);
                             drawerLayout.closeDrawer(GravityCompat.END);
                         });
                         
@@ -2243,6 +2310,11 @@ jobs:
                             new AlertDialog.Builder(this)
                                 .setMessage("确认删除这条历史记录吗？")
                                 .setPositiveButton("删除", (d, w) -> {
+                                    try {
+                                        JSONObject toDel = arr.getJSONObject(index);
+                                        if (toDel.has("fileName")) new java.io.File(getFilesDir(), toDel.getString("fileName")).delete();
+                                    } catch (Exception e) {}
+                                    
                                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
                                         arr.remove(index);
                                     } else {
@@ -2251,10 +2323,10 @@ jobs:
                                             for(int j=0; j<arr.length(); j++){
                                                 if (j != index) newArr.put(arr.get(j));
                                             }
+                                            sp.edit().putString("history_records", newArr.toString()).apply();
+                                            renderHistoryUI();
+                                            return;
                                         } catch (Exception e) {}
-                                        sp.edit().putString("history_records", newArr.toString()).apply();
-                                        renderHistoryUI();
-                                        return;
                                     }
                                     sp.edit().putString("history_records", arr.toString()).apply();
                                     renderHistoryUI();
@@ -2320,12 +2392,20 @@ jobs:
                         android.net.Uri imageUri = (android.net.Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM);
                         if (imageUri != null) {
                             Toast.makeText(this, "正在处理导入图片，请稍候...", Toast.LENGTH_SHORT).show();
-                            extractTextFromUriAsync(this, imageUri, text -> {
-                                if (text != null && !text.trim().isEmpty()) {
-                                    inputText.setText(text);
-                                    saveHistory(text);
-                                } else {
-                                    Toast.makeText(this, "无法读取图片文字", Toast.LENGTH_SHORT).show();
+                            extractTextFromUriAsync(this, imageUri, new TextExtractCallback() {
+                                @Override public void onProgress(int progress, int max) {
+                                    progressBar.setVisibility(View.VISIBLE);
+                                    progressBar.setMax(max);
+                                    progressBar.setProgress(progress);
+                                }
+                                @Override public void onExtracted(String text) {
+                                    progressBar.setVisibility(View.INVISIBLE);
+                                    if (text != null && !text.trim().isEmpty()) {
+                                        inputText.setText(text);
+                                        saveHistory(text);
+                                    } else {
+                                        Toast.makeText(MainActivity.this, "无法读取图片文字", Toast.LENGTH_SHORT).show();
+                                    }
                                 }
                             });
                         }
@@ -2378,13 +2458,21 @@ jobs:
                     android.net.Uri uri = data.getData();
                     if (uri != null) {
                         Toast.makeText(this, "正在处理导入文件，请稍候...", Toast.LENGTH_SHORT).show();
-                        extractTextFromUriAsync(this, uri, text -> {
-                            if (text != null && !text.trim().isEmpty()) {
-                                inputText.setText(text);
-                                saveHistory(text);
-                                Toast.makeText(this, "导入成功", Toast.LENGTH_SHORT).show();
-                            } else {
-                                Toast.makeText(this, "无法读取文件内容或未识别到文字", Toast.LENGTH_SHORT).show();
+                        extractTextFromUriAsync(this, uri, new TextExtractCallback() {
+                            @Override public void onProgress(int progress, int max) {
+                                progressBar.setVisibility(View.VISIBLE);
+                                progressBar.setMax(max);
+                                progressBar.setProgress(progress);
+                            }
+                            @Override public void onExtracted(String text) {
+                                progressBar.setVisibility(View.INVISIBLE);
+                                if (text != null && !text.trim().isEmpty()) {
+                                    inputText.setText(text);
+                                    saveHistory(text);
+                                    Toast.makeText(MainActivity.this, "导入成功", Toast.LENGTH_SHORT).show();
+                                } else {
+                                    Toast.makeText(MainActivity.this, "无法读取文件内容或未识别到文字", Toast.LENGTH_SHORT).show();
+                                }
                             }
                         });
                     }
