@@ -463,7 +463,7 @@ jobs:
                             android:layout_marginEnd="8dp" android:text="✓" android:textSize="12sp" 
                             android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null" android:padding="0dp"/>
                         <Button android:id="@+id/btnMenu" android:layout_width="32dp" android:layout_height="32dp" 
-                            android:text="≡" android:textSize="14sp" android:backgroundTint="#9E9E9E" 
+                            android:text="≡" android:textSize="14sp" android:backgroundTint="#BDBDBD" 
                             android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="8dp"/>
                     </LinearLayout>
                 </RelativeLayout>
@@ -552,7 +552,7 @@ jobs:
             </LinearLayout>
 
             <LinearLayout android:id="@+id/drawerContent"
-                android:layout_width="320dp" android:layout_height="match_parent"
+                android:layout_width="315dp" android:layout_height="match_parent"
                 android:layout_gravity="end" android:background="@color/bg_color"
                 android:orientation="vertical" android:clickable="true" android:focusable="true">
                 <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:padding="16dp">
@@ -2446,7 +2446,7 @@ jobs:
                                         String safeCurr = b.current.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
                                         if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                             liveErrorCount++;
-                                            String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : "";
+                                            String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : ((b.type == 2) ? " (自定义)" : "");
                                             sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
                                         } else { sentenceErrorHtml.append(safeOrig); }
                                     }
@@ -2656,6 +2656,10 @@ jobs:
                                         if (!b.userModified && b.type == 1) {
                                             String confStr = "置信度: " + String.format("%.2f", b.conf);
                                             int confStart = ssb.length(); ssb.append("(").append(confStr).append(")"); 
+                                            ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        } else if (!b.userModified && b.type == 2) {
+                                            int confStart = ssb.length(); ssb.append("(自定义)"); 
                                             ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                             ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                         }
