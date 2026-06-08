@@ -1,4 +1,5 @@
 
+
 name: Build Android APK
 
 on:
@@ -162,8 +163,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 19
-                versionName "2.80"
+                versionCode 20
+                versionName "2.90"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -510,7 +511,10 @@ jobs:
 
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#E0E0E0" android:layout_marginBottom="16dp"/>
 
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="最近50条纠错历史" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_marginBottom="8dp"/>
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="8dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="最近50条纠错历史" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
+                            <Button android:id="@+id/btnClearHistory" android:layout_width="wrap_content" android:layout_height="28dp" android:text="清空" android:textSize="12sp" android:backgroundTint="#E53935" android:textColor="#FFFFFF" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:minWidth="56dp" android:minHeight="0dp"/>
+                        </LinearLayout>
                         <LinearLayout android:id="@+id/llHistory" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
                     </LinearLayout>
                 </ScrollView>
@@ -1344,12 +1348,12 @@ jobs:
             public static class FlowLayout extends android.view.ViewGroup {
                 public FlowLayout(Context context) { super(context); }
                 @Override protected void onMeasure(int wSpec, int hSpec) {
-                    int w = MeasureSpec.getSize(wSpec);
+                    int w = View.MeasureSpec.getSize(wSpec);
                     int x = 0, y = 0, maxH = 0;
                     for(int i=0; i<getChildCount(); i++){
                         View child = getChildAt(i);
-                        if(child.getVisibility() == GONE) continue;
-                        child.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+                        if(child.getVisibility() == View.GONE) continue;
+                        child.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.AT_MOST), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
                         if(x + child.getMeasuredWidth() > w) { x = 0; y += maxH + 16; maxH = 0; }
                         maxH = Math.max(maxH, child.getMeasuredHeight());
                         x += child.getMeasuredWidth() + 24;
@@ -1361,7 +1365,7 @@ jobs:
                     int x = 0, y = 0, maxH = 0;
                     for(int i=0; i<getChildCount(); i++){
                         View child = getChildAt(i);
-                        if(child.getVisibility() == GONE) continue;
+                        if(child.getVisibility() == View.GONE) continue;
                         if(x + child.getMeasuredWidth() > w) { x = 0; y += maxH + 16; maxH = 0; }
                         child.layout(x, y, x + child.getMeasuredWidth(), y + child.getMeasuredHeight());
                         maxH = Math.max(maxH, child.getMeasuredHeight());
@@ -1775,6 +1779,19 @@ jobs:
                     renderCustomTyposUI();
                     renderHistoryUI();
                 });
+                
+                Button btnClearHistory = findViewById(R.id.btnClearHistory);
+                btnClearHistory.setOnClickListener(v -> {
+                    new AlertDialog.Builder(this)
+                        .setTitle("清空历史")
+                        .setMessage("是否清空全部历史记录？")
+                        .setPositiveButton("是", (dialog, which) -> {
+                            sp.edit().putString("history_records", "[]").apply();
+                            renderHistoryUI();
+                        })
+                        .setNegativeButton("否", null)
+                        .show();
+                });
 
                 btnFloat.setOnClickListener(v -> {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) {
@@ -1999,6 +2016,7 @@ jobs:
                     String historyStr = sp.getString("history_records", "[]");
                     JSONArray arr = new JSONArray(historyStr);
                     for(int i=0; i<arr.length(); i++){
+                        final int finalI = i;
                         JSONObject obj = arr.getJSONObject(i);
                         String time = obj.getString("time");
                         String text = obj.getString("text");
@@ -2009,6 +2027,7 @@ jobs:
                         itemLayout.setPadding(0, 24, 0, 24);
                         itemLayout.setBackgroundResource(R.drawable.custom_typo_bg);
                         itemLayout.setClickable(true);
+                        itemLayout.setFocusable(true);
                         
                         TextView tvTime = new TextView(this);
                         tvTime.setText(time);
@@ -2018,6 +2037,7 @@ jobs:
                         TextView tvPreview = new TextView(this);
                         tvPreview.setText(preview);
                         tvPreview.setTextSize(14f);
+                        tvPreview.setTextColor(Color.parseColor("#1A1A1A"));
                         
                         itemLayout.addView(tvTime);
                         itemLayout.addView(tvPreview);
@@ -2025,6 +2045,27 @@ jobs:
                         itemLayout.setOnClickListener(v -> {
                             inputText.setText(text);
                             drawerLayout.closeDrawer(GravityCompat.END);
+                        });
+                        
+                        itemLayout.setOnLongClickListener(v -> {
+                            new AlertDialog.Builder(this)
+                                .setTitle("操作")
+                                .setItems(new String[]{"删除"}, (dialog, which) -> {
+                                    try {
+                                        String historyStr2 = sp.getString("history_records", "[]");
+                                        JSONArray arr2 = new JSONArray(historyStr2);
+                                        JSONArray newArr = new JSONArray();
+                                        for (int j = 0; j < arr2.length(); j++) {
+                                            if (j != finalI) {
+                                                newArr.put(arr2.getJSONObject(j));
+                                            }
+                                        }
+                                        sp.edit().putString("history_records", newArr.toString()).apply();
+                                        renderHistoryUI();
+                                    } catch (Exception e) {}
+                                })
+                                .show();
+                            return true;
                         });
                         
                         llHistory.addView(itemLayout);
