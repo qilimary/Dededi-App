@@ -342,13 +342,11 @@ jobs:
         import android.app.ProgressDialog;
         import android.content.Intent;
         import android.graphics.Bitmap;
-        import android.graphics.BitmapFactory;
         import android.graphics.pdf.PdfRenderer;
         import android.net.Uri;
         import android.os.Bundle;
         import android.os.ParcelFileDescriptor;
         import android.widget.Toast;
-        import java.io.InputStream;
 
         public class FilePickerActivity extends Activity {
             @Override
@@ -396,7 +394,7 @@ jobs:
 
             private void processImageOrPdf(Uri uri, boolean isPdf) {
                 ProgressDialog progressDialog = new ProgressDialog(this);
-                progressDialog.setMessage(isPdf ? "正在逐页进行OCR识图中..." : "正在进行OCR识图...");
+                progressDialog.setMessage(isPdf ? "正在逐页进行OCR识图中..." : "正在进行智能分段识图...");
                 progressDialog.setCancelable(false);
                 progressDialog.show();
 
@@ -429,15 +427,51 @@ jobs:
                                 pfd.close();
                             }
                         } else {
-                            InputStream is = getContentResolver().openInputStream(uri);
-                            Bitmap bitmap = BitmapFactory.decodeStream(is);
-                            if (is != null) is.close();
-                            if (bitmap != null) {
-                                com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0);
-                                com.google.android.gms.tasks.Task<com.google.mlkit.vision.text.Text> task = recognizer.process(image);
-                                com.google.mlkit.vision.text.Text result = com.google.android.gms.tasks.Tasks.await(task);
-                                stringBuilder.append(result.getText());
-                                bitmap.recycle();
+                            ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
+                            if (pfd != null) {
+                                android.graphics.BitmapRegionDecoder decoder;
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                                    decoder = android.graphics.BitmapRegionDecoder.newInstance(pfd.getFileDescriptor());
+                                } else {
+                                    decoder = android.graphics.BitmapRegionDecoder.newInstance(pfd.getFileDescriptor(), false);
+                                }
+                                
+                                int width = decoder.getWidth();
+                                int height = decoder.getHeight();
+                                int segmentHeight = 2500;
+                                int yOffset = 0;
+                                int chunkIdx = 1;
+
+                                while (yOffset < height) {
+                                    int currentSegmentHeight = Math.min(segmentHeight, height - yOffset);
+                                    
+                                    if (yOffset + currentSegmentHeight < height) {
+                                        android.graphics.Rect testRect = new android.graphics.Rect(0, yOffset + currentSegmentHeight - 300, width, yOffset + currentSegmentHeight);
+                                        Bitmap testBmp = decoder.decodeRegion(testRect, new android.graphics.BitmapFactory.Options());
+                                        int safeYOffset = findSafeCropY(testBmp);
+                                        if (safeYOffset != -1) {
+                                            currentSegmentHeight = currentSegmentHeight - 300 + safeYOffset;
+                                        }
+                                        if (testBmp != null) testBmp.recycle();
+                                    }
+
+                                    android.graphics.Rect rect = new android.graphics.Rect(0, yOffset, width, yOffset + currentSegmentHeight);
+                                    Bitmap segment = decoder.decodeRegion(rect, new android.graphics.BitmapFactory.Options());
+                                    
+                                    final int currentChunk = chunkIdx++;
+                                    runOnUiThread(() -> progressDialog.setMessage("正在识别长图的第 " + currentChunk + " 段..."));
+                                    
+                                    if (segment != null) {
+                                        com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromBitmap(segment, 0);
+                                        com.google.android.gms.tasks.Task<com.google.mlkit.vision.text.Text> task = recognizer.process(image);
+                                        com.google.mlkit.vision.text.Text result = com.google.android.gms.tasks.Tasks.await(task);
+                                        stringBuilder.append(result.getText()).append("\n");
+                                        segment.recycle();
+                                    }
+                                    yOffset += currentSegmentHeight;
+                                }
+                                decoder.recycle();
+                                pfd.close();
                             }
                         }
                     } catch (Exception e) {
@@ -458,6 +492,35 @@ jobs:
                         finish();
                     });
                 }).start();
+            }
+
+            private int findSafeCropY(Bitmap bitmap) {
+                if (bitmap == null) return -1;
+                int w = bitmap.getWidth();
+                int h = bitmap.getHeight();
+                int[] pixels = new int[w];
+                int bestRow = h - 1;
+                long minDiff = Long.MAX_VALUE;
+                for (int y = h - 1; y >= Math.max(0, h - 300); y -= 2) {
+                    bitmap.getPixels(pixels, 0, w, 0, y, w, 1);
+                    long diff = 0;
+                    int prevColor = pixels[0];
+                    for (int x = 4; x < w; x += 4) {
+                        int c1 = prevColor;
+                        int c2 = pixels[x];
+                        int rDiff = android.graphics.Color.red(c1) - android.graphics.Color.red(c2);
+                        int gDiff = android.graphics.Color.green(c1) - android.graphics.Color.green(c2);
+                        int bDiff = android.graphics.Color.blue(c1) - android.graphics.Color.blue(c2);
+                        diff += (rDiff * rDiff + gDiff * gDiff + bDiff * bDiff);
+                        prevColor = c2;
+                    }
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        bestRow = y;
+                    }
+                    if (diff == 0) break;
+                }
+                return bestRow;
             }
         }
         EOF
@@ -2215,7 +2278,7 @@ jobs:
 
             private void processImageOrPdfMain(android.net.Uri uri, boolean isPdf) {
                 android.app.ProgressDialog progressDialog = new android.app.ProgressDialog(this);
-                progressDialog.setMessage(isPdf ? "正在逐页进行OCR识图中..." : "正在进行OCR识图...");
+                progressDialog.setMessage(isPdf ? "正在逐页进行OCR识图中..." : "正在进行智能分段识图...");
                 progressDialog.setCancelable(false);
                 progressDialog.show();
 
@@ -2248,15 +2311,51 @@ jobs:
                                 pfd.close();
                             }
                         } else {
-                            java.io.InputStream is = getContentResolver().openInputStream(uri);
-                            android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeStream(is);
-                            if (is != null) is.close();
-                            if (bitmap != null) {
-                                com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0);
-                                com.google.android.gms.tasks.Task<com.google.mlkit.vision.text.Text> task = recognizer.process(image);
-                                com.google.mlkit.vision.text.Text result = com.google.android.gms.tasks.Tasks.await(task);
-                                stringBuilder.append(result.getText());
-                                bitmap.recycle();
+                            android.os.ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
+                            if (pfd != null) {
+                                android.graphics.BitmapRegionDecoder decoder;
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                                    decoder = android.graphics.BitmapRegionDecoder.newInstance(pfd.getFileDescriptor());
+                                } else {
+                                    decoder = android.graphics.BitmapRegionDecoder.newInstance(pfd.getFileDescriptor(), false);
+                                }
+                                
+                                int width = decoder.getWidth();
+                                int height = decoder.getHeight();
+                                int segmentHeight = 2500;
+                                int yOffset = 0;
+                                int chunkIdx = 1;
+
+                                while (yOffset < height) {
+                                    int currentSegmentHeight = Math.min(segmentHeight, height - yOffset);
+                                    
+                                    if (yOffset + currentSegmentHeight < height) {
+                                        android.graphics.Rect testRect = new android.graphics.Rect(0, yOffset + currentSegmentHeight - 300, width, yOffset + currentSegmentHeight);
+                                        android.graphics.Bitmap testBmp = decoder.decodeRegion(testRect, new android.graphics.BitmapFactory.Options());
+                                        int safeYOffset = findSafeCropY(testBmp);
+                                        if (safeYOffset != -1) {
+                                            currentSegmentHeight = currentSegmentHeight - 300 + safeYOffset;
+                                        }
+                                        if (testBmp != null) testBmp.recycle();
+                                    }
+
+                                    android.graphics.Rect rect = new android.graphics.Rect(0, yOffset, width, yOffset + currentSegmentHeight);
+                                    android.graphics.Bitmap segment = decoder.decodeRegion(rect, new android.graphics.BitmapFactory.Options());
+                                    
+                                    final int currentChunk = chunkIdx++;
+                                    runOnUiThread(() -> progressDialog.setMessage("正在识别长图的第 " + currentChunk + " 段..."));
+                                    
+                                    if (segment != null) {
+                                        com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromBitmap(segment, 0);
+                                        com.google.android.gms.tasks.Task<com.google.mlkit.vision.text.Text> task = recognizer.process(image);
+                                        com.google.mlkit.vision.text.Text result = com.google.android.gms.tasks.Tasks.await(task);
+                                        stringBuilder.append(result.getText()).append("\n");
+                                        segment.recycle();
+                                    }
+                                    yOffset += currentSegmentHeight;
+                                }
+                                decoder.recycle();
+                                pfd.close();
                             }
                         }
                     } catch (Exception e) {
@@ -2275,6 +2374,35 @@ jobs:
                         }
                     });
                 }).start();
+            }
+
+            private int findSafeCropY(android.graphics.Bitmap bitmap) {
+                if (bitmap == null) return -1;
+                int w = bitmap.getWidth();
+                int h = bitmap.getHeight();
+                int[] pixels = new int[w];
+                int bestRow = h - 1;
+                long minDiff = Long.MAX_VALUE;
+                for (int y = h - 1; y >= Math.max(0, h - 300); y -= 2) {
+                    bitmap.getPixels(pixels, 0, w, 0, y, w, 1);
+                    long diff = 0;
+                    int prevColor = pixels[0];
+                    for (int x = 4; x < w; x += 4) {
+                        int c1 = prevColor;
+                        int c2 = pixels[x];
+                        int rDiff = android.graphics.Color.red(c1) - android.graphics.Color.red(c2);
+                        int gDiff = android.graphics.Color.green(c1) - android.graphics.Color.green(c2);
+                        int bDiff = android.graphics.Color.blue(c1) - android.graphics.Color.blue(c2);
+                        diff += (rDiff * rDiff + gDiff * gDiff + bDiff * bDiff);
+                        prevColor = c2;
+                    }
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        bestRow = y;
+                    }
+                    if (diff == 0) break;
+                }
+                return bestRow;
             }
 
             @Override
