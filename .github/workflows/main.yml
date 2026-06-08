@@ -162,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 18
-                versionName "2.70"
+                versionCode 19
+                versionName "2.80"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -247,6 +247,18 @@ jobs:
                 <item name="android:windowLightStatusBar">false</item>
             </style>
         </resources>
+        EOF
+
+        cat << 'EOF' > app/src/main/res/drawable/custom_typo_bg.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <selector xmlns:android="http://schemas.android.com/apk/res/android" android:exitFadeDuration="800">
+            <item android:state_pressed="true">
+                <shape><solid android:color="#E0E0E0"/><corners android:radius="4dp"/></shape>
+            </item>
+            <item>
+                <shape><solid android:color="@android:color/transparent"/><corners android:radius="4dp"/></shape>
+            </item>
+        </selector>
         EOF
         
         cat << 'EOF' > app/src/main/res/drawable/ic_dededi_fg.xml
@@ -384,10 +396,10 @@ jobs:
                         <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnFloat" android:layout_width="24dp" android:layout_height="24dp" 
                             android:layout_marginEnd="8dp" android:text="✓" android:textSize="12sp" 
                             android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null" android:padding="0dp"/>
-                        <Button android:id="@+id/btnMenu" android:layout_width="wrap_content" android:layout_height="wrap_content" 
-                            android:minWidth="56dp" android:minHeight="32dp"
-                            android:text="≡" android:textSize="18sp" android:backgroundTint="#9E9E9E" 
-                            android:paddingStart="12dp" android:paddingEnd="12dp"/>
+                        <Button android:id="@+id/btnMenu" android:layout_width="28dp" android:layout_height="24dp" 
+                            android:minWidth="0dp" android:minHeight="0dp" android:layout_marginEnd="4dp"
+                            android:text="≡" android:textSize="14sp" android:backgroundTint="#9E9E9E" 
+                            android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                     </LinearLayout>
                 </RelativeLayout>
 
@@ -483,14 +495,17 @@ jobs:
                     <LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content">
                         
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="自定义错词库" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_marginBottom="8dp"/>
-                        <LinearLayout android:id="@+id/llCustomTypos" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+                        
+                        <!-- 占位包裹容器，在代码中注入 FlowLayout -->
+                        <FrameLayout android:id="@+id/llCustomTypos" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp"/>
+                        
                         <Button android:id="@+id/btnExpandTypos" android:layout_width="match_parent" android:layout_height="36dp" android:text="展开更多" android:textSize="12sp" android:backgroundTint="#E0E0E0" android:textColor="@color/text_primary" android:visibility="gone" android:layout_marginBottom="8dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                         
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="16dp">
-                            <EditText android:id="@+id/etOriginal" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:hint="原始文本" android:textColorHint="#9E9E9E" android:background="@color/card_bg" android:padding="8dp" android:textSize="13sp" android:textColor="@color/text_primary"/>
+                            <EditText android:id="@+id/etOriginal" android:maxLength="5" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:hint="原始文本" android:textColorHint="#D0D0D0" android:background="@color/card_bg" android:padding="8dp" android:textSize="13sp" android:textColor="@color/text_primary"/>
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=" → " android:textColor="@color/text_primary"/>
-                            <EditText android:id="@+id/etCorrected" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:hint="修改后" android:textColorHint="#9E9E9E" android:background="@color/card_bg" android:padding="8dp" android:textSize="13sp" android:textColor="@color/text_primary"/>
-                            <Button android:id="@+id/btnAddTypo" android:layout_width="60dp" android:layout_height="40dp" android:text="添加" android:textSize="12sp" android:backgroundTint="#4CAF50" android:layout_marginStart="4dp" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
+                            <EditText android:id="@+id/etCorrected" android:maxLength="5" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:hint="修改后" android:textColorHint="#D0D0D0" android:background="@color/card_bg" android:padding="8dp" android:textSize="13sp" android:textColor="@color/text_primary"/>
+                            <Button android:id="@+id/btnAddTypo" android:layout_width="60dp" android:layout_height="40dp" android:text="添加" android:textSize="12sp" android:backgroundTint="#A5D6A7" android:layout_marginStart="4dp" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                         </LinearLayout>
 
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#E0E0E0" android:layout_marginBottom="16dp"/>
@@ -966,8 +981,29 @@ jobs:
                             if (sentence.isEmpty()) continue;
                             
                             List<MainActivity.TextBlock> currentSentenceBlocks = new ArrayList<>();
-                            
                             boolean[] isIgnored = new boolean[sentence.length()];
+                            
+                            int[] customSkip = new int[sentence.length()];
+                            String[] customCorr = new String[sentence.length()];
+                            if (MainActivity.customMaxLen > 0) {
+                                int i = 0;
+                                while (i < sentence.length()) {
+                                    boolean matched = false;
+                                    for (int len = Math.min(MainActivity.customMaxLen, sentence.length() - i); len >= Math.max(1, MainActivity.customMinLen); len--) {
+                                        String sub = sentence.substring(i, i + len);
+                                        if (MainActivity.customTypoMap.containsKey(sub)) {
+                                            customSkip[i] = len;
+                                            customCorr[i] = MainActivity.customTypoMap.get(sub);
+                                            for (int k = 0; k < len; k++) isIgnored[i + k] = true;
+                                            i += len;
+                                            matched = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!matched) i++;
+                                }
+                            }
+                            
                             for (String w : MainActivity.IGNORE_WORDS) {
                                 int idx = sentence.indexOf(w);
                                 while (idx >= 0) {
@@ -983,7 +1019,23 @@ jobs:
                             }
                             
                             if (!hasTarget || temp <= 0.0f) {
-                                currentSentenceBlocks.add(new MainActivity.TextBlock(sentence, sentence, false, 0f, 0));
+                                for (int i = 0; i < sentence.length(); ) {
+                                    if (customSkip[i] > 0) {
+                                        String orig = sentence.substring(i, i + customSkip[i]);
+                                        String corr = customCorr[i];
+                                        if (orig.equals(corr)) {
+                                            currentSentenceBlocks.add(new MainActivity.TextBlock(orig, orig, false, 0f, -1));
+                                        } else {
+                                            currentSentenceBlocks.add(new MainActivity.TextBlock(orig, corr, true, 1.0f, -2));
+                                            errorCount[0]++;
+                                            syncShowStatus("发现错误：" + orig + " → " + corr + " | 共 " + errorCount[0] + " 处", true);
+                                        }
+                                        i += customSkip[i];
+                                    } else {
+                                        currentSentenceBlocks.add(new MainActivity.TextBlock(String.valueOf(sentence.charAt(i)), String.valueOf(sentence.charAt(i)), false, 0f, 0));
+                                        i++;
+                                    }
+                                }
                             } else {
                                 float[] scores;
                                 int vocabSize = isFastMode ? 3 : MainActivity.proVocab.size();
@@ -1025,13 +1077,30 @@ jobs:
                                     }
                                 };
                                 
-                                for (int i = 0; i < sentence.length(); i++) {
+                                for (int i = 0; i < sentence.length(); ) {
+                                    if (customSkip[i] > 0) {
+                                        flushNormal.run();
+                                        String orig = sentence.substring(i, i + customSkip[i]);
+                                        String corr = customCorr[i];
+                                        if (orig.equals(corr)) {
+                                            currentSentenceBlocks.add(new MainActivity.TextBlock(orig, orig, false, 0f, -1));
+                                        } else {
+                                            currentSentenceBlocks.add(new MainActivity.TextBlock(orig, corr, true, 1.0f, -2));
+                                            errorCount[0]++;
+                                            syncShowStatus("发现错误：" + orig + " → " + corr + " | 共 " + errorCount[0] + " 处", true);
+                                        }
+                                        i += customSkip[i];
+                                        continue;
+                                    }
+                                    
                                     char ch = sentence.charAt(i);
                                     if (isIgnored[i] || (ch != '的' && ch != '地' && ch != '得')) {
                                         normalText.append(ch);
                                         if (ch == '，' || ch == ',' || ch == '；' || ch == ';' || ch == '、' || ch == '\n') flushNormal.run();
+                                        i++;
                                         continue;
                                     }
+                                    
                                     flushNormal.run();
                                     
                                     float s0, s1, s2;
@@ -1059,13 +1128,14 @@ jobs:
                                         final String errLog = "发现错误：" + ch + " → " + pred + " (置信度:" + String.format("%.2f", maxProb) + ") | 共 " + errorCount[0] + " 处";
                                         syncShowStatus(errLog, false);
                                     }
+                                    i++;
                                 }
                                 flushNormal.run();
                             }
 
                             List<MainActivity.TextBlock> finalSentenceBlocks = new ArrayList<>();
                             for (MainActivity.TextBlock b : currentSentenceBlocks) {
-                                if (b.isMutable) {
+                                if (b.isMutable || b.type == -1 || b.type == -2) {
                                     finalSentenceBlocks.add(b);
                                 } else {
                                     int i = 0;
@@ -1209,6 +1279,7 @@ jobs:
         import android.view.inputmethod.InputMethodManager;
         import android.widget.Button;
         import android.widget.EditText;
+        import android.widget.FrameLayout;
         import android.widget.LinearLayout;
         import android.widget.ProgressBar;
         import android.widget.RadioButton;
@@ -1263,7 +1334,41 @@ jobs:
             public static Map<String, String> typoMap = new HashMap<>();
             public static int maxTypoLen = 0;
             public static int minTypoLen = Integer.MAX_VALUE;
+            
+            public static Map<String, String> customTypoMap = new HashMap<>();
+            public static int customMaxLen = 0;
+            public static int customMinLen = Integer.MAX_VALUE;
+            
             public static boolean typoMapLoaded = false;
+
+            public static class FlowLayout extends android.view.ViewGroup {
+                public FlowLayout(Context context) { super(context); }
+                @Override protected void onMeasure(int wSpec, int hSpec) {
+                    int w = MeasureSpec.getSize(wSpec);
+                    int x = 0, y = 0, maxH = 0;
+                    for(int i=0; i<getChildCount(); i++){
+                        View child = getChildAt(i);
+                        if(child.getVisibility() == GONE) continue;
+                        child.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+                        if(x + child.getMeasuredWidth() > w) { x = 0; y += maxH + 16; maxH = 0; }
+                        maxH = Math.max(maxH, child.getMeasuredHeight());
+                        x += child.getMeasuredWidth() + 24;
+                    }
+                    setMeasuredDimension(w, y + maxH);
+                }
+                @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
+                    int w = r - l;
+                    int x = 0, y = 0, maxH = 0;
+                    for(int i=0; i<getChildCount(); i++){
+                        View child = getChildAt(i);
+                        if(child.getVisibility() == GONE) continue;
+                        if(x + child.getMeasuredWidth() > w) { x = 0; y += maxH + 16; maxH = 0; }
+                        child.layout(x, y, x + child.getMeasuredWidth(), y + child.getMeasuredHeight());
+                        maxH = Math.max(maxH, child.getMeasuredHeight());
+                        x += child.getMeasuredWidth() + 24;
+                    }
+                }
+            }
 
             public static class QuantifierRule {
                 public String primaryQuant;
@@ -1314,11 +1419,11 @@ jobs:
             private boolean hasStartedChecking = false;
             private boolean autoScrollEnabled = true;
             private boolean isTouchingScrollView = false;
-            private boolean isDraggingScrollbar = false; 
             private volatile boolean isCheckingMain = false;
             private int saveFormat = 0; 
             private String pendingSaveText = "";
             private boolean isTyposExpanded = false;
+            private String editingOldKey = null;
 
             public static class TextBlock {
                 String original, current, modelCorrected;
@@ -1370,7 +1475,11 @@ jobs:
                     }
                     br.close();
                 } catch (Exception e) {}
+                if (minTypoLen == Integer.MAX_VALUE) minTypoLen = 0;
                 
+                customTypoMap.clear();
+                customMaxLen = 0;
+                customMinLen = Integer.MAX_VALUE;
                 try {
                     SharedPreferences prefs = ctx.getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
                     String customTyposStr = prefs.getString("custom_typos", "{}");
@@ -1379,13 +1488,13 @@ jobs:
                     while (keys.hasNext()) {
                         String err = keys.next();
                         String corr = customTypos.getString(err);
-                        typoMap.put(err, corr);
-                        maxTypoLen = Math.max(maxTypoLen, err.length());
-                        minTypoLen = Math.min(minTypoLen, err.length());
+                        customTypoMap.put(err, corr);
+                        customMaxLen = Math.max(customMaxLen, err.length());
+                        customMinLen = Math.min(customMinLen, err.length());
                     }
                 } catch (Exception e) {}
+                if (customMinLen == Integer.MAX_VALUE) customMinLen = 0;
                 
-                if (minTypoLen == Integer.MAX_VALUE) minTypoLen = 0;
                 typoMapLoaded = true;
             }
 
@@ -1640,11 +1749,13 @@ jobs:
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
-                            "• 错词库：自定义文本，会在之后的纠错中自动修正，优先级高于模型。\n" +
                             "• 导入文件：支持txt、md和docx格式。由于仅提取文件的文本，表格类内容会被打乱，如格式特殊请慎重选择。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
                             "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n" +
                             "• 历史记录：最多保存近50条。\n\n" +
+                            "• 错词库：你自己定义规则，这些规则会在之后的纠错中自动应用，优先级高于模型。\n" +
+                            "  使用方法：直接在原始文本输入，例如“慢慢地”，相当于白名单，模型在遇到后不会再修改。如果在“修改后”里添加“慢慢的”，则之后文本里所有“慢慢地”都会被自动修改为“慢慢的”。\n" +
+                            "• 自定义的规优先级高于模型。\n\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
@@ -1652,6 +1763,14 @@ jobs:
                 });
 
                 btnMenu.setOnClickListener(v -> {
+                    editingOldKey = null;
+                    EditText etOriginal = findViewById(R.id.etOriginal);
+                    EditText etCorrected = findViewById(R.id.etCorrected);
+                    Button btnAddTypo = findViewById(R.id.btnAddTypo);
+                    etOriginal.setText("");
+                    etCorrected.setText("");
+                    btnAddTypo.setText("添加");
+                    
                     drawerLayout.openDrawer(GravityCompat.END);
                     renderCustomTyposUI();
                     renderHistoryUI();
@@ -1731,7 +1850,7 @@ jobs:
                     String currentRaw = inputText.getText().toString();
                     if (currentRaw.isEmpty()) return;
                     
-                    String[] options = {"TXT 纯文本", "MD 文档", "PDF 文档", "DOCX 文档", "JPG 图片"};
+                    String[] options = {"TXT 纯文本", "MD 文档", "PDF 文档", "DOCX 文档", "PNG 图片"};
                     new AlertDialog.Builder(this).setTitle("选择保存格式").setItems(options, (dialog, which) -> {
                         saveFormat = which;
                         String textToSave = getCleanTextStatic();
@@ -1762,7 +1881,7 @@ jobs:
                             else if (which == 1) { i.setType("text/markdown"); i.putExtra(Intent.EXTRA_TITLE, fName + ".md"); } 
                             else if (which == 2) { i.setType("application/pdf"); i.putExtra(Intent.EXTRA_TITLE, fName + ".pdf"); } 
                             else if (which == 3) { i.setType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"); i.putExtra(Intent.EXTRA_TITLE, fName + ".docx"); }
-                            else if (which == 4) { i.setType("image/jpeg"); i.putExtra(Intent.EXTRA_TITLE, fName + ".jpg"); }
+                            else if (which == 4) { i.setType("image/png"); i.putExtra(Intent.EXTRA_TITLE, fName + ".png"); }
                             startActivityForResult(i, 101);
                         } catch (Exception e) { Toast.makeText(this, "调起失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
                     }).show();
@@ -1774,15 +1893,23 @@ jobs:
                 btnAddTypo.setOnClickListener(v -> {
                     String orig = etOriginal.getText().toString().trim();
                     String corr = etCorrected.getText().toString().trim();
-                    if (orig.isEmpty() || corr.isEmpty()) {
-                        Toast.makeText(this, "内容不能为空", Toast.LENGTH_SHORT).show();
+                    if (orig.isEmpty()) {
+                        Toast.makeText(this, "原文不能为空", Toast.LENGTH_SHORT).show();
                         return;
+                    }
+                    if (corr.isEmpty()) {
+                        corr = orig;
                     }
                     try {
                         String customStr = sp.getString("custom_typos", "{}");
                         JSONObject obj = new JSONObject(customStr);
+                        if (editingOldKey != null && !editingOldKey.equals(orig)) {
+                            obj.remove(editingOldKey);
+                        }
                         obj.put(orig, corr);
                         sp.edit().putString("custom_typos", obj.toString()).apply();
+                        editingOldKey = null;
+                        btnAddTypo.setText("添加");
                         loadTypoMap(this);
                         renderCustomTyposUI();
                         etOriginal.setText("");
@@ -1793,11 +1920,15 @@ jobs:
             }
             
             private void renderCustomTyposUI() {
-                LinearLayout llCustomTypos = findViewById(R.id.llCustomTypos);
+                FrameLayout container = findViewById(R.id.llCustomTypos);
                 Button btnExpandTypos = findViewById(R.id.btnExpandTypos);
                 EditText etOriginal = findViewById(R.id.etOriginal);
                 EditText etCorrected = findViewById(R.id.etCorrected);
-                llCustomTypos.removeAllViews();
+                Button btnAddTypo = findViewById(R.id.btnAddTypo);
+                
+                container.removeAllViews();
+                FlowLayout flowLayout = new FlowLayout(this);
+                
                 try {
                     String customStr = sp.getString("custom_typos", "{}");
                     JSONObject obj = new JSONObject(customStr);
@@ -1812,37 +1943,41 @@ jobs:
                     for(int i=0; i<displayCount; i++){
                         String[] item = list.get(i);
                         TextView tv = new TextView(this);
-                        tv.setText(item[0] + " → " + item[1]);
-                        tv.setPadding(0, 24, 0, 24);
+                        String showText = item[0].equals(item[1]) ? item[0] : item[0] + " → " + item[1];
+                        tv.setText(showText);
+                        tv.setPadding(16, 12, 16, 12);
                         tv.setTextSize(14f);
                         tv.setTextColor(Color.parseColor("#4CAF50"));
-                        tv.setBackgroundResource(android.R.drawable.list_selector_background);
+                        tv.setBackgroundResource(R.drawable.custom_typo_bg);
                         tv.setClickable(true);
                         tv.setOnClickListener(v -> {
                             new AlertDialog.Builder(this)
                                 .setTitle("操作错词")
-                                .setMessage("原始：" + item[0] + "\n修改后：" + item[1])
+                                .setMessage("规则内容：\n" + showText)
                                 .setPositiveButton("删除", (d, w) -> {
                                     obj.remove(item[0]);
                                     sp.edit().putString("custom_typos", obj.toString()).apply();
+                                    if(editingOldKey != null && editingOldKey.equals(item[0])) {
+                                        editingOldKey = null;
+                                        etOriginal.setText(""); etCorrected.setText("");
+                                        btnAddTypo.setText("添加");
+                                    }
                                     loadTypoMap(this);
                                     renderCustomTyposUI();
                                 })
                                 .setNeutralButton("编辑", (d, w) -> {
+                                    editingOldKey = item[0];
                                     etOriginal.setText(item[0]);
-                                    etCorrected.setText(item[1]);
+                                    etCorrected.setText(item[0].equals(item[1]) ? "" : item[1]);
+                                    btnAddTypo.setText("完成");
                                 })
                                 .setNegativeButton("取消", null)
                                 .show();
                         });
-                        llCustomTypos.addView(tv);
-                        if (i < displayCount - 1) {
-                            View line = new View(this);
-                            line.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
-                            line.setBackgroundColor(Color.parseColor("#E0E0E0"));
-                            llCustomTypos.addView(line);
-                        }
+                        flowLayout.addView(tv);
                     }
+                    
+                    container.addView(flowLayout);
                     
                     if (list.size() > 5) {
                         btnExpandTypos.setVisibility(View.VISIBLE);
@@ -1872,7 +2007,7 @@ jobs:
                         LinearLayout itemLayout = new LinearLayout(this);
                         itemLayout.setOrientation(LinearLayout.VERTICAL);
                         itemLayout.setPadding(0, 24, 0, 24);
-                        itemLayout.setBackgroundResource(android.R.drawable.list_selector_background);
+                        itemLayout.setBackgroundResource(R.drawable.custom_typo_bg);
                         itemLayout.setClickable(true);
                         
                         TextView tvTime = new TextView(this);
@@ -2041,7 +2176,7 @@ jobs:
                                 canvas.drawColor(Color.WHITE);
                                 canvas.translate(40, 40);
                                 sl.draw(canvas);
-                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, os);
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, os);
                                 bitmap.recycle();
                             }
                             os.close(); Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
@@ -2126,6 +2261,28 @@ jobs:
                             if (sentence.isEmpty()) continue;
                             List<TextBlock> currentSentenceBlocks = new ArrayList<>();
                             boolean[] isIgnored = new boolean[sentence.length()];
+                            
+                            int[] customSkip = new int[sentence.length()];
+                            String[] customCorr = new String[sentence.length()];
+                            if (customMaxLen > 0) {
+                                int i = 0;
+                                while (i < sentence.length()) {
+                                    boolean matched = false;
+                                    for (int len = Math.min(customMaxLen, sentence.length() - i); len >= Math.max(1, customMinLen); len--) {
+                                        String sub = sentence.substring(i, i + len);
+                                        if (customTypoMap.containsKey(sub)) {
+                                            customSkip[i] = len;
+                                            customCorr[i] = customTypoMap.get(sub);
+                                            for (int k = 0; k < len; k++) isIgnored[i + k] = true;
+                                            i += len;
+                                            matched = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!matched) i++;
+                                }
+                            }
+                            
                             for (String w : IGNORE_WORDS) {
                                 int idx = sentence.indexOf(w);
                                 while (idx >= 0) { for (int k = 0; k < w.length(); k++) isIgnored[idx + k] = true; idx = sentence.indexOf(w, idx + 1); }
@@ -2138,7 +2295,23 @@ jobs:
                             }
 
                             if (!hasTarget || temp <= 0.0f) {
-                                currentSentenceBlocks.add(new TextBlock(sentence, sentence, false, 0f, 0));
+                                for (int i = 0; i < sentence.length(); ) {
+                                    if (customSkip[i] > 0) {
+                                        String orig = sentence.substring(i, i + customSkip[i]);
+                                        String corr = customCorr[i];
+                                        if (orig.equals(corr)) {
+                                            currentSentenceBlocks.add(new TextBlock(orig, orig, false, 0f, -1));
+                                        } else {
+                                            currentSentenceBlocks.add(new TextBlock(orig, corr, true, 1.0f, -2));
+                                            errorCount[0]++;
+                                            syncShowStatus("发现错误：" + orig + " → " + corr + " | 共 " + errorCount[0] + " 处", true);
+                                        }
+                                        i += customSkip[i];
+                                    } else {
+                                        currentSentenceBlocks.add(new TextBlock(String.valueOf(sentence.charAt(i)), String.valueOf(sentence.charAt(i)), false, 0f, 0));
+                                        i++;
+                                    }
+                                }
                             } else {
                                 float[] scores;
                                 int vocabSize = isFastMode ? 3 : proVocab.size();
@@ -2174,13 +2347,30 @@ jobs:
                                     if(normalText.length() > 0) { currentSentenceBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false, 0f, 0)); normalText.setLength(0); }
                                 };
 
-                                for (int i = 0; i < sentence.length(); i++) {
+                                for (int i = 0; i < sentence.length(); ) {
+                                    if (customSkip[i] > 0) {
+                                        flushNormal.run();
+                                        String orig = sentence.substring(i, i + customSkip[i]);
+                                        String corr = customCorr[i];
+                                        if (orig.equals(corr)) {
+                                            currentSentenceBlocks.add(new TextBlock(orig, orig, false, 0f, -1));
+                                        } else {
+                                            currentSentenceBlocks.add(new TextBlock(orig, corr, true, 1.0f, -2));
+                                            errorCount[0]++;
+                                            syncShowStatus("发现错误：" + orig + " → " + corr + " | 共 " + errorCount[0] + " 处", true);
+                                        }
+                                        i += customSkip[i];
+                                        continue;
+                                    }
+                                    
                                     char ch = sentence.charAt(i);
                                     if (isIgnored[i] || (ch != '的' && ch != '地' && ch != '得')) {
                                         normalText.append(ch);
                                         if (ch == '，' || ch == ',' || ch == '；' || ch == ';' || ch == '、' || ch == '\n') flushNormal.run();
+                                        i++;
                                         continue;
                                     }
+                                    
                                     flushNormal.run();
                                     
                                     float s0, s1, s2;
@@ -2198,13 +2388,14 @@ jobs:
                                     String pred = labels[maxIdx];
                                     boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
                                     currentSentenceBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb, 1));
+                                    i++;
                                 }
                                 flushNormal.run();
                             }
 
                             List<TextBlock> finalSentenceBlocks = new ArrayList<>();
                             for (TextBlock b : currentSentenceBlocks) {
-                                if (b.isMutable) {
+                                if (b.isMutable || b.type == -1 || b.type == -2) {
                                     finalSentenceBlocks.add(b);
                                 } else {
                                     int i = 0;
