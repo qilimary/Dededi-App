@@ -749,6 +749,13 @@ jobs:
                     fos.write(text.getBytes("UTF-8"));
                     fos.close();
                     
+                    if (!MainActivity.allSentencesBlocks.isEmpty()) {
+                        String blocksJson = MainActivity.serializeBlocks(MainActivity.allSentencesBlocks);
+                        FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
+                        fosBlocks.write(blocksJson.getBytes("UTF-8"));
+                        fosBlocks.close();
+                    }
+                    
                     org.json.JSONArray newArray = new org.json.JSONArray();
                     newArray.put(newRecord);
                     int limit = Math.min(historyArray.length(), 49);
@@ -761,6 +768,7 @@ jobs:
                             String oldFileId = historyArray.getJSONObject(i).optString("file", "");
                             if (!oldFileId.isEmpty()) {
                                 new File(dir, oldFileId + ".txt").delete();
+                                new File(dir, oldFileId + "_blocks.json").delete();
                             }
                         }
                     }
@@ -895,7 +903,7 @@ jobs:
                     sp.edit().putBoolean("is_fast_mode", newFast).apply();
                     showStatus("已切换至" + (newFast ? "极速" : "专业") + "模型", true);
                 });
-
+                
                 Runnable jumpToApp = () -> {
                     Intent intent = new Intent(FloatingService.this, MainActivity.class);
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -903,6 +911,13 @@ jobs:
                     startActivity(intent);
                     panelInput.setVisibility(View.GONE);
                     setFocusable(false);
+                    // 保底修复：延迟200ms再次确认关闭，防止偶现不收起
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (panelInput.getVisibility() == View.VISIBLE) {
+                            panelInput.setVisibility(View.GONE);
+                            setFocusable(false);
+                        }
+                    }, 200);
                 };
 
                 btnFloatJump.setOnClickListener(v -> jumpToApp.run());
@@ -1469,6 +1484,8 @@ jobs:
             private int saveFormat = 0; 
             private String pendingSaveText = "";
             private boolean isTyposExpanded = false;
+            private boolean isRestoringHistory = false;
+            private String lastSavedHistoryFileId = null;
 
             public static class TextBlock {
                 String original, current, modelCorrected;
@@ -1500,6 +1517,54 @@ jobs:
                     for (TextBlock b : sentence) sb.append(b.current);
                 }
                 return sb.toString();
+            }
+            
+            public static String serializeBlocks(List<List<TextBlock>> blocks) {
+                JSONArray arr = new JSONArray();
+                try {
+                    for (List<TextBlock> sentence : blocks) {
+                        JSONArray sentArr = new JSONArray();
+                        for (TextBlock b : sentence) {
+                            JSONObject obj = new JSONObject();
+                            obj.put("o", b.original);
+                            obj.put("c", b.current);
+                            obj.put("mc", b.modelCorrected);
+                            obj.put("m", b.isMutable);
+                            obj.put("f", b.conf);
+                            obj.put("t", b.type);
+                            obj.put("u", b.userModified);
+                            sentArr.put(obj);
+                        }
+                        arr.put(sentArr);
+                    }
+                } catch (Exception e) {}
+                return arr.toString();
+            }
+            
+            public static List<List<TextBlock>> deserializeBlocks(String json) {
+                List<List<TextBlock>> blocks = new ArrayList<>();
+                try {
+                    JSONArray arr = new JSONArray(json);
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONArray sentArr = arr.getJSONArray(i);
+                        List<TextBlock> sentence = new ArrayList<>();
+                        for (int j = 0; j < sentArr.length(); j++) {
+                            JSONObject obj = sentArr.getJSONObject(j);
+                            TextBlock b = new TextBlock(
+                                obj.getString("o"),
+                                obj.getString("c"),
+                                obj.getBoolean("m"),
+                                (float) obj.getDouble("f"),
+                                obj.getInt("t")
+                            );
+                            b.modelCorrected = obj.getString("mc");
+                            b.userModified = obj.getBoolean("u");
+                            sentence.add(b);
+                        }
+                        blocks.add(sentence);
+                    }
+                } catch (Exception e) {}
+                return blocks;
             }
 
             public static synchronized void loadTypoMap(Context ctx) {
@@ -1858,7 +1923,6 @@ jobs:
                     String historyStr = sp.getString("history_records", "[]");
                     JSONArray historyArray = new JSONArray(historyStr);
                     
-                    // 去重
                     int currentHash = text.hashCode();
                     if (historyArray.length() > 0) {
                         JSONObject lastRecord = historyArray.getJSONObject(0);
@@ -1875,12 +1939,23 @@ jobs:
                     
                     String fileId = UUID.randomUUID().toString();
                     newRecord.put("file", fileId);
+                    lastSavedHistoryFileId = fileId;
                     
                     File dir = new File(getFilesDir(), "history");
                     if (!dir.exists()) dir.mkdirs();
+                    
+                    // 保存原文
                     FileOutputStream fos = new FileOutputStream(new File(dir, fileId + ".txt"));
                     fos.write(text.getBytes("UTF-8"));
                     fos.close();
+                    
+                    // 如果有纠错结果，也保存下来
+                    if (!allSentencesBlocks.isEmpty()) {
+                        String blocksJson = serializeBlocks(allSentencesBlocks);
+                        FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
+                        fosBlocks.write(blocksJson.getBytes("UTF-8"));
+                        fosBlocks.close();
+                    }
                     
                     JSONArray newArray = new JSONArray();
                     newArray.put(newRecord);
@@ -1894,6 +1969,8 @@ jobs:
                             String oldFileId = historyArray.getJSONObject(i).optString("file", "");
                             if (!oldFileId.isEmpty()) {
                                 new File(dir, oldFileId + ".txt").delete();
+                                new File(dir, oldFileId + "_blocks.json").delete();
+                              
                             }
                         }
                     }
@@ -1902,7 +1979,7 @@ jobs:
                     renderHistoryUI();
                 } catch (Exception e) {}
             }
-
+            
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
@@ -1982,6 +2059,15 @@ jobs:
                         tvWordCount.setText(count + " 字"); 
                         sp.edit().putString("sync_text", s.toString()).apply();
                         btnSaveTxt.setEnabled(s.length() > 0);
+                        
+                        // 如果用户主动修改了输入框，且当前处于"继续纠错"状态，则重置
+                        if (!isRestoringHistory && btnCheck.getText().toString().equals("继续纠错")) {
+                            btnCheck.setText("开始纠错");
+                            allSentencesBlocks.clear();
+                            outputText.setText("");
+                            btnCopy.setEnabled(false);
+                            lastSavedHistoryFileId = null;
+                        }
                     }
                 });
                 
@@ -2338,9 +2424,11 @@ jobs:
                             progressBar.setIndeterminate(true);
                             new Thread(() -> {
                                 String fullText = "";
+                                String blocksJson = "";
                                 if (!fileId.isEmpty()) {
                                     try {
-                                        File f = new File(new File(getFilesDir(), "history"), fileId + ".txt");
+                                        File dir = new File(getFilesDir(), "history");
+                                        File f = new File(dir, fileId + ".txt");
                                         if(f.exists()){
                                             FileInputStream fis = new FileInputStream(f);
                                             byte[] data = new byte[(int) f.length()];
@@ -2348,17 +2436,45 @@ jobs:
                                             fis.close();
                                             fullText = new String(data, "UTF-8");
                                         }
+                                        File bf = new File(dir, fileId + "_blocks.json");
+                                        if(bf.exists()){
+                                            FileInputStream fisB = new FileInputStream(bf);
+                                            byte[] dataB = new byte[(int) bf.length()];
+                                            fisB.read(dataB);
+                                            fisB.close();
+                                            blocksJson = new String(dataB, "UTF-8");
+                                        }
                                     } catch(Exception e){}
                                 } else {
                                     fullText = obj.optString("text", "");
                                 }
+                                
                                 final String textToSet = fullText;
+                                final String blocksToSet = blocksJson;
                                 runOnUiThread(() -> {
+                                    isRestoringHistory = true;
                                     inputText.setText(textToSet);
+                                    isRestoringHistory = false;
+                                    lastSavedHistoryFileId = fileId;
+                                    
+                                    if (!blocksToSet.isEmpty()) {
+                                        allSentencesBlocks = deserializeBlocks(blocksToSet);
+                                        lastTimeMs = 0;
+                                        renderFinalBlocks();
+                                        btnCheck.setText("继续纠错");
+                                        btnCopy.setEnabled(true);
+                                        btnSaveTxt.setEnabled(true);
+                                    } else {
+                                        allSentencesBlocks.clear();
+                                        outputText.setText("");
+                                        btnCheck.setText("开始纠错");
+                                    }
                                     progressBar.setVisibility(View.INVISIBLE);
                                     progressBar.setIndeterminate(false);
                                 });
                             }).start();
+                            
+                           
                         });
                         
                         final int index = i;
@@ -3066,6 +3182,17 @@ jobs:
                 
                 baseOffsetObj[0] = ssb.length();
                 ssb.append(ssbFull);
+                
+                // 更新最近一条历史记录的纠错结果
+                if (lastSavedHistoryFileId != null && !allSentencesBlocks.isEmpty()) {
+                    try {
+                        File dir = new File(getFilesDir(), "history");
+                        String blocksJson = serializeBlocks(allSentencesBlocks);
+                        FileOutputStream fosBlocks = new FileOutputStream(new File(dir, lastSavedHistoryFileId + "_blocks.json"));
+                        fosBlocks.write(blocksJson.getBytes("UTF-8"));
+                        fosBlocks.close();
+                    } catch (Exception e) {}
+                }
                 
                 outputText.setText(ssb); outputText.setMovementMethod(LinkMovementMethod.getInstance()); outputText.setHighlightColor(Color.TRANSPARENT);
             }
