@@ -1064,6 +1064,7 @@ jobs:
                 new Thread(() -> {
                     try {
                         String[] labels = {"的", "地", "得"};
+                                        // ===== 一级分割：按句号等强断点 =====
                         java.util.List<String> sList = new java.util.ArrayList<>();
                         StringBuilder tSb = new StringBuilder();
                         for (int i = 0; i < text.length(); i++) {
@@ -1073,7 +1074,38 @@ jobs:
                             }
                         }
                         if (tSb.length() > 0) sList.add(tSb.toString());
-                        String[] sentences = sList.toArray(new String[0]);
+        
+                        // ===== 二级保底分割：确保单段不超过 300 字 =====
+                        final int MAX_SEQ_LEN = 300;
+                        java.util.List<String> finalList = new java.util.ArrayList<>();
+                        for (String seg : sList) {
+                            if (seg.length() <= MAX_SEQ_LEN) { finalList.add(seg); continue; }
+                            StringBuilder sb2 = new StringBuilder();
+                            for (int i = 0; i < seg.length(); i++) {
+                                sb2.append(seg.charAt(i));
+                                if (sb2.length() >= MAX_SEQ_LEN) {
+                                    String sub = sb2.toString();
+                                    // 从末尾往回找最近的弱断点（逗号/分号/顿号）
+                                    int splitPos = -1;
+                                    for (int j = sub.length() - 1; j >= Math.max(0, sub.length() - 60); j--) {
+                                        char sc = sub.charAt(j);
+                                        if (sc == '，' || sc == ',' || sc == '；' || sc == ';' || sc == '、') {
+                                            splitPos = j; break;
+                                        }
+                                    }
+                                    if (splitPos > 0) {
+                                        finalList.add(sub.substring(0, splitPos + 1));
+                                        sb2 = new StringBuilder(sub.substring(splitPos + 1));
+                                    } else {
+                                        // 找不到自然断点，强制截断
+                                        finalList.add(sub);
+                                        sb2 = new StringBuilder();
+                                    }
+                                }
+                            }
+                            if (sb2.length() > 0) finalList.add(sb2.toString());
+                        }
+                        String[] sentences = finalList.toArray(new String[0]);
                         StringBuilder fullCleanText = new StringBuilder();
                         int[] errorCount = {0};
                         
@@ -2744,6 +2776,7 @@ jobs:
                         runOnUiThread(() -> { getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.VISIBLE); progressBar.setProgress(0); });
                         long startTime = System.currentTimeMillis();
                         String[] labels = {"的", "地", "得"};
+                                        // ===== 一级分割：按句号等强断点 =====
                         java.util.List<String> sList = new java.util.ArrayList<>();
                         StringBuilder tSb = new StringBuilder();
                         for (int i = 0; i < text.length(); i++) {
@@ -2753,7 +2786,38 @@ jobs:
                             }
                         }
                         if (tSb.length() > 0) sList.add(tSb.toString());
-                        String[] sentences = sList.toArray(new String[0]);
+        
+                        // ===== 二级保底分割：确保单段不超过 300 字 =====
+                        final int MAX_SEQ_LEN = 300;
+                        java.util.List<String> finalList = new java.util.ArrayList<>();
+                        for (String seg : sList) {
+                            if (seg.length() <= MAX_SEQ_LEN) { finalList.add(seg); continue; }
+                            StringBuilder sb2 = new StringBuilder();
+                            for (int i = 0; i < seg.length(); i++) {
+                                sb2.append(seg.charAt(i));
+                                if (sb2.length() >= MAX_SEQ_LEN) {
+                                    String sub = sb2.toString();
+                                    // 从末尾往回找最近的弱断点（逗号/分号/顿号）
+                                    int splitPos = -1;
+                                    for (int j = sub.length() - 1; j >= Math.max(0, sub.length() - 60); j--) {
+                                        char sc = sub.charAt(j);
+                                        if (sc == '，' || sc == ',' || sc == '；' || sc == ';' || sc == '、') {
+                                            splitPos = j; break;
+                                        }
+                                    }
+                                    if (splitPos > 0) {
+                                        finalList.add(sub.substring(0, splitPos + 1));
+                                        sb2 = new StringBuilder(sub.substring(splitPos + 1));
+                                    } else {
+                                        // 找不到自然断点，强制截断
+                                        finalList.add(sub);
+                                        sb2 = new StringBuilder();
+                                    }
+                                }
+                            }
+                            if (sb2.length() > 0) finalList.add(sb2.toString());
+                        }
+                        String[] sentences = finalList.toArray(new String[0]);
                         runOnUiThread(() -> progressBar.setMax(sentences.length));
                         allSentencesBlocks.clear(); StringBuilder liveErrorsHtml = new StringBuilder(); long lastUIUpdateTime = System.currentTimeMillis();
                         int liveErrorCount = 0; 
