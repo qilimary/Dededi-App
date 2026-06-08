@@ -1,3 +1,4 @@
+
 name: Build Android APK
 
 on:
@@ -161,8 +162,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 17
-                versionName "2.60"
+                versionCode 18
+                versionName "2.70"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -186,6 +187,7 @@ jobs:
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.8.0'
             implementation 'org.pytorch:pytorch_android_lite:1.13.0'
+            implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
         }
         EOF
 
@@ -333,10 +335,10 @@ jobs:
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
-                Toast.makeText(this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "支持 txt、md、docx 格式", Toast.LENGTH_SHORT).show();
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("*/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
                 startActivityForResult(intent, 103);
             }
 
@@ -363,107 +365,142 @@ jobs:
 
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
-        <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        <androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:id="@+id/drawerLayout"
             android:layout_width="match_parent" android:layout_height="match_parent"
-            android:orientation="vertical" android:padding="14dp" android:background="@color/bg_color" android:fitsSystemWindows="true">
-            
-            <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
-                    android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="@color/text_primary"
-                    android:layout_alignParentStart="true" android:layout_centerVertical="true"/>
-                <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_alignParentEnd="true" android:layout_centerVertical="true" android:gravity="center_vertical">
-                    <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnFloat" android:layout_width="24dp" android:layout_height="24dp" 
-                        android:layout_marginEnd="8dp" android:text="✓" android:textSize="12sp" 
-                        android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null" android:padding="0dp"/>
-                    <Button android:id="@+id/btnHelp" android:layout_width="wrap_content" android:layout_height="wrap_content" 
-                        android:minWidth="56dp" android:minHeight="32dp"
-                        android:text="说明" android:textSize="12sp" android:backgroundTint="#9E9E9E" 
-                        android:paddingStart="12dp" android:paddingEnd="12dp"/>
-                </LinearLayout>
-            </RelativeLayout>
+            android:fitsSystemWindows="true">
 
-            <RadioGroup android:id="@+id/rgMode" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:layout_marginBottom="10dp" android:gravity="center">
-                <RadioButton android:id="@+id/rbFast" android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="极速 (BiGRU)" android:textColor="@color/text_primary" android:textSize="14sp"/>
-                <RadioButton android:id="@+id/rbPro" android:layout_width="0dp" android:layout_height="wrap_content"
-                    android:layout_weight="1" android:text="专业 (RoBERTa)" android:checked="true" android:textColor="@color/text_primary" android:textSize="14sp"/>
-            </RadioGroup>
-            
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:background="@color/card_bg" android:padding="8dp" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="温度参数" android:textSize="11sp" android:textColor="@color/text_secondary"/>
-                    <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.0" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
-                </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
-                    </LinearLayout>
-                    <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
-                </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
-                    </LinearLayout>
-                    <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
-                </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
-                    <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
-                    </LinearLayout>
-                    <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
-                </LinearLayout>
-            </LinearLayout>
-
-            <RelativeLayout android:layout_width="match_parent" android:layout_height="140dp" android:layout_marginBottom="10dp">
-                <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="match_parent"
-                    android:hint="在此输入或者粘贴需要检查的文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg"
-                    android:padding="12dp" android:paddingBottom="24dp" android:textSize="15sp" android:scrollbars="vertical"/>
-                <TextView android:id="@+id/tvWordCount" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_alignParentBottom="true" android:layout_alignParentEnd="true" android:layout_marginEnd="8dp" android:layout_marginBottom="6dp"
-                    android:text="0 字" android:textColor="#9E9E9E" android:textSize="11sp"/>
-            </RelativeLayout>
-            
-            <Button android:id="@+id/btnCheck" android:layout_width="match_parent" android:layout_height="52dp"
-                android:text="开始纠错" android:textSize="16sp" android:layout_marginTop="2dp" android:layout_marginBottom="6dp" android:backgroundTint="#2196F3"/>
+            <!-- 原主界面 -->
+            <LinearLayout 
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:orientation="vertical" android:padding="14dp" android:background="@color/bg_color">
                 
-            <ProgressBar android:id="@+id/progressBar" style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent" android:layout_height="4dp"
-                android:progressTint="#81C784" android:max="100" android:progress="0"
-                android:layout_marginTop="-4dp" android:layout_marginBottom="6dp" android:visibility="invisible"/>
-            
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:orientation="horizontal" android:layout_marginBottom="10dp">
-                <Button android:id="@+id/btnImport" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="导入" android:textSize="13sp"
-                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
-                <Button android:id="@+id/btnPaste" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="粘贴" android:textSize="13sp"
-                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
-                <Button android:id="@+id/btnClear" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="清空" android:textSize="13sp"
-                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
-                <Button android:id="@+id/btnCopy" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="复制" android:textSize="13sp"
-                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp" android:enabled="false"/>
-                <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
-                    android:layout_weight="1" android:text="保存" android:textSize="13sp"
-                    android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text"/>
+                <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp">
+                    <TextView android:id="@+id/tvTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" 
+                        android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="@color/text_primary"
+                        android:layout_alignParentStart="true" android:layout_centerVertical="true"
+                        android:clickable="true" android:focusable="true"/>
+                    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_alignParentEnd="true" android:layout_centerVertical="true" android:gravity="center_vertical">
+                        <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnFloat" android:layout_width="24dp" android:layout_height="24dp" 
+                            android:layout_marginEnd="8dp" android:text="✓" android:textSize="12sp" 
+                            android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null" android:padding="0dp"/>
+                        <Button android:id="@+id/btnMenu" android:layout_width="wrap_content" android:layout_height="wrap_content" 
+                            android:minWidth="56dp" android:minHeight="32dp"
+                            android:text="≡" android:textSize="18sp" android:backgroundTint="#9E9E9E" 
+                            android:paddingStart="12dp" android:paddingEnd="12dp"/>
+                    </LinearLayout>
+                </RelativeLayout>
+
+                <RadioGroup android:id="@+id/rgMode" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:layout_marginBottom="10dp" android:gravity="center">
+                    <RadioButton android:id="@+id/rbFast" android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="极速 (BiGRU)" android:textColor="@color/text_primary" android:textSize="14sp"/>
+                    <RadioButton android:id="@+id/rbPro" android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="专业 (RoBERTa)" android:checked="true" android:textColor="@color/text_primary" android:textSize="14sp"/>
+                </RadioGroup>
+                
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:background="@color/card_bg" android:padding="8dp" android:layout_marginBottom="10dp">
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="温度参数" android:textSize="11sp" android:textColor="@color/text_secondary"/>
+                        <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.0" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                    </LinearLayout>
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                        <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
+                        </LinearLayout>
+                        <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                    </LinearLayout>
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                        <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
+                        </LinearLayout>
+                        <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                    </LinearLayout>
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                        <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
+                        </LinearLayout>
+                        <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <RelativeLayout android:layout_width="match_parent" android:layout_height="140dp" android:layout_marginBottom="10dp">
+                    <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="match_parent"
+                        android:hint="在此输入或者粘贴需要检查的文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg"
+                        android:padding="12dp" android:paddingBottom="24dp" android:textSize="15sp" android:scrollbars="vertical"/>
+                    <TextView android:id="@+id/tvWordCount" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_alignParentBottom="true" android:layout_alignParentEnd="true" android:layout_marginEnd="8dp" android:layout_marginBottom="6dp"
+                        android:text="0 字" android:textColor="#9E9E9E" android:textSize="11sp"/>
+                </RelativeLayout>
+                
+                <Button android:id="@+id/btnCheck" android:layout_width="match_parent" android:layout_height="52dp"
+                    android:text="开始纠错" android:textSize="16sp" android:layout_marginTop="2dp" android:layout_marginBottom="6dp" android:backgroundTint="#2196F3"/>
+                    
+                <ProgressBar android:id="@+id/progressBar" style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent" android:layout_height="4dp"
+                    android:progressTint="#81C784" android:max="100" android:progress="0"
+                    android:layout_marginTop="-4dp" android:layout_marginBottom="6dp" android:visibility="invisible"/>
+                
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:layout_marginBottom="10dp">
+                    <Button android:id="@+id/btnImport" android:layout_width="0dp" android:layout_height="48dp"
+                        android:layout_weight="1" android:text="导入" android:textSize="13sp"
+                        android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
+                    <Button android:id="@+id/btnPaste" android:layout_width="0dp" android:layout_height="48dp"
+                        android:layout_weight="1" android:text="粘贴" android:textSize="13sp"
+                        android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
+                    <Button android:id="@+id/btnClear" android:layout_width="0dp" android:layout_height="48dp"
+                        android:layout_weight="1" android:text="清空" android:textSize="13sp"
+                        android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp"/>
+                    <Button android:id="@+id/btnCopy" android:layout_width="0dp" android:layout_height="48dp"
+                        android:layout_weight="1" android:text="复制" android:textSize="13sp"
+                        android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text" android:layout_marginRight="4dp" android:enabled="false"/>
+                    <Button android:id="@+id/btnSaveTxt" android:layout_width="0dp" android:layout_height="48dp"
+                        android:layout_weight="1" android:text="保存" android:textSize="13sp"
+                        android:backgroundTint="@color/btn_light_green_bg" android:textColor="@color/btn_light_green_text"/>
+                </LinearLayout>
+
+                <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
+                    <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent"
+                        android:scrollbarSize="16dp" android:scrollbarThumbVertical="@drawable/scrollbar_thumb" android:fadeScrollbars="false">
+                        <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
+                    </ScrollView>
+                    <View android:id="@+id/scrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end"/>
+                </FrameLayout>
             </LinearLayout>
 
-            <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
-                <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent"
-                    android:scrollbarSize="16dp" android:scrollbarThumbVertical="@drawable/scrollbar_thumb" android:fadeScrollbars="false">
-                    <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
+            <!-- 侧滑抽屉面板 -->
+            <LinearLayout android:id="@+id/drawerContent"
+                android:layout_width="320dp" android:layout_height="match_parent"
+                android:layout_gravity="end" android:background="@color/bg_color"
+                android:orientation="vertical" android:clickable="true" android:focusable="true">
+                <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:padding="16dp">
+                    <LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content">
+                        
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="自定义错词库" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_marginBottom="8dp"/>
+                        <LinearLayout android:id="@+id/llCustomTypos" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+                        <Button android:id="@+id/btnExpandTypos" android:layout_width="match_parent" android:layout_height="36dp" android:text="展开更多" android:textSize="12sp" android:backgroundTint="#E0E0E0" android:textColor="@color/text_primary" android:visibility="gone" android:layout_marginBottom="8dp" android:insetTop="0dp" android:insetBottom="0dp"/>
+                        
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="16dp">
+                            <EditText android:id="@+id/etOriginal" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:hint="原始文本" android:textColorHint="#9E9E9E" android:background="@color/card_bg" android:padding="8dp" android:textSize="13sp" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=" → " android:textColor="@color/text_primary"/>
+                            <EditText android:id="@+id/etCorrected" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:hint="修改后" android:textColorHint="#9E9E9E" android:background="@color/card_bg" android:padding="8dp" android:textSize="13sp" android:textColor="@color/text_primary"/>
+                            <Button android:id="@+id/btnAddTypo" android:layout_width="60dp" android:layout_height="40dp" android:text="添加" android:textSize="12sp" android:backgroundTint="#4CAF50" android:layout_marginStart="4dp" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#E0E0E0" android:layout_marginBottom="16dp"/>
+
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="最近50条纠错历史" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_marginBottom="8dp"/>
+                        <LinearLayout android:id="@+id/llHistory" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+                    </LinearLayout>
                 </ScrollView>
-                <View android:id="@+id/scrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end"/>
-            </FrameLayout>
-        </LinearLayout>
+            </LinearLayout>
+        </androidx.drawerlayout.widget.DrawerLayout>
         EOF
 
         cat << 'EOF' > app/src/main/res/layout/layout_floating.xml
@@ -585,12 +622,32 @@ jobs:
             
             private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
 
+            private void saveHistory(String text) {
+                if (text == null || text.trim().isEmpty()) return;
+                try {
+                    SharedPreferences sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
+                    String historyStr = sp.getString("history_records", "[]");
+                    org.json.JSONArray historyArray = new org.json.JSONArray(historyStr);
+                    org.json.JSONObject newRecord = new org.json.JSONObject();
+                    newRecord.put("time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
+                    newRecord.put("text", text);
+                    org.json.JSONArray newArray = new org.json.JSONArray();
+                    newArray.put(newRecord);
+                    int limit = Math.min(historyArray.length(), 49);
+                    for (int i = 0; i < limit; i++) {
+                        newArray.put(historyArray.getJSONObject(i));
+                    }
+                    sp.edit().putString("history_records", newArray.toString()).apply();
+                } catch (Exception e) {}
+            }
+
             @Override
             public int onStartCommand(Intent intent, int flags, int startId) {
                 if (intent != null && intent.hasExtra("IMPORTED_TEXT")) {
                     String text = intent.getStringExtra("IMPORTED_TEXT");
                     if (editFloatInput != null) {
                         editFloatInput.setText(text);
+                        saveHistory(text);
                         Toast.makeText(this, "导入成功", Toast.LENGTH_SHORT).show();
                         if (panelInput != null && panelInput.getVisibility() != View.VISIBLE) {
                             panelInput.setVisibility(View.VISIBLE);
@@ -685,6 +742,7 @@ jobs:
                 btnFloatCheck.setOnClickListener(v -> {
                     String text = editFloatInput.getText().toString();
                     if (!text.isEmpty()) {
+                        saveHistory(text);
                         setFocusable(false);
                         panelInput.setVisibility(View.GONE);
                         startInference(text);
@@ -742,18 +800,16 @@ jobs:
                                 initialTouchX = event.getRawX(); initialTouchY = event.getRawY();
                                 isMoved = false;
                                 isLongPressed = false;
-                                // 只有按住圆球时才启动长按计时
                                 if (v.getId() == R.id.btnCircle) {
-                                    handler.postDelayed(longPressRunnable, 500); // 500ms 触发长按
+                                    handler.postDelayed(longPressRunnable, 500); 
                                 }
-                                return true; // 关键修复：返回 true 消费事件，保证面板和圆球都能接收到后续的 MOVE 拖动事件
+                                return true; 
                             case MotionEvent.ACTION_MOVE:
                                 int dx = (int) (event.getRawX() - initialTouchX);
                                 int dy = (int) (event.getRawY() - initialTouchY);
-                                // 容差大于10像素才算移动
                                 if (!isMoved && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
                                     isMoved = true;
-                                    handler.removeCallbacks(longPressRunnable); // 关键修复：只要发生位移，立即取消长按判定，拒绝误触！
+                                    handler.removeCallbacks(longPressRunnable); 
                                 }
                                 if (isMoved) {
                                     params.x = initialX + dx; params.y = initialY + dy;
@@ -762,8 +818,7 @@ jobs:
                                 return true;
                             case MotionEvent.ACTION_UP:
                             case MotionEvent.ACTION_CANCEL:
-                                handler.removeCallbacks(longPressRunnable); // 手指抬起，取消尚未触发的长按判定
-                                // 如果没有移动，也没有触发长按，且点击的是圆球，则执行悬浮台的展开/收起
+                                handler.removeCallbacks(longPressRunnable); 
                                 if (!isMoved && !isLongPressed && v.getId() == R.id.btnCircle) {
                                     if (!isChecking) {
                                         boolean isVisible = panelInput.getVisibility() == View.VISIBLE;
@@ -867,7 +922,6 @@ jobs:
                 new Thread(() -> {
                     try {
                         String[] labels = {"的", "地", "得"};
-                        // 替换原有的低效正则 split，改用高性能的 O(N) 遍历切分，防止几十万字导致堆栈溢出
                         java.util.List<String> sList = new java.util.ArrayList<>();
                         StringBuilder tSb = new StringBuilder();
                         for (int i = 0; i < text.length(); i++) {
@@ -1155,6 +1209,7 @@ jobs:
         import android.view.inputmethod.InputMethodManager;
         import android.widget.Button;
         import android.widget.EditText;
+        import android.widget.LinearLayout;
         import android.widget.ProgressBar;
         import android.widget.RadioButton;
         import android.widget.RadioGroup;
@@ -1163,6 +1218,9 @@ jobs:
         import android.widget.Toast;
         import androidx.appcompat.app.AlertDialog;
         import androidx.appcompat.app.AppCompatActivity;
+        import androidx.core.view.GravityCompat;
+        import androidx.drawerlayout.widget.DrawerLayout;
+        import org.json.JSONArray;
         import org.json.JSONObject;
         import org.pytorch.IValue;
         import org.pytorch.LiteModuleLoader;
@@ -1177,10 +1235,13 @@ jobs:
         import java.io.InputStreamReader;
         import java.io.OutputStream;
         import java.nio.charset.StandardCharsets;
+        import java.text.SimpleDateFormat;
         import java.util.ArrayList;
+        import java.util.Date;
         import java.util.HashMap;
         import java.util.Iterator;
         import java.util.List;
+        import java.util.Locale;
         import java.util.Map;
         import java.util.zip.GZIPInputStream;
         import javax.crypto.Cipher;
@@ -1246,6 +1307,7 @@ jobs:
             private Button btnCheck, btnCopy, btnSaveTxt, btnPaste, btnClear, btnImport;
             private RadioButton rbFast, rbPro;
             private RadioGroup rgMode;
+            private DrawerLayout drawerLayout;
 
             private SharedPreferences sp;
             private boolean currentIsFast = false;
@@ -1256,6 +1318,7 @@ jobs:
             private volatile boolean isCheckingMain = false;
             private int saveFormat = 0; 
             private String pendingSaveText = "";
+            private boolean isTyposExpanded = false;
 
             public static class TextBlock {
                 String original, current, modelCorrected;
@@ -1264,7 +1327,6 @@ jobs:
                 boolean userModified = false;
                 public TextBlock(String o, String c, boolean m, float f, int t) {
                     this.original = o; 
-                    // 内存优化：如果原字和修改字相同，强行复用内存地址，不再申请新空间
                     this.current = (o != null && o.equals(c)) ? o : c; 
                     this.modelCorrected = this.current;
                     this.isMutable = m; this.conf = f; this.type = t;
@@ -1285,7 +1347,9 @@ jobs:
             }
 
             public static synchronized void loadTypoMap(Context ctx) {
-                if (typoMapLoaded) return;
+                typoMap.clear();
+                maxTypoLen = 0;
+                minTypoLen = Integer.MAX_VALUE;
                 try {
                     InputStream is = ctx.getAssets().open("错别字.txt");
                     BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
@@ -1305,23 +1369,35 @@ jobs:
                         }
                     }
                     br.close();
-                    if (minTypoLen == Integer.MAX_VALUE) minTypoLen = 0;
-                    typoMapLoaded = true;
-                } catch (Exception e) {
-                }
+                } catch (Exception e) {}
+                
+                try {
+                    SharedPreferences prefs = ctx.getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
+                    String customTyposStr = prefs.getString("custom_typos", "{}");
+                    JSONObject customTypos = new JSONObject(customTyposStr);
+                    Iterator<String> keys = customTypos.keys();
+                    while (keys.hasNext()) {
+                        String err = keys.next();
+                        String corr = customTypos.getString(err);
+                        typoMap.put(err, corr);
+                        maxTypoLen = Math.max(maxTypoLen, err.length());
+                        minTypoLen = Math.min(minTypoLen, err.length());
+                    }
+                } catch (Exception e) {}
+                
+                if (minTypoLen == Integer.MAX_VALUE) minTypoLen = 0;
+                typoMapLoaded = true;
             }
 
             public static String extractTextFromUri(Context context, android.net.Uri uri) {
                 try {
                     String name = getFileName(context, uri);
                     String mimeType = context.getContentResolver().getType(uri);
-                    // 增加 MIME Type 判断，防止部分系统 URI 无法获取文件名后缀
                     if ((name != null && name.toLowerCase().endsWith(".docx")) || 
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(mimeType)) {
                         java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(context.getContentResolver().openInputStream(uri));
                         java.util.zip.ZipEntry entry;
                         String xmlContent = null;
-                        // 第一步：完整读取 word/document.xml 到字符串，避免流二次读取问题
                         while ((entry = zis.getNextEntry()) != null) {
                             if (entry.getName().equals("word/document.xml")) {
                                 java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
@@ -1338,7 +1414,6 @@ jobs:
                         if (xmlContent == null) return "";
             
                         StringBuilder textBuilder = new StringBuilder();
-                        // 第二步：优先使用 XML 解析器精准提取
                         try {
                             org.xmlpull.v1.XmlPullParserFactory factory = org.xmlpull.v1.XmlPullParserFactory.newInstance();
                             org.xmlpull.v1.XmlPullParser parser = factory.newPullParser();
@@ -1347,7 +1422,6 @@ jobs:
                             boolean inText = false;
                             while (eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
                                 String tagName = parser.getName();
-                                // 兼容带有 w: 前缀的标签名
                                 if (eventType == org.xmlpull.v1.XmlPullParser.START_TAG && ("t".equals(tagName) || "w:t".equals(tagName))) {
                                     inText = true;
                                 } else if (eventType == org.xmlpull.v1.XmlPullParser.TEXT && inText) {
@@ -1359,20 +1433,17 @@ jobs:
                             }
                             
                         } catch (Exception e) {
-                            // 第三步：解析失败时降级为正则（使用同一份 xmlContent，保证有数据）
                             java.util.regex.Matcher m = java.util.regex.Pattern.compile("<w:t[^>]*>(.*?)</w:t>", java.util.regex.Pattern.DOTALL).matcher(xmlContent);
                             while (m.find()) {
                                 textBuilder.append(m.group(1));
                             }
                         }
             
-                        // 最终清理：去除任何残留尖括号标签，并还原 XML 实体
                         String raw = textBuilder.toString();
                         raw = raw.replaceAll("<[^>]+>", "");
                         raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
                         return raw;
                     } else {
-                        // 普通文本文件（txt）
                         java.io.InputStream is = context.getContentResolver().openInputStream(uri);
                         java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(is, StandardCharsets.UTF_8));
                         StringBuilder sb = new StringBuilder();
@@ -1411,8 +1482,28 @@ jobs:
             private void openFilePicker() {
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("*/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"});
                 startActivityForResult(intent, 102);
+            }
+
+            private void saveHistory(String text) {
+                if (text == null || text.trim().isEmpty()) return;
+                try {
+                    String historyStr = sp.getString("history_records", "[]");
+                    JSONArray historyArray = new JSONArray(historyStr);
+                    JSONObject newRecord = new JSONObject();
+                    newRecord.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
+                    newRecord.put("text", text);
+                    
+                    JSONArray newArray = new JSONArray();
+                    newArray.put(newRecord);
+                    int limit = Math.min(historyArray.length(), 49);
+                    for (int i = 0; i < limit; i++) {
+                        newArray.put(historyArray.getJSONObject(i));
+                    }
+                    sp.edit().putString("history_records", newArray.toString()).apply();
+                    renderHistoryUI();
+                } catch (Exception e) {}
             }
 
             @Override
@@ -1422,6 +1513,7 @@ jobs:
                 
                 sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
                 
+                drawerLayout = findViewById(R.id.drawerLayout);
                 inputText = findViewById(R.id.inputText);
                 outputText = findViewById(R.id.outputText);
                 tvWordCount = findViewById(R.id.tvWordCount);
@@ -1440,7 +1532,8 @@ jobs:
                 rbFast = findViewById(R.id.rbFast);
                 rbPro = findViewById(R.id.rbPro);
                 rgMode = findViewById(R.id.rgMode);
-                Button btnHelp = findViewById(R.id.btnHelp);
+                TextView tvTitle = findViewById(R.id.tvTitle);
+                Button btnMenu = findViewById(R.id.btnMenu);
                 View btnFloat = findViewById(R.id.btnFloat);
 
                 View scrollTouchArea = findViewById(R.id.scrollTouchArea);
@@ -1527,7 +1620,7 @@ jobs:
                     } catch (Exception ignored) {}
                 }).start();
 
-                btnHelp.setOnClickListener(v -> {
+                tvTitle.setOnClickListener(v -> {
                     String helpText = "【模型介绍】\n" +
                             "两款模型均只纠错“的地得”使用。但软件同样支持其他错别字纠正作为锦上添花的功能。\n\n" +
                             "极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n" +
@@ -1547,13 +1640,21 @@ jobs:
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
-                            "• 导入文件：支持txt和docx格式。由于仅提取文件的文本，表格类内容会被打乱，如格式特殊请慎重选择。\n" +
+                            "• 错词库：自定义文本，会在之后的纠错中自动修正，优先级高于模型。\n" +
+                            "• 导入文件：支持txt、md和docx格式。由于仅提取文件的文本，表格类内容会被打乱，如格式特殊请慎重选择。\n" +
                             "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
-                            "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n\n" +
+                            "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n" +
+                            "• 历史记录：最多保存近50条。\n\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                     new AlertDialog.Builder(this).setTitle("使用说明").setMessage(helpText).setPositiveButton("知道了", null).show();
+                });
+
+                btnMenu.setOnClickListener(v -> {
+                    drawerLayout.openDrawer(GravityCompat.END);
+                    renderCustomTyposUI();
+                    renderHistoryUI();
                 });
 
                 btnFloat.setOnClickListener(v -> {
@@ -1566,7 +1667,7 @@ jobs:
                 });
 
                 btnImport.setOnClickListener(v -> {
-                    Toast.makeText(this, "支持txt、docx格式", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "支持 txt、md、docx 格式", Toast.LENGTH_SHORT).show();
                     openFilePicker();
                 });
 
@@ -1611,6 +1712,7 @@ jobs:
                         Toast.makeText(this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                     }
 
+                    saveHistory(inputText.getText().toString());
                     isCheckingMain = true;
                     btnCheck.setText("取消");
                     doInference(isFastMode);
@@ -1629,7 +1731,7 @@ jobs:
                     String currentRaw = inputText.getText().toString();
                     if (currentRaw.isEmpty()) return;
                     
-                    String[] options = {"TXT 纯文本", "PDF 文档", "DOCX 文档", "JPG 图片"};
+                    String[] options = {"TXT 纯文本", "MD 文档", "PDF 文档", "DOCX 文档", "JPG 图片"};
                     new AlertDialog.Builder(this).setTitle("选择保存格式").setItems(options, (dialog, which) -> {
                         saveFormat = which;
                         String textToSave = getCleanTextStatic();
@@ -1657,13 +1759,149 @@ jobs:
                             String fName = hasCorrections ? "纠错结果" : "原始文本";
                             
                             if (which == 0) { i.setType("text/plain"); i.putExtra(Intent.EXTRA_TITLE, fName + ".txt"); } 
-                            else if (which == 1) { i.setType("application/pdf"); i.putExtra(Intent.EXTRA_TITLE, fName + ".pdf"); } 
-                            else if (which == 2) { i.setType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"); i.putExtra(Intent.EXTRA_TITLE, fName + ".docx"); }
-                            else if (which == 3) { i.setType("image/jpeg"); i.putExtra(Intent.EXTRA_TITLE, fName + ".jpg"); }
+                            else if (which == 1) { i.setType("text/markdown"); i.putExtra(Intent.EXTRA_TITLE, fName + ".md"); } 
+                            else if (which == 2) { i.setType("application/pdf"); i.putExtra(Intent.EXTRA_TITLE, fName + ".pdf"); } 
+                            else if (which == 3) { i.setType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"); i.putExtra(Intent.EXTRA_TITLE, fName + ".docx"); }
+                            else if (which == 4) { i.setType("image/jpeg"); i.putExtra(Intent.EXTRA_TITLE, fName + ".jpg"); }
                             startActivityForResult(i, 101);
                         } catch (Exception e) { Toast.makeText(this, "调起失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
                     }).show();
                 });
+                
+                Button btnAddTypo = findViewById(R.id.btnAddTypo);
+                EditText etOriginal = findViewById(R.id.etOriginal);
+                EditText etCorrected = findViewById(R.id.etCorrected);
+                btnAddTypo.setOnClickListener(v -> {
+                    String orig = etOriginal.getText().toString().trim();
+                    String corr = etCorrected.getText().toString().trim();
+                    if (orig.isEmpty() || corr.isEmpty()) {
+                        Toast.makeText(this, "内容不能为空", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    try {
+                        String customStr = sp.getString("custom_typos", "{}");
+                        JSONObject obj = new JSONObject(customStr);
+                        obj.put(orig, corr);
+                        sp.edit().putString("custom_typos", obj.toString()).apply();
+                        loadTypoMap(this);
+                        renderCustomTyposUI();
+                        etOriginal.setText("");
+                        etCorrected.setText("");
+                        Toast.makeText(this, "添加成功", Toast.LENGTH_SHORT).show();
+                    } catch(Exception e){}
+                });
+            }
+            
+            private void renderCustomTyposUI() {
+                LinearLayout llCustomTypos = findViewById(R.id.llCustomTypos);
+                Button btnExpandTypos = findViewById(R.id.btnExpandTypos);
+                EditText etOriginal = findViewById(R.id.etOriginal);
+                EditText etCorrected = findViewById(R.id.etCorrected);
+                llCustomTypos.removeAllViews();
+                try {
+                    String customStr = sp.getString("custom_typos", "{}");
+                    JSONObject obj = new JSONObject(customStr);
+                    Iterator<String> keys = obj.keys();
+                    List<String[]> list = new ArrayList<>();
+                    while(keys.hasNext()){
+                        String k = keys.next();
+                        list.add(new String[]{k, obj.getString(k)});
+                    }
+                    
+                    int displayCount = isTyposExpanded ? list.size() : Math.min(list.size(), 5);
+                    for(int i=0; i<displayCount; i++){
+                        String[] item = list.get(i);
+                        TextView tv = new TextView(this);
+                        tv.setText(item[0] + " → " + item[1]);
+                        tv.setPadding(0, 24, 0, 24);
+                        tv.setTextSize(14f);
+                        tv.setTextColor(Color.parseColor("#4CAF50"));
+                        tv.setBackgroundResource(android.R.drawable.list_selector_background);
+                        tv.setClickable(true);
+                        tv.setOnClickListener(v -> {
+                            new AlertDialog.Builder(this)
+                                .setTitle("操作错词")
+                                .setMessage("原始：" + item[0] + "\n修改后：" + item[1])
+                                .setPositiveButton("删除", (d, w) -> {
+                                    obj.remove(item[0]);
+                                    sp.edit().putString("custom_typos", obj.toString()).apply();
+                                    loadTypoMap(this);
+                                    renderCustomTyposUI();
+                                })
+                                .setNeutralButton("编辑", (d, w) -> {
+                                    etOriginal.setText(item[0]);
+                                    etCorrected.setText(item[1]);
+                                })
+                                .setNegativeButton("取消", null)
+                                .show();
+                        });
+                        llCustomTypos.addView(tv);
+                        if (i < displayCount - 1) {
+                            View line = new View(this);
+                            line.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+                            line.setBackgroundColor(Color.parseColor("#E0E0E0"));
+                            llCustomTypos.addView(line);
+                        }
+                    }
+                    
+                    if (list.size() > 5) {
+                        btnExpandTypos.setVisibility(View.VISIBLE);
+                        btnExpandTypos.setText(isTyposExpanded ? "折叠" : "展开全部");
+                        btnExpandTypos.setOnClickListener(v -> {
+                            isTyposExpanded = !isTyposExpanded;
+                            renderCustomTyposUI();
+                        });
+                    } else {
+                        btnExpandTypos.setVisibility(View.GONE);
+                    }
+                } catch(Exception e){}
+            }
+            
+            private void renderHistoryUI() {
+                LinearLayout llHistory = findViewById(R.id.llHistory);
+                llHistory.removeAllViews();
+                try {
+                    String historyStr = sp.getString("history_records", "[]");
+                    JSONArray arr = new JSONArray(historyStr);
+                    for(int i=0; i<arr.length(); i++){
+                        JSONObject obj = arr.getJSONObject(i);
+                        String time = obj.getString("time");
+                        String text = obj.getString("text");
+                        String preview = text.length() > 20 ? text.substring(0, 20).replace("\n", " ") + "..." : text.replace("\n", " ");
+                        
+                        LinearLayout itemLayout = new LinearLayout(this);
+                        itemLayout.setOrientation(LinearLayout.VERTICAL);
+                        itemLayout.setPadding(0, 24, 0, 24);
+                        itemLayout.setBackgroundResource(android.R.drawable.list_selector_background);
+                        itemLayout.setClickable(true);
+                        
+                        TextView tvTime = new TextView(this);
+                        tvTime.setText(time);
+                        tvTime.setTextSize(12f);
+                        tvTime.setTextColor(Color.parseColor("#9E9E9E"));
+                        
+                        TextView tvPreview = new TextView(this);
+                        tvPreview.setText(preview);
+                        tvPreview.setTextSize(14f);
+                        
+                        itemLayout.addView(tvTime);
+                        itemLayout.addView(tvPreview);
+                        
+                        itemLayout.setOnClickListener(v -> {
+                            inputText.setText(text);
+                            drawerLayout.closeDrawer(GravityCompat.END);
+                        });
+                        
+                        llHistory.addView(itemLayout);
+                        
+                        if (i < arr.length() - 1) {
+                            View line = new View(this);
+                            line.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1));
+                            line.setBackgroundColor(Color.parseColor("#E0E0E0"));
+                            llHistory.addView(line);
+                        }
+                    }
+                } catch(Exception e){}
             }
             
             @Override
@@ -1755,6 +1993,7 @@ jobs:
                         String text = extractTextFromUri(this, uri);
                         if (text != null && !text.trim().isEmpty()) {
                             inputText.setText(text);
+                            saveHistory(text);
                             Toast.makeText(this, "导入成功", Toast.LENGTH_SHORT).show();
                         } else {
                             Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
@@ -1765,9 +2004,9 @@ jobs:
                     try {
                         OutputStream os = getContentResolver().openOutputStream(data.getData());
                         if (os != null) {
-                            if (saveFormat == 0) {
+                            if (saveFormat == 0 || saveFormat == 1) {
                                 os.write(pendingSaveText.getBytes(StandardCharsets.UTF_8));
-                            } else if (saveFormat == 1) {
+                            } else if (saveFormat == 2) {
                                 android.graphics.pdf.PdfDocument pdf = new android.graphics.pdf.PdfDocument();
                                 android.text.TextPaint paint = new android.text.TextPaint();
                                 paint.setTextSize(14); paint.setColor(Color.BLACK);
@@ -1778,7 +2017,7 @@ jobs:
                                 android.graphics.Canvas canvas = page.getCanvas();
                                 canvas.translate(20, 20); sl.draw(canvas);
                                 pdf.finishPage(page); pdf.writeTo(os); pdf.close();
-                            } else if (saveFormat == 2) {
+                            } else if (saveFormat == 3) {
                                 java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(os);
                                 zos.putNextEntry(new java.util.zip.ZipEntry("[Content_Types].xml"));
                                 zos.write(("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>").getBytes(StandardCharsets.UTF_8));
@@ -1791,7 +2030,7 @@ jobs:
                                 docxContent.append("</w:body></w:document>");
                                 zos.write(docxContent.toString().getBytes(StandardCharsets.UTF_8));
                                 zos.closeEntry(); zos.close();
-                            } else if (saveFormat == 3) {
+                            } else if (saveFormat == 4) {
                                 android.text.TextPaint paint = new android.text.TextPaint();
                                 paint.setTextSize(40); paint.setColor(Color.BLACK); paint.setAntiAlias(true);
                                 String cleanText = pendingSaveText;
@@ -1858,7 +2097,6 @@ jobs:
                         runOnUiThread(() -> { getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.VISIBLE); progressBar.setProgress(0); });
                         long startTime = System.currentTimeMillis();
                         String[] labels = {"的", "地", "得"};
-                        // 替换原有的低效正则 split，改用高性能的 O(N) 遍历切分，防止几十万字导致堆栈溢出
                         java.util.List<String> sList = new java.util.ArrayList<>();
                         StringBuilder tSb = new StringBuilder();
                         for (int i = 0; i < text.length(); i++) {
