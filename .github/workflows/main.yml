@@ -188,6 +188,7 @@ jobs:
             implementation 'com.google.android.material:material:1.8.0'
             implementation 'org.pytorch:pytorch_android_lite:1.13.0'
             implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
+            implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
         }
         EOF
 
@@ -338,19 +339,29 @@ jobs:
         cat << 'EOF' > app/src/main/java/com/app/dededi/FilePickerActivity.java
         package com.app.dededi;
         import android.app.Activity;
+        import android.app.ProgressDialog;
         import android.content.Intent;
+        import android.graphics.Bitmap;
+        import android.graphics.BitmapFactory;
+        import android.graphics.pdf.PdfRenderer;
         import android.net.Uri;
         import android.os.Bundle;
+        import android.os.ParcelFileDescriptor;
         import android.widget.Toast;
+        import java.io.InputStream;
 
         public class FilePickerActivity extends Activity {
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
-                Toast.makeText(this, "支持 txt、md、docx 格式", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "支持 txt/md/docx/pdf 及图片(jpg/png)", Toast.LENGTH_SHORT).show();
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("*/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                    "text/plain", "text/markdown", 
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+                    "application/pdf", "image/jpeg", "image/png", "image/jpg"
+                });
                 startActivityForResult(intent, 103);
             }
 
@@ -360,17 +371,93 @@ jobs:
                 if (requestCode == 103 && resultCode == RESULT_OK && data != null) {
                     Uri uri = data.getData();
                     if (uri != null) {
-                        String text = MainActivity.extractTextFromUri(this, uri);
-                        if (text != null && !text.trim().isEmpty()) {
-                            Intent serviceIntent = new Intent(this, FloatingService.class);
-                            serviceIntent.putExtra("IMPORTED_TEXT", text);
-                            startService(serviceIntent);
+                        String mimeType = getContentResolver().getType(uri);
+                        String name = MainActivity.getFileName(this, uri);
+                        boolean isImage = (mimeType != null && mimeType.startsWith("image/")) || (name != null && (name.toLowerCase().endsWith(".jpg") || name.toLowerCase().endsWith(".png") || name.toLowerCase().endsWith(".jpeg")));
+                        boolean isPdf = (mimeType != null && mimeType.equals("application/pdf")) || (name != null && name.toLowerCase().endsWith(".pdf"));
+
+                        if (isImage || isPdf) {
+                            processImageOrPdf(uri, isPdf);
+                            return; 
                         } else {
-                            Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
+                            String text = MainActivity.extractTextFromUri(this, uri);
+                            if (text != null && !text.trim().isEmpty()) {
+                                Intent serviceIntent = new Intent(this, FloatingService.class);
+                                serviceIntent.putExtra("IMPORTED_TEXT", text);
+                                startService(serviceIntent);
+                            } else {
+                                Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
+                            }
                         }
                     }
                 }
                 finish();
+            }
+
+            private void processImageOrPdf(Uri uri, boolean isPdf) {
+                ProgressDialog progressDialog = new ProgressDialog(this);
+                progressDialog.setMessage(isPdf ? "正在逐页进行OCR识图中..." : "正在进行OCR识图...");
+                progressDialog.setCancelable(false);
+                progressDialog.show();
+
+                new Thread(() -> {
+                    StringBuilder stringBuilder = new StringBuilder();
+                    try {
+                        com.google.mlkit.vision.text.TextRecognizer recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(new com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions.Builder().build());
+                        if (isPdf) {
+                            ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
+                            if (pfd != null) {
+                                PdfRenderer renderer = new PdfRenderer(pfd);
+                                int pageCount = renderer.getPageCount();
+                                for (int i = 0; i < pageCount; i++) {
+                                    final int currentPage = i + 1;
+                                    runOnUiThread(() -> progressDialog.setMessage("正在识别 PDF 第 " + currentPage + " / " + pageCount + " 页..."));
+                                    PdfRenderer.Page page = renderer.openPage(i);
+                                    Bitmap bitmap = Bitmap.createBitmap(page.getWidth() * 2, page.getHeight() * 2, Bitmap.Config.ARGB_8888);
+                                    android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+                                    canvas.drawColor(android.graphics.Color.WHITE);
+                                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+                                    page.close();
+
+                                    com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0);
+                                    com.google.android.gms.tasks.Task<com.google.mlkit.vision.text.Text> task = recognizer.process(image);
+                                    com.google.mlkit.vision.text.Text result = com.google.android.gms.tasks.Tasks.await(task);
+                                    stringBuilder.append(result.getText()).append("\n\n");
+                                    bitmap.recycle();
+                                }
+                                renderer.close();
+                                pfd.close();
+                            }
+                        } else {
+                            InputStream is = getContentResolver().openInputStream(uri);
+                            Bitmap bitmap = BitmapFactory.decodeStream(is);
+                            if (is != null) is.close();
+                            if (bitmap != null) {
+                                com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0);
+                                com.google.android.gms.tasks.Task<com.google.mlkit.vision.text.Text> task = recognizer.process(image);
+                                com.google.mlkit.vision.text.Text result = com.google.android.gms.tasks.Tasks.await(task);
+                                stringBuilder.append(result.getText());
+                                bitmap.recycle();
+                            }
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+
+                    runOnUiThread(() -> {
+                        if (progressDialog.isShowing()) progressDialog.dismiss();
+                        String text = stringBuilder.toString();
+                        if (text != null && !text.trim().isEmpty()) {
+                            Toast.makeText(FilePickerActivity.this, "识图可能会出现错别字，注意甄别。", Toast.LENGTH_LONG).show();
+                            Intent serviceIntent = new Intent(FilePickerActivity.this, FloatingService.class);
+                            serviceIntent.putExtra("IMPORTED_TEXT", text);
+                            startService(serviceIntent);
+                        } else {
+                            Toast.makeText(FilePickerActivity.this, "未识别到任何文字或解析失败", Toast.LENGTH_SHORT).show();
+                        }
+                        finish();
+                    });
+                }).start();
             }
         }
         EOF
@@ -1570,7 +1657,11 @@ jobs:
             private void openFilePicker() {
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("*/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"});
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                    "text/plain", "text/markdown", 
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+                    "application/pdf", "image/jpeg", "image/png", "image/jpg"
+                });
                 startActivityForResult(intent, 102);
             }
 
@@ -1728,11 +1819,12 @@ jobs:
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
-                            "• 导入文件：支持txt、md和docx格式。由于仅提取文件的文本，表格类内容会被打乱，如格式特殊请慎重选择。\n" +
-                            "• 系统分享：在其他App（如微信、浏览器）中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
+                            "• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n" +
+                            "• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
                             "• 关闭模型：将温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n" +
                             "• 历史记录：最多保存近50条。\n\n" +
-                            "• 错词库：你自己定义规则，这些规则会在之后的纠错中自动应用，优先级高于模型。\n" +
+                            " 【错词库】\n" +
+                            "  你自己定义规则，这些规则会在之后的纠错中自动应用，优先级高于模型。\n" +
                             "  使用方法：直接在原始文本输入，例如“慢慢地”，相当于白名单，模型在遇到后不会再修改。如果在“修改后”里添加“慢慢的”，则之后文本里所有“慢慢地”都会被自动修改为“慢慢的”。\n" +
                             "• 自定义的规优先级高于模型。\n\n" +
                             "【悬浮窗】\n" +
@@ -1764,7 +1856,7 @@ jobs:
                 });
 
                 btnImport.setOnClickListener(v -> {
-                    Toast.makeText(this, "支持 txt、md、docx 格式", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "支持 txt/md/docx/pdf 及图片(jpg/png)", Toast.LENGTH_SHORT).show();
                     openFilePicker();
                 });
 
@@ -2121,6 +2213,70 @@ jobs:
                   .putString(prefix + "th2", editThreshDe2.getText().toString()).putString(prefix + "th3", editThreshDe3.getText().toString()).apply();
             }
 
+            private void processImageOrPdfMain(android.net.Uri uri, boolean isPdf) {
+                android.app.ProgressDialog progressDialog = new android.app.ProgressDialog(this);
+                progressDialog.setMessage(isPdf ? "正在逐页进行OCR识图中..." : "正在进行OCR识图...");
+                progressDialog.setCancelable(false);
+                progressDialog.show();
+
+                new Thread(() -> {
+                    StringBuilder stringBuilder = new StringBuilder();
+                    try {
+                        com.google.mlkit.vision.text.TextRecognizer recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(new com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions.Builder().build());
+                        if (isPdf) {
+                            android.os.ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r");
+                            if (pfd != null) {
+                                android.graphics.pdf.PdfRenderer renderer = new android.graphics.pdf.PdfRenderer(pfd);
+                                int pageCount = renderer.getPageCount();
+                                for (int i = 0; i < pageCount; i++) {
+                                    final int currentPage = i + 1;
+                                    runOnUiThread(() -> progressDialog.setMessage("正在识别 PDF 第 " + currentPage + " / " + pageCount + " 页..."));
+                                    android.graphics.pdf.PdfRenderer.Page page = renderer.openPage(i);
+                                    android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(page.getWidth() * 2, page.getHeight() * 2, android.graphics.Bitmap.Config.ARGB_8888);
+                                    android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+                                    canvas.drawColor(android.graphics.Color.WHITE);
+                                    page.render(bitmap, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+                                    page.close();
+
+                                    com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0);
+                                    com.google.android.gms.tasks.Task<com.google.mlkit.vision.text.Text> task = recognizer.process(image);
+                                    com.google.mlkit.vision.text.Text result = com.google.android.gms.tasks.Tasks.await(task);
+                                    stringBuilder.append(result.getText()).append("\n\n");
+                                    bitmap.recycle();
+                                }
+                                renderer.close();
+                                pfd.close();
+                            }
+                        } else {
+                            java.io.InputStream is = getContentResolver().openInputStream(uri);
+                            android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeStream(is);
+                            if (is != null) is.close();
+                            if (bitmap != null) {
+                                com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0);
+                                com.google.android.gms.tasks.Task<com.google.mlkit.vision.text.Text> task = recognizer.process(image);
+                                com.google.mlkit.vision.text.Text result = com.google.android.gms.tasks.Tasks.await(task);
+                                stringBuilder.append(result.getText());
+                                bitmap.recycle();
+                            }
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+
+                    runOnUiThread(() -> {
+                        if (progressDialog.isShowing()) progressDialog.dismiss();
+                        String text = stringBuilder.toString();
+                        if (text != null && !text.trim().isEmpty()) {
+                            Toast.makeText(MainActivity.this, "识图可能会出现错别字，注意甄别。", Toast.LENGTH_LONG).show();
+                            inputText.setText(text);
+                            saveHistory(text);
+                        } else {
+                            Toast.makeText(MainActivity.this, "未识别到任何文字或解析失败", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }).start();
+            }
+
             @Override
             protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                 super.onActivityResult(requestCode, resultCode, data);
@@ -2132,13 +2288,22 @@ jobs:
                 if (requestCode == 102 && resultCode == RESULT_OK && data != null) {
                     android.net.Uri uri = data.getData();
                     if (uri != null) {
-                        String text = extractTextFromUri(this, uri);
-                        if (text != null && !text.trim().isEmpty()) {
-                            inputText.setText(text);
-                            saveHistory(text);
-                            Toast.makeText(this, "导入成功", Toast.LENGTH_SHORT).show();
+                        String mimeType = getContentResolver().getType(uri);
+                        String name = getFileName(this, uri);
+                        boolean isImage = (mimeType != null && mimeType.startsWith("image/")) || (name != null && (name.toLowerCase().endsWith(".jpg") || name.toLowerCase().endsWith(".png") || name.toLowerCase().endsWith(".jpeg")));
+                        boolean isPdf = (mimeType != null && mimeType.equals("application/pdf")) || (name != null && name.toLowerCase().endsWith(".pdf"));
+
+                        if (isImage || isPdf) {
+                            processImageOrPdfMain(uri, isPdf);
                         } else {
-                            Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
+                            String text = extractTextFromUri(this, uri);
+                            if (text != null && !text.trim().isEmpty()) {
+                                inputText.setText(text);
+                                saveHistory(text);
+                                Toast.makeText(this, "导入成功", Toast.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
+                            }
                         }
                     }
                 }
