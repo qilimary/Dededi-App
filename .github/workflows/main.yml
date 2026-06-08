@@ -718,6 +718,14 @@ jobs:
                     SharedPreferences sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
                     String historyStr = sp.getString("history_records", "[]");
                     org.json.JSONArray historyArray = new org.json.JSONArray(historyStr);
+                    
+                    if (historyArray.length() > 0) {
+                        org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
+                        if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) {
+                            return; 
+                        }
+                    }
+                    
                     org.json.JSONObject newRecord = new org.json.JSONObject();
                     newRecord.put("time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
                     newRecord.put("text", text);
@@ -1176,7 +1184,8 @@ jobs:
                                                     }
                                                     String correct = MainActivity.typoMap.get(sub);
                                                     boolean isRealTypo = !sub.equals(correct);
-                                                    finalSentenceBlocks.add(new MainActivity.TextBlock(sub, correct, isRealTypo, 1.0f, 2));
+                                                    int blockType = MainActivity.customTypoKeys.contains(sub) ? 4 : 2;
+                                                    finalSentenceBlocks.add(new MainActivity.TextBlock(sub, correct, isRealTypo, 1.0f, blockType));
                                                     
                                                     if (isRealTypo) {
                                                         errorCount[0]++;
@@ -1337,10 +1346,12 @@ jobs:
         import java.util.Arrays;
         import java.util.Date;
         import java.util.HashMap;
+        import java.util.HashSet;
         import java.util.Iterator;
         import java.util.List;
         import java.util.Locale;
         import java.util.Map;
+        import java.util.Set;
         import java.util.zip.GZIPInputStream;
         import javax.crypto.Cipher;
         import javax.crypto.CipherInputStream;
@@ -1366,6 +1377,7 @@ jobs:
             public static long clsId=101, sepId=102, maskId=103, unkId=100, deId=0, diId=0, de2Id=0;
 
             public static Map<String, String> typoMap = new HashMap<>();
+            public static Set<String> customTypoKeys = new HashSet<>();
             public static int maxTypoLen = 0;
             public static int minTypoLen = Integer.MAX_VALUE;
             public static boolean typoMapLoaded = false;
@@ -1459,6 +1471,7 @@ jobs:
 
             public static synchronized void loadTypoMap(Context ctx) {
                 typoMap.clear();
+                customTypoKeys.clear();
                 maxTypoLen = 0;
                 minTypoLen = Integer.MAX_VALUE;
                 try {
@@ -1491,6 +1504,7 @@ jobs:
                         String err = keys.next();
                         String corr = customTypos.getString(err);
                         typoMap.put(err, corr);
+                        customTypoKeys.add(err);
                         maxTypoLen = Math.max(maxTypoLen, err.length());
                         minTypoLen = Math.min(minTypoLen, err.length());
                     }
@@ -1525,6 +1539,26 @@ jobs:
                         new Handler(Looper.getMainLooper()).post(() -> callback.onExtracted(""));
                     }
                 }).start();
+            }
+
+            public static String cleanOcrText(String text) {
+                if (text == null) return "";
+                String[] lines = text.split("\n", -1);
+                StringBuilder sb = new StringBuilder();
+                boolean first = true;
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i];
+                    String trimmed = line.trim();
+                    if (trimmed.length() == 1) {
+                        if ("个口日目一丨丶卜丿〇回凸凹卐卍了的地得".contains(trimmed)) {
+                            continue;
+                        }
+                    }
+                    if (!first) sb.append("\n");
+                    sb.append(line);
+                    first = false;
+                }
+                return sb.toString();
             }
 
             public static String performOcrOnBitmap(Bitmap fullBitmap, Context context) throws Exception {
@@ -1571,7 +1605,7 @@ jobs:
                     fullText.append(text.getText()).append("\n");
                     chunk.recycle();
                 }
-                return fixPunctuation(fullText.toString());
+                return cleanOcrText(fixPunctuation(fullText.toString()));
             }
 
             public static String performOcrOnPdf(android.net.Uri uri, Context context) throws Exception {
@@ -1596,7 +1630,7 @@ jobs:
                     renderer.close();
                     pfd.close();
                 }
-                return fixPunctuation(fullText.toString());
+                return cleanOcrText(fixPunctuation(fullText.toString()));
             }
 
             public static boolean isRowBlank(Bitmap b, int y) {
@@ -1763,6 +1797,14 @@ jobs:
                 try {
                     String historyStr = sp.getString("history_records", "[]");
                     JSONArray historyArray = new JSONArray(historyStr);
+                    
+                    if (historyArray.length() > 0) {
+                        JSONObject lastRecord = historyArray.getJSONObject(0);
+                        if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) {
+                            return; 
+                        }
+                    }
+                    
                     JSONObject newRecord = new JSONObject();
                     newRecord.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
                     newRecord.put("text", text);
@@ -2580,7 +2622,8 @@ jobs:
                                                     }
                                                     String correct = typoMap.get(sub);
                                                     boolean isRealTypo = !sub.equals(correct);
-                                                    finalSentenceBlocks.add(new TextBlock(sub, correct, isRealTypo, 1.0f, 2));
+                                                    int blockType = customTypoKeys.contains(sub) ? 4 : 2;
+                                                    finalSentenceBlocks.add(new TextBlock(sub, correct, isRealTypo, 1.0f, blockType));
                                                     i += len;
                                                     matchedTypo = true;
                                                     break;
@@ -2651,7 +2694,7 @@ jobs:
                                         String safeCurr = b.current.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
                                         if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                             liveErrorCount++;
-                                            String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : ((b.type == 2) ? " (自定义)" : "");
+                                            String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : ((b.type == 4) ? " (自定义)" : "");
                                             sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
                                         } else { sentenceErrorHtml.append(safeOrig); }
                                     }
@@ -2674,7 +2717,7 @@ jobs:
                                 lastUIUpdateTime = now;
                                 final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + 
                                 (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "") + 
-                                "<br><b><font color='#757575'>【发现错误】：</font></b><br>" + liveTextHtml;
+                                "<br><b><font color='#757575'>【全文预览】：</font></b><br>" + liveTextHtml;
                                 
                                 final int currentErrorCount = liveErrorCount;
                                 runOnUiThread(() -> {
@@ -2863,7 +2906,7 @@ jobs:
                                             int confStart = ssb.length(); ssb.append("(").append(confStr).append(")"); 
                                             ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                             ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        } else if (!b.userModified && b.type == 2) {
+                                        } else if (!b.userModified && b.type == 4) {
                                             int confStart = ssb.length(); ssb.append("(自定义)"); 
                                             ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                             ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
