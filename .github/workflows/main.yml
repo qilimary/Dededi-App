@@ -1885,16 +1885,21 @@ jobs:
                             boolean inText = false;
                             while (eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
                                 String tagName = parser.getName();
-                                if (eventType == org.xmlpull.v1.XmlPullParser.START_TAG && ("t".equals(tagName) || "w:t".equals(tagName))) {
-                                    inText = true;
+                                if (eventType == org.xmlpull.v1.XmlPullParser.START_TAG) {
+                                    if ("t".equals(tagName) || "w:t".equals(tagName)) {
+                                        inText = true;
+                                    }
                                 } else if (eventType == org.xmlpull.v1.XmlPullParser.TEXT && inText) {
                                     textBuilder.append(parser.getText());
-                                } else if (eventType == org.xmlpull.v1.XmlPullParser.END_TAG && ("t".equals(tagName) || "w:t".equals(tagName))) {
-                                    inText = false;
+                                } else if (eventType == org.xmlpull.v1.XmlPullParser.END_TAG) {
+                                    if ("t".equals(tagName) || "w:t".equals(tagName)) {
+                                        inText = false;
+                                    } else if ("p".equals(tagName) || "w:p".equals(tagName)) {
+                                        textBuilder.append("\n"); // 遇到段落结束符时加个换行
+                                    }
                                 }
                                 eventType = parser.next();
                             }
-                            
                         } catch (Exception e) {
                             java.util.regex.Matcher m = java.util.regex.Pattern.compile("<w:t[^>]*>(.*?)</w:t>", java.util.regex.Pattern.DOTALL).matcher(xmlContent);
                             while (m.find()) {
@@ -2721,7 +2726,7 @@ jobs:
                                 zos.closeEntry(); zos.putNextEntry(new java.util.zip.ZipEntry("word/document.xml"));
                                 String safeText = pendingSaveText.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
                                 StringBuilder docxContent = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>");
-                                for(String p : safeText.split("\n")) { docxContent.append("<w:p><w:r><w:t>").append(p).append("</w:t></w:r></w:p>"); }
+                                for(String p : safeText.split("\n")) { docxContent.append("<w:p><w:r><w:t xml:space=\"preserve\">").append(p).append("</w:t></w:r></w:p>"); }
                                 docxContent.append("</w:body></w:document>");
                                 zos.write(docxContent.toString().getBytes(StandardCharsets.UTF_8));
                                 zos.closeEntry(); zos.close();
