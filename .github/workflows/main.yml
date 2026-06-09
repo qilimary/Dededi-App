@@ -1,5 +1,4 @@
 
-
 name: Build Android APK
 
 on:
@@ -563,6 +562,74 @@ jobs:
                             android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
                     </ScrollView>
                     <View android:id="@+id/scrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end"/>
+
+                    <LinearLayout
+                        android:id="@+id/expandedEditorOverlay"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
+                        android:background="@color/bg_color"
+                        android:visibility="gone"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:elevation="10dp">
+                        
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="@color/card_bg"
+                            android:elevation="4dp">
+                            
+                            <Button
+                                android:id="@+id/btnEditorCollapse"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:text="↓"
+                                android:textColor="#03A9F4"
+                                android:textSize="22sp"
+                                android:background="?android:attr/selectableItemBackgroundBorderless"
+                                android:textStyle="bold"
+                                android:padding="0dp"/>
+                                
+                            <Space android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+                            
+                            <Button
+                                android:id="@+id/btnEditorSave"
+                                android:layout_width="60dp"
+                                android:layout_height="32dp"
+                                android:text="保存"
+                                android:textColor="#FFFFFF"
+                                android:backgroundTint="#4CAF50"
+                                android:textSize="13sp"
+                                android:padding="0dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:layout_marginEnd="12dp" />
+                                
+                            <Button
+                                android:id="@+id/btnEditorClose"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:text="✕"
+                                android:textColor="#E53935"
+                                android:textSize="18sp"
+                                android:background="?android:attr/selectableItemBackgroundBorderless"
+                                android:padding="0dp"/>
+                        </LinearLayout>
+
+                        <EditText
+                            android:id="@+id/expandedEditText"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:padding="12dp"
+                            android:gravity="top|start"
+                            android:background="@null"
+                            android:textSize="15sp"
+                            android:textColor="@color/text_primary"
+                            android:lineSpacingExtra="5dp" />
+                    </LinearLayout>
                 </FrameLayout>
             </LinearLayout>
 
@@ -1518,6 +1585,9 @@ jobs:
             private boolean isTyposExpanded = false;
             private boolean isRestoringHistory = false;
             private String lastSavedHistoryFileId = null;
+            
+            // 【新增】用于标记是否处于便签编辑模式应用后
+            private boolean isManuallyEditedOut = false;
 
             public static class TextBlock {
                 String original, current, modelCorrected;
@@ -1533,6 +1603,29 @@ jobs:
                 }
             }
             
+            // 【新增】自定义的 Span 标记，被此标记包裹的内容在提取纯文本时会被智能跳过过滤掉
+            public static class IgnoredInCopySpan extends android.text.style.CharacterStyle {
+                @Override public void updateDrawState(TextPaint tp) {}
+            }
+
+            public static String extractCleanTextFromSpanned(Spanned sp) {
+                if (sp == null) return "";
+                StringBuilder sb = new StringBuilder();
+                IgnoredInCopySpan[] spans = sp.getSpans(0, sp.length(), IgnoredInCopySpan.class);
+                boolean[] ignore = new boolean[sp.length()];
+                for (IgnoredInCopySpan span : spans) {
+                    int start = sp.getSpanStart(span);
+                    int end = sp.getSpanEnd(span);
+                    for (int i = start; i < end; i++) {
+                        if (i >= 0 && i < ignore.length) ignore[i] = true;
+                    }
+                }
+                for (int i = 0; i < sp.length(); i++) {
+                    if (!ignore[i]) sb.append(sp.charAt(i));
+                }
+                return sb.toString();
+            }
+
             public static List<List<TextBlock>> allSentencesBlocks = new ArrayList<>();
             public static long lastTimeMs = 0;
             public static boolean hasNewFloatResult = false;
@@ -2102,6 +2195,56 @@ jobs:
                     if (scrollY < oldScrollY) autoScrollEnabled = false;
                     if (!isTouchingScrollView && !v.canScrollVertically(1)) autoScrollEnabled = true;
                 });
+                
+                // === 【便签编辑器动效与事件逻辑】 ===
+                View expandedEditorOverlay = findViewById(R.id.expandedEditorOverlay);
+                EditText expandedEditText = findViewById(R.id.expandedEditText);
+                Button btnEditorCollapse = findViewById(R.id.btnEditorCollapse);
+                Button btnEditorSave = findViewById(R.id.btnEditorSave);
+                Button btnEditorClose = findViewById(R.id.btnEditorClose);
+
+                outputText.setOnLongClickListener(v -> {
+                    if (outputText.getText().length() == 0 || "正在加载...".equals(outputText.getText().toString()) || "AI已加载。".equals(outputText.getText().toString())) return false;
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                    
+                    SpannableString ss = new SpannableString(outputText.getText());
+                    // 脱落所有的点击事件，防止编辑时弹出选择框
+                    ClickableSpan[] clicks = ss.getSpans(0, ss.length(), ClickableSpan.class);
+                    for (ClickableSpan c : clicks) ss.removeSpan(c);
+                    
+                    expandedEditText.setText(ss);
+                    expandedEditorOverlay.setAlpha(0f);
+                    expandedEditorOverlay.setTranslationY(150f);
+                    expandedEditorOverlay.setVisibility(View.VISIBLE);
+                    expandedEditorOverlay.animate().alpha(1f).translationY(0f).setDuration(250).start();
+                    Toast.makeText(this, "进入便签模式：保存或复制时仅会提取最下方【修正后的全文】内容，请在那里修改", Toast.LENGTH_LONG).show();
+                    return true;
+                });
+
+                Runnable applyEditorChanges = () -> {
+                    isManuallyEditedOut = true;
+                    outputText.setText(expandedEditText.getText());
+                    expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> expandedEditorOverlay.setVisibility(View.GONE)).start();
+                };
+
+                btnEditorCollapse.setOnClickListener(v -> applyEditorChanges.run());
+                
+                btnEditorClose.setOnClickListener(v -> {
+                    new AlertDialog.Builder(this)
+                        .setMessage("保留此次更改吗？")
+                        .setPositiveButton("是", (d, w) -> applyEditorChanges.run())
+                        .setNegativeButton("否", (d, w) -> {
+                            expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> expandedEditorOverlay.setVisibility(View.GONE)).start();
+                        })
+                        .show();
+                });
+
+                btnEditorSave.setOnClickListener(v -> {
+                    isManuallyEditedOut = true;
+                    outputText.setText(expandedEditText.getText());
+                    btnSaveTxt.performClick();
+                });
+                // ===================================
 
                 currentIsFast = sp.getBoolean("is_fast_mode", false);
                 rbFast.setChecked(currentIsFast);
@@ -2181,6 +2324,7 @@ jobs:
                             "举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n" +
                             "【交互与拓展功能】\n" +
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
+                            "• 便签模式：长按（>0.5s）底部纠错清单区域，即可滑出便签编辑器进行全局排版或修改漏掉的错字，完成后支持直接导出。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n" +
@@ -2238,6 +2382,7 @@ jobs:
                     inputText.setText("");
                     allSentencesBlocks.clear();
                     outputText.setText("");
+                    isManuallyEditedOut = false;
                     btnCopy.setEnabled(false);
                     btnSaveTxt.setEnabled(false);
                     if (isCheckingMain) {
@@ -2255,6 +2400,7 @@ jobs:
                     }
 
                     hasStartedChecking = true; saveSettings(currentIsFast); autoScrollEnabled = true;
+                    isManuallyEditedOut = false;
                     
                     float tempVal = 1.0f;
                     try { tempVal = Float.parseFloat(editTemp.getText().toString()); } catch (Exception ignored) {}
@@ -2274,7 +2420,8 @@ jobs:
                 });
 
                 btnCopy.setOnClickListener(v -> {
-                    String finalTxt = getCleanTextStatic();
+                    // 若有便签模式的改动，智能提取剔除掉干扰字符后的纯净文本
+                    String finalTxt = isManuallyEditedOut ? extractCleanTextFromSpanned((Spanned) outputText.getText()) : getCleanTextStatic();
                     if (finalTxt.isEmpty()) return;
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     ClipData clip = ClipData.newPlainText("Corrected Article", finalTxt);
@@ -2289,7 +2436,7 @@ jobs:
                     String[] options = {"TXT 纯文本", "MD 文档", "PDF 文档", "DOCX 文档", "JPG 图片", "PNG 图片"};
                     new AlertDialog.Builder(this).setTitle("选择保存格式").setItems(options, (dialog, which) -> {
                         saveFormat = which;
-                        String textToSave = getCleanTextStatic();
+                        String textToSave = isManuallyEditedOut ? extractCleanTextFromSpanned((Spanned) outputText.getText()) : getCleanTextStatic();
                         boolean hasCorrections = false;
                         
                         if (textToSave.isEmpty()) {
@@ -2297,13 +2444,17 @@ jobs:
                             String formatStr = options[which].split(" ")[0];
                             Toast.makeText(this, "未开始纠错，将保存原始文本为" + formatStr + "格式", Toast.LENGTH_LONG).show();
                         } else {
-                            for (List<TextBlock> sentence : allSentencesBlocks) {
-                                for (TextBlock b : sentence) {
-                                    if (b.isMutable && !b.current.equals(b.original)) {
-                                        hasCorrections = true; break;
+                            if (isManuallyEditedOut) {
+                                hasCorrections = true;
+                            } else {
+                                for (List<TextBlock> sentence : allSentencesBlocks) {
+                                    for (TextBlock b : sentence) {
+                                        if (b.isMutable && (!b.current.equals(b.original))) {
+                                            hasCorrections = true; break;
+                                        }
                                     }
+                                    if (hasCorrections) break;
                                 }
-                                if (hasCorrections) break;
                             }
                         }
                         
@@ -2594,6 +2745,7 @@ jobs:
                 
                 if (hasNewFloatResult) {
                     hasNewFloatResult = false;
+                    isManuallyEditedOut = false;
                     renderFinalBlocks();
                     btnCopy.setEnabled(true);
                     btnCheck.setEnabled(true);
@@ -3268,6 +3420,12 @@ jobs:
                 }
                 
                 SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(fullHeader);
+                
+                // 【核心变更】把报告栏头部区域的所有内容打上屏蔽标记，防止便签编辑后提取纯文本时混入
+                int topSectionEnd = ssb.length();
+                if (topSectionEnd > 0) {
+                    ssb.setSpan(new IgnoredInCopySpan(), 0, topSectionEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
                 
                 baseOffsetObj[0] = ssb.length();
                 ssb.append(ssbFull);
