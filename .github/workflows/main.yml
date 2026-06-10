@@ -1,4 +1,3 @@
-
 name: Build Android APK
 
 on:
@@ -162,8 +161,8 @@ jobs:
                 applicationId "com.app.dededi"
                 minSdk 24
                 targetSdk 33
-                versionCode 18
-                versionName "2.70"
+                versionCode 19
+                versionName "3.0"
                 ndk { abiFilters "arm64-v8a" }
                 externalNativeBuild { cmake { cppFlags "" } }
             }
@@ -1464,6 +1463,7 @@ jobs:
         import android.text.style.ClickableSpan;
         import android.text.style.ForegroundColorSpan;
         import android.text.style.StrikethroughSpan;
+        import android.text.InputFilter;
         import android.view.MotionEvent;
         import android.view.View;
         import android.view.ViewGroup;
@@ -1603,6 +1603,22 @@ jobs:
             private boolean isManuallyEditedOut = false;
             private String originalEditorText = "";
             private SpannableStringBuilder lastEditorSpannable;
+            
+            public boolean isEditorSelfModifying = false;
+            public List<ClauseLink> currentClauseLinks = new ArrayList<>();
+
+            public static class TargetSpan {
+                String expected;
+                public TargetSpan(String exp) { expected = exp; }
+            }
+            public static class ListMarkerSpan { }
+            public static class HeaderEndSpan { }
+
+            public static class ClauseLink {
+                public ListMarkerSpan listMarkerSpan;
+                public List<TargetSpan> targetSpans = new ArrayList<>();
+                public boolean isDead = false;
+            }
 
             public static class TextBlock {
                 String original, current, modelCorrected;
@@ -2260,6 +2276,77 @@ jobs:
 
                 expandedEditText.setMovementMethod(LinkMovementMethod.getInstance());
 
+                expandedEditText.addTextChangedListener(new TextWatcher() {
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override public void afterTextChanged(Editable s) {
+                        if (isCheckingMain || currentClauseLinks == null || isEditorSelfModifying) return;
+                        
+                        boolean needPurge = false;
+                        for (ClauseLink link : currentClauseLinks) {
+                            if (link.isDead) continue;
+                            boolean clauseAltered = false;
+                            for (TargetSpan ts : link.targetSpans) {
+                                int tsStart = s.getSpanStart(ts);
+                                int tsEnd = s.getSpanEnd(ts);
+                                if (tsStart == -1 || tsEnd == -1) {
+                                    clauseAltered = true; break;
+                                }
+                                String currentContent = s.subSequence(tsStart, tsEnd).toString();
+                                if (!currentContent.equals(ts.expected)) {
+                                    clauseAltered = true; break;
+                                }
+                            }
+                            if (clauseAltered) {
+                                link.isDead = true;
+                                needPurge = true;
+                            }
+                        }
+                        
+                        if (needPurge) {
+                            expandedEditText.post(() -> {
+                                isEditorSelfModifying = true;
+                                Editable editable = expandedEditText.getText();
+                                List<ListMarkerSpan> spansToDelete = new ArrayList<>();
+                                for (ClauseLink link : currentClauseLinks) {
+                                    if (link.isDead && editable.getSpanStart(link.listMarkerSpan) != -1) {
+                                        spansToDelete.add(link.listMarkerSpan);
+                                    }
+                                }
+                                spansToDelete.sort((a, b) -> Integer.compare(editable.getSpanStart(b), editable.getSpanStart(a)));
+                                
+                                for (ListMarkerSpan span : spansToDelete) {
+                                    int mStart = editable.getSpanStart(span);
+                                    int mEnd = editable.getSpanEnd(span);
+                                    if (mStart != -1 && mEnd != -1) {
+                                        editable.delete(mStart, mEnd);
+                                    }
+                                }
+                                isEditorSelfModifying = false;
+                            });
+                        }
+                    }
+                });
+
+                expandedEditText.setFilters(new InputFilter[]{
+                    new InputFilter() {
+                        public CharSequence filter(CharSequence source, int start, int end, Spanned dest, int dstart, int dend) {
+                            if (isEditorSelfModifying) return null;
+                            Editable editable = expandedEditText.getText();
+                            if (editable != null) {
+                                HeaderEndSpan[] spans = editable.getSpans(0, editable.length(), HeaderEndSpan.class);
+                                if (spans.length > 0) {
+                                    int lockedEnd = editable.getSpanStart(spans[0]);
+                                    if (lockedEnd > 0 && dstart < lockedEnd) {
+                                        return dest.subSequence(dstart, dend);
+                                    }
+                                }
+                            }
+                            return null;
+                        }
+                    }
+                });
+
                 editorScrollTouchArea.setOnTouchListener((v, event) -> {
                     int action = event.getActionMasked();
                     Layout layout = expandedEditText.getLayout();
@@ -2288,7 +2375,10 @@ jobs:
                             lastEditorSpannable = new SpannableStringBuilder(outputText.getText());
                         }
                         originalEditorText = lastEditorSpannable.toString();
+                        
+                        isEditorSelfModifying = true;
                         expandedEditText.setText(lastEditorSpannable);
+                        isEditorSelfModifying = false;
                         
                         expandedEditorOverlay.setAlpha(0f);
                         expandedEditorOverlay.setTranslationY(150f);
@@ -2304,7 +2394,7 @@ jobs:
                                 isLongPressTriggered[0] = false;
                                 startX[0] = event.getX();
                                 startY[0] = event.getY();
-                                handler.postDelayed(longPressRunnable, 800);
+                                handler.postDelayed(longPressRunnable, 600);
                                 break;
                             case MotionEvent.ACTION_MOVE:
                                 if (Math.abs(event.getX() - startX[0]) > 20 || Math.abs(event.getY() - startY[0]) > 20) {
@@ -3397,20 +3487,20 @@ jobs:
                 for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) currentErrors++; } }
                 
                 final int[] baseOffsetObj = {0}; 
-                final int[] baseOffsetEditorObj = {0};
                 
                 SpannableStringBuilder ssbFull = new SpannableStringBuilder();
                 SpannableStringBuilder ssbFullEditor = new SpannableStringBuilder();
                 
                 List<Integer> errorOffsets = new ArrayList<>();
-                List<Integer> editorErrorOffsets = new ArrayList<>();
+                
+                currentClauseLinks.clear();
+                Map<TextBlock, TargetSpan> blockToTargetSpan = new HashMap<>();
                 
                 for (List<TextBlock> sentence : allSentencesBlocks) {
                     for (TextBlock b : sentence) {
                         boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
                         if (isError) {
                             errorOffsets.add(ssbFull.length());
-                            editorErrorOffsets.add(ssbFullEditor.length());
                         }
                         
                         // 生成主视窗富文本
@@ -3435,12 +3525,14 @@ jobs:
                         // 生成便签专用的纯净富文本
                         int startEd = ssbFullEditor.length(); ssbFullEditor.append(b.current);
                         if (b.isMutable) {
-                            if (!b.current.equals(b.original) && !b.userModified) {
-                                ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFFE53935), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                            } else if (b.userModified) {
+                            if (isError) {
+                                TargetSpan ts = new TargetSpan(b.current);
+                                blockToTargetSpan.put(b, ts);
+                                ssbFullEditor.setSpan(ts, startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            }
+                            
+                            if (!b.current.equals(b.original)) { // Green wavy line for both user and model
                                 ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                            } else {
-                                ssbFullEditor.setSpan(new ForegroundColorSpan(0xFF2196F3), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                             }
                         }
                     }
@@ -3485,18 +3577,14 @@ jobs:
                             for (TextBlock b : clause) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) errsInClause.add(b); }
                             
                             if (!errsInClause.isEmpty()) {
+                                // ======== Main view (ssb) ========
                                 int stStart = ssb.length();
-                                int stStartEd = ssbEditor.length();
-                                
-                                ssb.append("["); ssbEditor.append("[");
+                                ssb.append("[");
                                 for (int i = 0; i < errsInClause.size(); i++) {
-                                    String numStr = String.valueOf(listErrIdx + i + 1);
-                                    ssb.append(numStr); ssbEditor.append(numStr);
-                                    if (i < errsInClause.size() - 1) {
-                                        ssb.append(","); ssbEditor.append(",");
-                                    }
+                                    ssb.append(String.valueOf(listErrIdx + i + 1));
+                                    if (i < errsInClause.size() - 1) ssb.append(",");
                                 }
-                                ssb.append("] "); ssbEditor.append("] ");
+                                ssb.append("] ");
                                 
                                 final int firstErrIdxInClause = listErrIdx;
                                 JumpSpan jumpSpan = new JumpSpan() {
@@ -3509,7 +3597,6 @@ jobs:
                                                 int line = layout.getLineForOffset(absOff);
                                                 int y = layout.getLineTop(line);
                                                 scrollView.smoothScrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
-                                                
                                                 int lineStart = layout.getLineStart(line);
                                                 int lineEnd = layout.getLineEnd(line);
                                                 if (tv.getText() instanceof Spannable) {
@@ -3528,70 +3615,31 @@ jobs:
                                 };
                                 ssb.setSpan(jumpSpan, stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
-                                JumpSpan jumpSpanEd = new JumpSpan() {
-                                    @Override public void onClick(View w) {
-                                        if (firstErrIdxInClause < editorErrorOffsets.size()) {
-                                            int absOff = baseOffsetEditorObj[0] + editorErrorOffsets.get(firstErrIdxInClause);
-                                            TextView tv = (TextView) w;
-                                            Layout layout = tv.getLayout();
-                                            if (layout != null) {
-                                                int line = layout.getLineForOffset(absOff);
-                                                int y = layout.getLineTop(line);
-                                                tv.scrollTo(0, Math.max(0, y - tv.getHeight() / 3));
-                                                
-                                                int lineStart = layout.getLineStart(line);
-                                                int lineEnd = layout.getLineEnd(line);
-                                                if (tv.getText() instanceof Spannable) {
-                                                    Spannable spanText = (Spannable) tv.getText();
-                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
-                                                    spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                                    Handler handler = new Handler(Looper.getMainLooper());
-                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 500);
-                                                    handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); }, 800);
-                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 1300);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
-                                };
-                                ssbEditor.setSpan(jumpSpanEd, stStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                
                                 for (TextBlock b : clause) {
                                     if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                         int oldTextStart = ssb.length(); 
-                                        int oldTextStartEd = ssbEditor.length();
-                                        ssb.append(b.original); ssbEditor.append(b.original);
+                                        ssb.append(b.original); 
                                         ssb.setSpan(new StrikethroughSpan(), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                         ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                                        ssbEditor.setSpan(new StrikethroughSpan(), oldTextStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                                        ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                                        ssb.append(" "); ssbEditor.append(" ");
+                                        ssb.append(" ");
                                         
                                         int newStart = ssb.length(); 
-                                        int newStartEd = ssbEditor.length();
-                                        ssb.append(b.current); ssbEditor.append(b.current);
+                                        ssb.append(b.current);
                                         
                                         EditSpan clickSpan = new EditSpan() {
                                             @Override public void onClick(View w) { showEditDialog(b); }
                                             @Override public void updateDrawState(TextPaint ds) { 
                                                 if (!b.current.equals(b.original)) { 
-                                                    if (b.userModified) ds.setColor(0xFF4CAF50); 
-                                                    else ds.setColor(0xFFE53935); 
+                                                    ds.setColor(0xFF4CAF50); 
                                                     ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); 
-                                                } else { ds.setColor(0xFF2196F3); }
+                                                } else { 
+                                                    ds.setColor(0xFF2196F3); 
+                                                }
                                                 ds.setUnderlineText(true); 
                                             }
                                         };
                                         ssb.setSpan(clickSpan, newStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                         
-                                        if (!b.current.equals(b.original) && !b.userModified) {
-                                            ssbEditor.setSpan(new WavyUnderlineSpan(0xFFE53935), newStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        } else if (b.userModified) {
-                                            ssbEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), newStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        }
-                                        
-                                        // 置信度只添加到主视窗
                                         if (!b.userModified && b.type == 1) {
                                             String confStr = "置信度: " + String.format("%.2f", b.conf);
                                             int confStart = ssb.length(); ssb.append("(").append(confStr).append(")"); 
@@ -3605,13 +3653,100 @@ jobs:
                                         
                                         listErrIdx++;
                                     } else { 
-                                        ssb.append(b.current); ssbEditor.append(b.current);
+                                        ssb.append(b.current); 
                                     }
                                 }
-                                ssb.append("\n"); ssbEditor.append("\n");
+                                ssb.append("\n");
+                                
+                                // ======== Editor (ssbEditor) ========
+                                final ClauseLink link = new ClauseLink();
+                                int edMarkerStart = ssbEditor.length();
+                                ssbEditor.append("[");
+                                for (int i = 0; i < errsInClause.size(); i++) {
+                                    ssbEditor.append(String.valueOf(listErrIdx - errsInClause.size() + i + 1));
+                                    if (i < errsInClause.size() - 1) ssbEditor.append(",");
+                                }
+                                ssbEditor.append("] ");
+                                int edMarkerEnd = ssbEditor.length();
+                                
+                                ListMarkerSpan lms = new ListMarkerSpan();
+                                ssbEditor.setSpan(lms, edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                ssbEditor.setSpan(new ForegroundColorSpan(0xFF2196F3), edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                ssbEditor.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                link.listMarkerSpan = lms;
+                                
+                                JumpSpan edJumpSpan = new JumpSpan() {
+                                    @Override public void onClick(View w) {
+                                        if (!link.isDead && !link.targetSpans.isEmpty()) {
+                                            EditText et = (EditText) w;
+                                            Editable editable = et.getText();
+                                            TargetSpan firstTarget = null;
+                                            for (TargetSpan ts : link.targetSpans) {
+                                                if (editable.getSpanStart(ts) >= 0) { firstTarget = ts; break; }
+                                            }
+                                            if (firstTarget != null) {
+                                                int pos = editable.getSpanStart(firstTarget);
+                                                Layout layout = et.getLayout();
+                                                if (layout != null) {
+                                                    int line = layout.getLineForOffset(pos);
+                                                    int y = layout.getLineTop(line);
+                                                    et.scrollTo(0, Math.max(0, y - et.getHeight() / 3));
+                                                    int lineStart = layout.getLineStart(line);
+                                                    int lineEnd = layout.getLineEnd(line);
+                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
+                                                    editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                                    Handler handler = new Handler(Looper.getMainLooper());
+                                                    handler.postDelayed(() -> { editable.removeSpan(flashSpan); et.invalidate(); }, 500);
+                                                    handler.postDelayed(() -> { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); et.invalidate(); }, 800);
+                                                    handler.postDelayed(() -> { editable.removeSpan(flashSpan); et.invalidate(); }, 1300);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
+                                };
+                                ssbEditor.setSpan(edJumpSpan, edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                
+                                for (TextBlock b : clause) {
+                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                        int edOldStart = ssbEditor.length();
+                                        ssbEditor.append(b.original);
+                                        ssbEditor.setSpan(new StrikethroughSpan(), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        ssbEditor.append(" ");
+                                        int edNewStart = ssbEditor.length();
+                                        ssbEditor.append(b.current);
+                                        ssbEditor.setSpan(new ForegroundColorSpan(0xFF4CAF50), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        ssbEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        ssbEditor.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        if (!b.userModified && b.type == 1) {
+                                            String confStr = "置信度: " + String.format("%.2f", b.conf);
+                                            int confStart = ssbEditor.length(); ssbEditor.append("(").append(confStr).append(")"); 
+                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            ssbEditor.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        } else if (!b.userModified && b.type == 4) {
+                                            int confStart = ssbEditor.length(); ssbEditor.append("(自定义)");
+                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            ssbEditor.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        }
+                                    } else { 
+                                        ssbEditor.append(b.current); 
+                                    }
+                                }
+                                ssbEditor.append("\n");
+                                
+                                for (TextBlock b : clause) {
+                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                        TargetSpan ts = blockToTargetSpan.get(b);
+                                        if (ts != null) link.targetSpans.add(ts);
+                                    }
+                                }
+                                
+                                currentClauseLinks.add(link);
                             }
                         }
                     }
+                    
                     SpannableString sep = new SpannableString("\n---------------------------------\n\n"); 
                     sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                     ssb.append(sep); ssbEditor.append(sep);
@@ -3620,21 +3755,28 @@ jobs:
                 SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); 
                 fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                 fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                ssb.append(fullHeader); ssbEditor.append(fullHeader);
+                ssb.append(fullHeader);
+                SpannableString fullHeaderEd = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); 
+                fullHeaderEd.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeaderEd.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                fullHeaderEd.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeaderEd.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                ssbEditor.append(fullHeaderEd);
                 
                 int topSectionEnd = ssb.length();
                 if (topSectionEnd > 0) {
                     ssb.setSpan(new IgnoredInCopySpan(), 0, topSectionEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
-                int topSectionEndEd = ssbEditor.length();
-                if (topSectionEndEd > 0) {
-                    ssbEditor.setSpan(new IgnoredInCopySpan(), 0, topSectionEndEd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                int edHeaderEnd = ssbEditor.length();
+                if (edHeaderEnd > 0) {
+                    ssbEditor.setSpan(new IgnoredInCopySpan(), 0, edHeaderEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
                 
                 baseOffsetObj[0] = ssb.length();
                 ssb.append(ssbFull);
-                baseOffsetEditorObj[0] = ssbEditor.length();
                 ssbEditor.append(ssbFullEditor);
+                
+                if (edHeaderEnd > 0 && ssbEditor.length() > edHeaderEnd) {
+                    ssbEditor.setSpan(new HeaderEndSpan(), edHeaderEnd, edHeaderEnd + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
                 
                 lastEditorSpannable = ssbEditor;
                 
@@ -3677,7 +3819,6 @@ jobs:
         ./gradlew assembleRelease --stacktrace --console=plain > build_output.log 2>&1 || {
           echo "### ❌ 编译未通过！以下是具体报错信息：" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
-          # ★ 改为显示最后 300 行，并过滤出关键错误
           tail -n 300 build_output.log >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -3693,3 +3834,4 @@ jobs:
       with:
         name: Dededi-App-APK-Pro
         path: app/build/outputs/apk/release/app-release.apk
+                            
