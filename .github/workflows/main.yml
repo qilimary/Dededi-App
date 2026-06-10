@@ -2549,11 +2549,30 @@ jobs:
                 btnEditorUndo.setOnClickListener(v -> {
                     if (!editorUndoStack.isEmpty()) {
                         try {
+                            // ===== 新增：保存撤销前的光标位置和滚动位置 =====
+                            int savedSelection = expandedEditText.getSelectionStart();
+                            int savedScrollY = expandedEditText.getScrollY();
+                
                             isEditorSelfModifying = true;
                             SpannableStringBuilder previous = editorUndoStack.pop();
                             expandedEditText.setText(previous);
                             isEditorSelfModifying = false;
-                            
+                
+                            // ===== 新增：恢复光标位置（限制在新文本长度范围内） =====
+                            int newLen = expandedEditText.length();
+                            int restoredSelection = Math.max(0, Math.min(savedSelection, newLen));
+                            expandedEditText.setSelection(restoredSelection);
+                
+                            // ===== 新增：恢复滚动位置（需等布局计算完成后再滚动） =====
+                            expandedEditText.post(() -> {
+                                try {
+                                    int maxScrollY = expandedEditText.getLayout() != null 
+                                        ? expandedEditText.getLayout().getHeight() - expandedEditText.getHeight() 
+                                        : savedScrollY;
+                                    expandedEditText.scrollTo(0, Math.max(0, Math.min(savedScrollY, maxScrollY)));
+                                } catch (Exception ignored) {}
+                            });
+                
                             String currentText = previous.toString();
                             if (currentText.equals(originalEditorText)) {
                                 isManuallyEditedOut = false;
@@ -2562,6 +2581,19 @@ jobs:
                                 expandedEditText.setText(lastEditorSpannable);
                                 isEditorSelfModifying = false;
                                 editorUndoStack.clear();
+                
+                                // ===== 新增：恢复文本被二次替换后的位置 =====
+                                int len2 = expandedEditText.length();
+                                expandedEditText.setSelection(Math.max(0, Math.min(restoredSelection, len2)));
+                                int finalScrollY = savedScrollY;
+                                expandedEditText.post(() -> {
+                                    try {
+                                        int maxScrollY2 = expandedEditText.getLayout() != null 
+                                            ? expandedEditText.getLayout().getHeight() - expandedEditText.getHeight() 
+                                            : finalScrollY;
+                                        expandedEditText.scrollTo(0, Math.max(0, Math.min(finalScrollY, maxScrollY2)));
+                                    } catch (Exception ignored) {}
+                                });
                             }
                         } catch (Exception e) {
                             isEditorSelfModifying = false;
