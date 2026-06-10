@@ -2482,7 +2482,8 @@ jobs:
                             if (isEditorSelfModifying) return null;
                             Editable editable = expandedEditText.getText();
                             if (editable != null) {
-                                IgnoredInCopySpan[] spans = editable.getSpans(0, editable.length(), IgnoredInCopySpan.class);
+                                // 【性能优化】只扫描发生改变的局部区域（前后各扩1个字符），避免打字时去全量扫描几万字的文本，彻底解决输入卡顿！
+                                IgnoredInCopySpan[] spans = editable.getSpans(Math.max(0, dstart - 1), Math.min(editable.length(), dend + 1), IgnoredInCopySpan.class);
                                 for (IgnoredInCopySpan span : spans) {
                                     int spanStart = editable.getSpanStart(span);
                                     int spanEnd = editable.getSpanEnd(span);
@@ -2644,11 +2645,27 @@ jobs:
 
                     String text = editable.toString();
                     java.util.List<int[]> replacements = new java.util.ArrayList<>();
-                    int lineStart = 0;
+                    
+                    // 【修复】动态寻找正文起点，跳过顶部的非正文区域（如：纠错清单等）
+                    int contentStartIndex = 0;
+                    int idx1 = text.indexOf("【修正后的全文】\n");
+                    int idx2 = text.indexOf("【原文】\n");
+                    if (idx1 != -1) contentStartIndex = idx1 + 9;
+                    else if (idx2 != -1) contentStartIndex = idx2 + 5;
+
+                    int lineStart = contentStartIndex;
 
                     // 2. 逐行解析，计算出每行开头原本有多少个杂乱的空格
                     while (lineStart < text.length()) {
                         int lineEnd = text.indexOf('\n', lineStart);
+                        if (lineEnd == -1) lineEnd = text.length();
+
+                        // 【新增】智能忽略多文档合并时产生的文档分割标签
+                        String lineStr = text.substring(lineStart, lineEnd).trim();
+                        if (lineStr.startsWith("［文档") && lineStr.endsWith("］")) {
+                            lineStart = lineEnd + 1;
+                            continue;
+                        }
                         if (lineEnd == -1) lineEnd = text.length();
 
                         int firstNonSpace = lineStart;
