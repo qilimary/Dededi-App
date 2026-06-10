@@ -2380,7 +2380,8 @@ jobs:
                             }
                             if (off < maxLockedEnd) {
                                 // 强制将光标甩入正文开头，防止用户在清单区输入或破坏结构
-                                widget.post(() -> widget.setSelection(maxLockedEnd));
+                                final int finalMaxLockedEnd = maxLockedEnd; // 【修复】用 final 变量定格数值，供给 Lambda 使用
+                                widget.post(() -> widget.setSelection(finalMaxLockedEnd));
                             }
                         }
                     }
