@@ -603,6 +603,19 @@ jobs:
                             <Space android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
                             
                             <Button
+                                android:id="@+id/btnEditorUndo"
+                                android:layout_width="64dp"
+                                android:layout_height="36dp"
+                                android:text="撤销"
+                                android:textColor="#FFFFFF"
+                                android:backgroundTint="#03A9F4"
+                                android:textSize="13sp"
+                                android:padding="0dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:layout_marginEnd="8dp" />
+                                
+                            <Button
                                 android:id="@+id/btnEditorSave"
                                 android:layout_width="64dp"
                                 android:layout_height="36dp"
@@ -916,7 +929,14 @@ jobs:
                 Button btnFloatCloseAll = floatView.findViewById(R.id.btnFloatCloseAll);
                 
                 editFloatInput.addTextChangedListener(new TextWatcher() {
-                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                        if (isEditorSelfModifying || isCheckingMain) return;
+                        try {
+                            SpannableStringBuilder snapshot = new SpannableStringBuilder(s);
+                            editorUndoStack.push(snapshot);
+                            if (editorUndoStack.size() > 100) editorUndoStack.remove(0);
+                        } catch (Exception e) {}
+                    }
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
                     @Override public void afterTextChanged(Editable s) {
                         if (!isChecking) {
@@ -1610,6 +1630,8 @@ jobs:
             
             public boolean isEditorSelfModifying = false;
             public List<ClauseLink> currentClauseLinks = new ArrayList<>();
+            private java.util.Stack<SpannableStringBuilder> editorUndoStack = new java.util.Stack<>();
+            private Map<TextBlock, TargetSpan> blockToMainTargetSpan = new HashMap<>();
 
             public static class TargetSpan {
                 String expected;
@@ -2310,22 +2332,29 @@ jobs:
                         if (needPurge) {
                             expandedEditText.post(() -> {
                                 isEditorSelfModifying = true;
-                                Editable editable = expandedEditText.getText();
-                                List<ListMarkerSpan> spansToDelete = new ArrayList<>();
-                                for (ClauseLink link : currentClauseLinks) {
-                                    if (link.isDead && editable.getSpanStart(link.listMarkerSpan) != -1) {
-                                        spansToDelete.add(link.listMarkerSpan);
+                                try {
+                                    Editable editable = expandedEditText.getText();
+                                    List<ListMarkerSpan> spansToDelete = new ArrayList<>();
+                                    for (ClauseLink link : currentClauseLinks) {
+                                        if (link.isDead && editable.getSpanStart(link.listMarkerSpan) != -1) {
+                                            spansToDelete.add(link.listMarkerSpan);
+                                        }
                                     }
-                                }
-                                spansToDelete.sort((a, b) -> Integer.compare(editable.getSpanStart(b), editable.getSpanStart(a)));
-                                
-                                for (ListMarkerSpan span : spansToDelete) {
-                                    int mStart = editable.getSpanStart(span);
-                                    int mEnd = editable.getSpanEnd(span);
-                                    if (mStart != -1 && mEnd != -1) {
-                                        editable.delete(mStart, mEnd);
+                                    spansToDelete.sort((a, b) -> Integer.compare(editable.getSpanStart(b), editable.getSpanStart(a)));
+                                    
+                                    for (ListMarkerSpan span : spansToDelete) {
+                                        int mStart = editable.getSpanStart(span);
+                                        int mEnd = editable.getSpanEnd(span);
+                                        if (mStart != -1 && mEnd != -1) {
+                                            int lineStart = mStart;
+                                            while (lineStart > 0 && editable.charAt(lineStart - 1) != '\n') lineStart--;
+                                            int lineEnd = mEnd;
+                                            while (lineEnd < editable.length() && editable.charAt(lineEnd) != '\n') lineEnd++;
+                                            if (lineEnd < editable.length()) lineEnd++;
+                                            editable.delete(lineStart, lineEnd);
+                                        }
                                     }
-                                }
+                                } catch (Exception e) {}
                                 isEditorSelfModifying = false;
                             });
                         }
@@ -2406,9 +2435,11 @@ jobs:
                                 }
                                 originalEditorText = lastEditorSpannable.toString();
                                 
+                                
                                 isEditorSelfModifying = true;
                                 expandedEditText.setText(lastEditorSpannable);
                                 isEditorSelfModifying = false;
+                                editorUndoStack.clear();
                                 
                                 expandedEditorOverlay.setAlpha(0f);
                                 expandedEditorOverlay.setTranslationY(150f);
@@ -2472,6 +2503,30 @@ jobs:
                             .show();
                     } else {
                         expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> expandedEditorOverlay.setVisibility(View.GONE)).start();
+                    }
+                });
+                
+                Button btnEditorUndo = findViewById(R.id.btnEditorUndo);
+                btnEditorUndo.setOnClickListener(v -> {
+                    if (!editorUndoStack.isEmpty()) {
+                        try {
+                            isEditorSelfModifying = true;
+                            SpannableStringBuilder previous = editorUndoStack.pop();
+                            expandedEditText.setText(previous);
+                            isEditorSelfModifying = false;
+                            
+                            String currentText = previous.toString();
+                            if (currentText.equals(originalEditorText)) {
+                                isManuallyEditedOut = false;
+                                renderFinalBlocks();
+                                isEditorSelfModifying = true;
+                                expandedEditText.setText(lastEditorSpannable);
+                                isEditorSelfModifying = false;
+                                editorUndoStack.clear();
+                            }
+                        } catch (Exception e) {
+                            isEditorSelfModifying = false;
+                        }
                     }
                 });
 
@@ -3517,15 +3572,14 @@ jobs:
             }
 
             private void renderFinalBlocks() {
+                blockToMainTargetSpan.clear();
                 int currentErrors = 0;
                 for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) currentErrors++; } }
                 
-                final int[] baseOffsetObj = {0}; 
+                final int[] baseOffsetObj = {0};
                 
                 SpannableStringBuilder ssbFull = new SpannableStringBuilder();
                 SpannableStringBuilder ssbFullEditor = new SpannableStringBuilder();
-                
-                List<Integer> errorOffsets = new ArrayList<>();
                 
                 currentClauseLinks.clear();
                 Map<TextBlock, TargetSpan> blockToTargetSpan = new HashMap<>();
@@ -3533,12 +3587,15 @@ jobs:
                 for (List<TextBlock> sentence : allSentencesBlocks) {
                     for (TextBlock b : sentence) {
                         boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
-                        if (isError) {
-                            errorOffsets.add(ssbFull.length());
-                        }
+                        // errorOffsets 已被 TargetSpan 动态锚点替代
                         
                         // 生成主视窗富文本
                         int start = ssbFull.length(); ssbFull.append(b.current);
+                        if (isError) {
+                            TargetSpan mainTs = new TargetSpan(b.current);
+                            blockToMainTargetSpan.put(b, mainTs);
+                            ssbFull.setSpan(mainTs, start, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        }
                         if (b.isMutable) {
                             EditSpan span = new EditSpan() {
                                 @Override public void onClick(View widget) { showEditDialog(b); }
@@ -3623,27 +3680,35 @@ jobs:
                                 final int firstErrIdxInClause = listErrIdx;
                                 JumpSpan jumpSpan = new JumpSpan() {
                                     @Override public void onClick(View w) {
-                                        if (firstErrIdxInClause < errorOffsets.size()) {
-                                            int absOff = baseOffsetObj[0] + errorOffsets.get(firstErrIdxInClause);
+                                        try {
                                             TextView tv = (TextView) w;
-                                            Layout layout = tv.getLayout();
-                                            if (layout != null) {
-                                                int line = layout.getLineForOffset(absOff);
-                                                int y = layout.getLineTop(line);
-                                                scrollView.smoothScrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
-                                                int lineStart = layout.getLineStart(line);
-                                                int lineEnd = layout.getLineEnd(line);
-                                                if (tv.getText() instanceof Spannable) {
-                                                    Spannable spanText = (Spannable) tv.getText();
-                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
-                                                    spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                                    Handler handler = new Handler(Looper.getMainLooper());
-                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 500);
-                                                    handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); }, 800);
-                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 1300);
+                                            Spannable spanText = (Spannable) tv.getText();
+                                            for (TextBlock b : clause) {
+                                                if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                                    TargetSpan mainTs = blockToMainTargetSpan.get(b);
+                                                    if (mainTs != null) {
+                                                        int pos = spanText.getSpanStart(mainTs);
+                                                        if (pos >= 0 && pos < spanText.length()) {
+                                                            Layout layout = tv.getLayout();
+                                                            if (layout != null) {
+                                                                int line = layout.getLineForOffset(pos);
+                                                                int y = layout.getLineTop(line);
+                                                                scrollView.scrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
+                                                                int lineStart = layout.getLineStart(line);
+                                                                int lineEnd = layout.getLineEnd(line);
+                                                                BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
+                                                                spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                                                Handler handler = new Handler(Looper.getMainLooper());
+                                                                handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 500);
+                                                                handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); }, 800);
+                                                                handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 1300);
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
-                                        }
+                                        } catch (Exception e) {}
                                     }
                                     @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
                                 };
@@ -3664,7 +3729,8 @@ jobs:
                                             @Override public void onClick(View w) { showEditDialog(b); }
                                             @Override public void updateDrawState(TextPaint ds) { 
                                                 if (!b.current.equals(b.original)) { 
-                                                    ds.setColor(0xFF4CAF50); 
+                                                    if (b.userModified) ds.setColor(0xFF4CAF50); 
+                                                    else ds.setColor(0xFFE53935); 
                                                     ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); 
                                                 } else { 
                                                     ds.setColor(0xFF2196F3); 
@@ -3711,31 +3777,34 @@ jobs:
                                 
                                 JumpSpan edJumpSpan = new JumpSpan() {
                                     @Override public void onClick(View w) {
-                                        if (!link.isDead && !link.targetSpans.isEmpty()) {
-                                            EditText et = (EditText) w;
-                                            Editable editable = et.getText();
-                                            TargetSpan firstTarget = null;
-                                            for (TargetSpan ts : link.targetSpans) {
-                                                if (editable.getSpanStart(ts) >= 0) { firstTarget = ts; break; }
-                                            }
-                                            if (firstTarget != null) {
-                                                int pos = editable.getSpanStart(firstTarget);
-                                                Layout layout = et.getLayout();
-                                                if (layout != null) {
-                                                    int line = layout.getLineForOffset(pos);
-                                                    int y = layout.getLineTop(line);
-                                                    et.scrollTo(0, Math.max(0, y - et.getHeight() / 3));
-                                                    int lineStart = layout.getLineStart(line);
-                                                    int lineEnd = layout.getLineEnd(line);
-                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
-                                                    editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                                    Handler handler = new Handler(Looper.getMainLooper());
-                                                    handler.postDelayed(() -> { editable.removeSpan(flashSpan); et.invalidate(); }, 500);
-                                                    handler.postDelayed(() -> { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); et.invalidate(); }, 800);
-                                                    handler.postDelayed(() -> { editable.removeSpan(flashSpan); et.invalidate(); }, 1300);
+                                        try {
+                                            if (!link.isDead && !link.targetSpans.isEmpty()) {
+                                                EditText et = (EditText) w;
+                                                Editable editable = et.getText();
+                                                TargetSpan firstTarget = null;
+                                                for (TargetSpan ts : link.targetSpans) {
+                                                    int tsStart = editable.getSpanStart(ts);
+                                                    if (tsStart >= 0 && tsStart < editable.length()) { firstTarget = ts; break; }
+                                                }
+                                                if (firstTarget != null) {
+                                                    int pos = editable.getSpanStart(firstTarget);
+                                                    Layout layout = et.getLayout();
+                                                    if (layout != null && pos >= 0 && pos < editable.length()) {
+                                                        int line = layout.getLineForOffset(pos);
+                                                        int y = layout.getLineTop(line);
+                                                        et.scrollTo(0, Math.max(0, y - et.getHeight() / 3));
+                                                        int lineStart = layout.getLineStart(line);
+                                                        int lineEnd = layout.getLineEnd(line);
+                                                        BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
+                                                        editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                                        Handler handler = new Handler(Looper.getMainLooper());
+                                                        handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); et.invalidate(); } catch(Exception e){} }, 500);
+                                                        handler.postDelayed(() -> { try { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); et.invalidate(); } catch(Exception e){} }, 800);
+                                                        handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); et.invalidate(); } catch(Exception e){} }, 1300);
+                                                    }
                                                 }
                                             }
-                                        }
+                                        } catch (Exception e) {}
                                     }
                                     @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
                                 };
@@ -3750,8 +3819,11 @@ jobs:
                                         ssbEditor.append(" ");
                                         int edNewStart = ssbEditor.length();
                                         ssbEditor.append(b.current);
-                                        ssbEditor.setSpan(new ForegroundColorSpan(0xFF4CAF50), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                        ssbEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        if (b.userModified) {
+                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFF4CAF50), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        } else {
+                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFFE53935), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        }
                                         ssbEditor.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                         if (!b.userModified && b.type == 1) {
                                             String confStr = "置信度: " + String.format("%.2f", b.conf);
