@@ -625,32 +625,43 @@ jobs:
                             <Space android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
                             
                             <Button
+                                android:id="@+id/btnEditorIndent"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:minWidth="55dp"
+                                android:minHeight="40dp"
+                                android:paddingHorizontal="10dp"
+                                android:layout_marginEnd="4dp"
+                                android:text="首行缩进"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp"
+                                android:backgroundTint="#2196F3" />
+    
+                            <Button
                                 android:id="@+id/btnEditorUndo"
-                                android:layout_width="64dp"
-                                android:layout_height="36dp"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:minWidth="55dp"
+                                android:minHeight="40dp"
+                                android:paddingHorizontal="10dp"
+                                android:layout_marginEnd="4dp"
                                 android:text="撤销"
                                 android:textColor="#FFFFFF"
-                                android:backgroundTint="#03A9F4"
-                                android:textSize="13sp"
-                                android:padding="0dp"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:focusable="false"
-                                android:layout_marginEnd="8dp" />
-                                
+                                android:textSize="14sp"
+                                android:backgroundTint="#2196F3" />
+    
                             <Button
                                 android:id="@+id/btnEditorSave"
-                                android:layout_width="64dp"
-                                android:layout_height="36dp"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:minWidth="55dp"
+                                android:minHeight="40dp"
+                                android:paddingHorizontal="10dp"
+                                android:layout_marginEnd="8dp"
                                 android:text="保存"
                                 android:textColor="#FFFFFF"
-                                android:backgroundTint="#4CAF50"
-                                android:textSize="13sp"
-                                android:padding="0dp"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:focusable="false"
-                                android:layout_marginEnd="12dp" />
+                                android:textSize="14sp"
+                                android:backgroundTint="#4CAF50" />
                                 
                             <Button
                                 android:id="@+id/btnEditorClose"
@@ -2346,6 +2357,7 @@ jobs:
                 EditText expandedEditText = findViewById(R.id.expandedEditText);
                 ScrollView editorScrollView = findViewById(R.id.editorScrollView);
                 Button btnEditorCollapse = findViewById(R.id.btnEditorCollapse);
+                Button btnEditorIndent = findViewById(R.id.btnEditorIndent);
                 Button btnEditorSave = findViewById(R.id.btnEditorSave);
                 Button btnEditorClose = findViewById(R.id.btnEditorClose);
                 View editorScrollTouchArea = findViewById(R.id.editorScrollTouchArea);
@@ -2613,12 +2625,61 @@ jobs:
                                 }).start();
                             })
                             .show();
-                    } else {
-                        expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> {
-                            expandedEditorOverlay.setVisibility(View.GONE);
-                            drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED); // 恢复侧滑功能
-                        }).start();
+                    // ===== 新增：首行缩进功能 =====
+                btnEditorIndent.setOnClickListener(v -> {
+                    android.text.Editable editable = expandedEditText.getText();
+                    if (editable == null || editable.length() == 0) return;
+
+                    // 1. 先将当前状态存入撤销栈，允许用户对“一键缩进”进行撤销
+                    editorUndoStack.push(new android.text.SpannableStringBuilder(editable));
+
+                    String text = editable.toString();
+                    java.util.List<int[]> replacements = new java.util.ArrayList<>();
+                    int lineStart = 0;
+
+                    // 2. 逐行解析，计算出每行开头原本有多少个杂乱的空格
+                    while (lineStart < text.length()) {
+                        int lineEnd = text.indexOf('\n', lineStart);
+                        if (lineEnd == -1) lineEnd = text.length();
+
+                        int firstNonSpace = lineStart;
+                        while (firstNonSpace < lineEnd) {
+                            char c = text.charAt(firstNonSpace);
+                            // 匹配全角空格、半角空格和Tab
+                            if (c == ' ' || c == '\t' || c == '\u3000') {
+                                firstNonSpace++;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        if (firstNonSpace < lineEnd) {
+                            // 只要不是空行，就记录下它开头的空白区间范围（哪怕没有空白，也记录坐标用于插入）
+                            replacements.add(new int[]{lineStart, firstNonSpace});
+                        } else if (firstNonSpace == lineEnd && lineStart != lineEnd) {
+                            // 如果这一行全是空格（假空行），记录下来稍后清理掉
+                            replacements.add(new int[]{lineStart, lineEnd});
+                        }
+
+                        lineStart = lineEnd + 1;
                     }
+
+                    // 3. 从底部往上倒序替换（重点：倒序替换才不会导致文本长度变化引起的坐标错乱，且能完美保留所有波浪线/颜色样式）
+                    isEditorSelfModifying = true; // 屏蔽自定义的文本监听器
+                    for (int i = replacements.size() - 1; i >= 0; i--) {
+                        int[] r = replacements.get(i);
+                        int start = r[0];
+                        int end = r[1];
+                        
+                        if ((end < text.length() && text.charAt(end) == '\n') || end == text.length()) {
+                            editable.replace(start, end, ""); // 清理纯空格行
+                        } else {
+                            editable.replace(start, end, "　　"); // 不管原来有几个空格，统统替换为标准的小说双全角空格
+                        }
+                    }
+                    isEditorSelfModifying = false;
+                    
+                    android.widget.Toast.makeText(MainActivity.this, "已添加首行缩进", android.widget.Toast.LENGTH_SHORT).show();
                 });
                 
                 Button btnEditorUndo = findViewById(R.id.btnEditorUndo);
