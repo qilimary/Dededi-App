@@ -566,6 +566,8 @@ jobs:
                     </FrameLayout>
                 </LinearLayout>
                 
+                
+                
                 <FrameLayout
                     android:id="@+id/expandedEditorOverlay"
                     android:layout_width="match_parent"
@@ -659,6 +661,7 @@ jobs:
                     
                     <View android:id="@+id/editorScrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end" android:layout_marginTop="52dp"/>
                 </FrameLayout>
+            </FrameLayout>
 
             <LinearLayout android:id="@+id/drawerContent"
                 android:layout_width="315dp" android:layout_height="match_parent"
@@ -689,6 +692,8 @@ jobs:
                 </ScrollView>
             </LinearLayout>
         </androidx.drawerlayout.widget.DrawerLayout>
+        
+        
         EOF
 
         cat << 'EOF' > app/src/main/res/layout/layout_floating.xml
