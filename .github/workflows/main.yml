@@ -2358,17 +2358,33 @@ jobs:
                             int off = layout.getOffsetForHorizontal(line, x);
                             float right = layout.getLineRight(line);
                             
-                            // 确保点击是在文字边界内，而不是空白处
                             if (x <= right) {
                                 JumpSpan[] link = widget.getText().getSpans(off, off, JumpSpan.class);
                                 if (link.length != 0) {
+                                    // 【修复】人工合成一个 CANCEL 事件欺骗底层，强制清空长按/拖拽状态，防止幽灵拖动
+                                    MotionEvent cancelEvent = MotionEvent.obtain(event);
+                                    cancelEvent.setAction(MotionEvent.ACTION_CANCEL);
+                                    v.onTouchEvent(cancelEvent);
+                                    cancelEvent.recycle();
+                                    
                                     link[0].onClick(widget);
-                                    return true; // 消费掉点击事件，执行跳转
+                                    return true; // 消费掉事件
                                 }
+                            }
+                            
+                            // 【新增】判断光标是否在顶部的“非正文锁定区”，强制转移光标
+                            IgnoredInCopySpan[] spans = widget.getText().getSpans(0, widget.getText().length(), IgnoredInCopySpan.class);
+                            int maxLockedEnd = 0;
+                            for (IgnoredInCopySpan span : spans) {
+                                maxLockedEnd = Math.max(maxLockedEnd, widget.getText().getSpanEnd(span));
+                            }
+                            if (off < maxLockedEnd) {
+                                // 强制将光标甩入正文开头，防止用户在清单区输入或破坏结构
+                                widget.post(() -> widget.setSelection(maxLockedEnd));
                             }
                         }
                     }
-                    return false; // 放弃拦截，交还给 EditText 原生的顺滑选择/滑动机制
+                    return false;
                 });
 
                 expandedEditText.addTextChangedListener(new TextWatcher() {
@@ -3997,10 +4013,14 @@ jobs:
                                                         int line = layout.getLineForOffset(pos);
                                                         int y = layout.getLineTop(line);
                                                         if (tv instanceof EditText) {
-                                                            tv.scrollTo(0, Math.max(0, y - tv.getHeight() / 3));
+                                                            // 【修复】立即将光标吸附到目标位置，防止底层动画重绘导致视窗反弹回顶部
+                                                            ((EditText) tv).setSelection(pos);
+                                                            // 将目标行定位到屏幕中上部
+                                                            tv.post(() -> tv.scrollTo(0, Math.max(0, y - tv.getHeight() / 3)));
                                                         } else {
                                                             scrollView.scrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
                                                         }
+                                                        
                                                         int lineStart = layout.getLineStart(line);
                                                         int lineEnd = layout.getLineEnd(line);
                                                         BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
