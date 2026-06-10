@@ -315,7 +315,7 @@ jobs:
                          android:label="“的地得”纠错AI Pro" 
                          android:theme="@style/Theme.Dededi"
                          android:launchMode="singleTask">
-                <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustPan">
+                <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -603,6 +603,20 @@ jobs:
                             <Space android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
                             
                             <Button
+                                android:id="@+id/btnEditorCollapse"
+                                android:layout_width="52dp"
+                                android:layout_height="52dp"
+                                android:text="↓"
+                                android:textColor="#03A9F4"
+                                android:textSize="22sp"
+                                android:background="?android:attr/selectableItemBackgroundBorderless"
+                                android:textStyle="bold"
+                                android:focusable="false"
+                                android:padding="0dp"/>
+                                
+                            <Space android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+                            
+                            <Button
                                 android:id="@+id/btnEditorUndo"
                                 android:layout_width="64dp"
                                 android:layout_height="36dp"
@@ -613,6 +627,7 @@ jobs:
                                 android:padding="0dp"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
+                                android:focusable="false"
                                 android:layout_marginEnd="8dp" />
                                 
                             <Button
@@ -626,6 +641,7 @@ jobs:
                                 android:padding="0dp"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
+                                android:focusable="false"
                                 android:layout_marginEnd="12dp" />
                                 
                             <Button
@@ -636,8 +652,9 @@ jobs:
                                 android:textColor="#E53935"
                                 android:textSize="18sp"
                                 android:background="?android:attr/selectableItemBackgroundBorderless"
+                                android:focusable="false"
                                 android:padding="0dp"/>
-                        </LinearLayout>
+                            
 
                         <EditText
                             android:id="@+id/expandedEditText"
@@ -2293,7 +2310,35 @@ jobs:
                 Button btnEditorClose = findViewById(R.id.btnEditorClose);
                 View editorScrollTouchArea = findViewById(R.id.editorScrollTouchArea);
 
-                expandedEditText.setMovementMethod(LinkMovementMethod.getInstance());
+                expandedEditText.setOnTouchListener((v, event) -> {
+                    if (event.getAction() == MotionEvent.ACTION_UP) {
+                        EditText widget = (EditText) v;
+                        int x = (int) event.getX();
+                        int y = (int) event.getY();
+
+                        x -= widget.getTotalPaddingLeft();
+                        y -= widget.getTotalPaddingTop();
+                        x += widget.getScrollX();
+                        y += widget.getScrollY();
+
+                        android.text.Layout layout = widget.getLayout();
+                        if (layout != null) {
+                            int line = layout.getLineForVertical(y);
+                            int off = layout.getOffsetForHorizontal(line, x);
+                            float right = layout.getLineRight(line);
+                            
+                            // 确保点击是在文字边界内，而不是空白处
+                            if (x <= right) {
+                                JumpSpan[] link = widget.getText().getSpans(off, off, JumpSpan.class);
+                                if (link.length != 0) {
+                                    link[0].onClick(widget);
+                                    return true; // 消费掉点击事件，执行跳转
+                                }
+                            }
+                        }
+                    }
+                    return false; // 放弃拦截，交还给 EditText 原生的顺滑选择/滑动机制
+                });
 
                 expandedEditText.addTextChangedListener(new TextWatcher() {
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -2448,7 +2493,7 @@ jobs:
                                 expandedEditorOverlay.setTranslationY(150f);
                                 expandedEditorOverlay.setVisibility(View.VISIBLE);
                                 expandedEditorOverlay.animate().alpha(1f).translationY(0f).setDuration(250).start();
-                                Toast.makeText(MainActivity.this, "进入全屏便签：原有的跳转序号仍可点击滑动", Toast.LENGTH_SHORT).show();
+                                Toast.makeText(MainActivity.this, "进入编辑模式：波浪线为系统或你修改过的文字。", Toast.LENGTH_SHORT).show();
                             }
                         });
                     };
@@ -2693,24 +2738,41 @@ jobs:
                         return;
                     }
 
-                    hasStartedChecking = true; saveSettings(currentIsFast); autoScrollEnabled = true;
-                    isManuallyEditedOut = false;
-                    
-                    float tempVal = 1.0f;
-                    try { tempVal = Float.parseFloat(editTemp.getText().toString()); } catch (Exception ignored) {}
-                    
-                    boolean isFastMode = rbFast.isChecked();
-                    if (tempVal > 0.0f) {
-                        if (isFastMode && fastModule == null) { Toast.makeText(this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
-                        if (!isFastMode && proModule == null) { Toast.makeText(this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
-                    } else {
-                        Toast.makeText(this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
-                    }
+                    Runnable executeCheck = () -> {
+                        hasStartedChecking = true; saveSettings(currentIsFast); autoScrollEnabled = true;
+                        isManuallyEditedOut = false;
+                        
+                        float tempVal = 1.0f;
+                        try { tempVal = Float.parseFloat(editTemp.getText().toString()); } catch (Exception ignored) {}
+                        
+                        boolean isFastMode = rbFast.isChecked();
+                        if (tempVal > 0.0f) {
+                            if (isFastMode && fastModule == null) { Toast.makeText(MainActivity.this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                            if (!isFastMode && proModule == null) { Toast.makeText(MainActivity.this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                        } else {
+                            Toast.makeText(MainActivity.this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
+                        }
 
-                    saveHistory(inputText.getText().toString());
-                    isCheckingMain = true;
-                    btnCheck.setText("取消");
-                    doInference(isFastMode);
+                        saveHistory(inputText.getText().toString());
+                        isCheckingMain = true;
+                        btnCheck.setText("取消");
+                        doInference(isFastMode);
+                    };
+
+                    if (isManuallyEditedOut) {
+                        new AlertDialog.Builder(MainActivity.this)
+                            .setMessage("是否使用编辑后的文本继续纠错？\n（否则用原始文本）")
+                            .setPositiveButton("是", (d, w) -> {
+                                inputText.setText(extractCleanTextFromSpanned((Spanned) outputText.getText()));
+                                executeCheck.run();
+                            })
+                            .setNegativeButton("否", (d, w) -> {
+                                executeCheck.run();
+                            })
+                            .show();
+                    } else {
+                        executeCheck.run();
+                    }
                 });
 
                 btnCopy.setOnClickListener(v -> {
@@ -3639,14 +3701,10 @@ jobs:
                     String header = "检查完毕！未检测到错误。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
                     SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                     ssb.append(headerSp);
-                    SpannableString headerSpEd = new SpannableString(header); headerSpEd.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    ssbEditor.append(headerSpEd);
                 } else {
                     String header = "检查完毕！共更正 " + currentErrors + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击序号可快速跳转）\n\n";
                     SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                     ssb.append(headerSp);
-                    SpannableString headerSpEd = new SpannableString(header); headerSpEd.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    ssbEditor.append(headerSpEd);
                     
                     SpannableString listHeader = new SpannableString("【纠错清单：】\n"); 
                     listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
