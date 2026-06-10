@@ -384,8 +384,6 @@ jobs:
                                 // 使用优化后的同步解析方法
                                 String text = MainActivity.extractTextFromUriSync(this, uris.get(i), null);
                                 if (text == null) text = "";
-                                
-                                if (uris.size() > 1) combined.append("［文档").append(i + 1).append("］\n");
                                 combined.append(text);
                                 if (i < uris.size() - 1) combined.append("\n\n---------------------------------\n\n");
                             }
@@ -2379,7 +2377,7 @@ jobs:
                         try {
                             SpannableStringBuilder snapshot = new SpannableStringBuilder(s);
                             editorUndoStack.push(snapshot);
-                            if (editorUndoStack.size() > 100) editorUndoStack.remove(0);
+                            if (editorUndoStack.size() > 50) editorUndoStack.remove(0);
                         } catch (Exception e) {}
                     }
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -2446,13 +2444,12 @@ jobs:
                             Editable editable = expandedEditText.getText();
                             if (editable != null) {
                                 IgnoredInCopySpan[] spans = editable.getSpans(0, editable.length(), IgnoredInCopySpan.class);
-                                if (spans.length > 0) {
-                                    int maxLockedEnd = 0;
-                                    for (IgnoredInCopySpan span : spans) {
-                                        maxLockedEnd = Math.max(maxLockedEnd, editable.getSpanEnd(span));
-                                    }
-                                    if (maxLockedEnd > 0 && dstart < maxLockedEnd) {
-                                        return dest.subSequence(dstart, dend);
+                                for (IgnoredInCopySpan span : spans) {
+                                    int spanStart = editable.getSpanStart(span);
+                                    int spanEnd = editable.getSpanEnd(span);
+                                    // 检查替换范围是否与受保护范围有交集，或者直接插入到受保护范围内部
+                                    if (Math.max(dstart, spanStart) < Math.min(dend, spanEnd) || (dstart > spanStart && dstart < spanEnd)) {
+                                        return dest.subSequence(dstart, dend); // 拒绝修改，保持原文本
                                     }
                                 }
                             }
@@ -2483,6 +2480,7 @@ jobs:
                     private final Handler handler = new Handler(Looper.getMainLooper());
                     private final Runnable longPressRunnable = () -> {
                         if (outputText.getText().length() == 0 || "正在加载...".equals(outputText.getText().toString()) || "AI已加载。".equals(outputText.getText().toString())) return;
+                        if (isCheckingMain) return; // 【修复】正在纠错时拦截长按事件，防止崩溃
                         isLongPressTriggered[0] = true;
                         outputText.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
                         
@@ -2878,9 +2876,6 @@ jobs:
                                 }
                             }
                         }
-                        
-                        // 滤除自动生成的 ［文档X］ 标识符。(?m) 为多行模式
-                        textToSave = textToSave.replaceAll("(?m)^［文档\\d+］\\n?", "");
                         
                         pendingSaveText = textToSave;
                         try {
@@ -3287,7 +3282,6 @@ jobs:
                                 });
 
                                 if (text == null) text = "";
-                                if (uris.size() > 1) combined.append("［文档").append(i + 1).append("］\n");
                                 combined.append(text);
                                 if (i < uris.size() - 1) combined.append("\n\n---------------------------------\n\n");
                             }
@@ -3450,6 +3444,10 @@ jobs:
                         }
                         String[] sentences = finalList.toArray(new String[0]);
                         runOnUiThread(() -> progressBar.setMax(sentences.length));
+                        
+                        boolean isMultiDocLive = false;
+                        for (String sent : sentences) { if (sent.contains("---------------------------------")) { isMultiDocLive = true; break; } }
+                        
                         allSentencesBlocks.clear(); StringBuilder liveErrorsHtml = new StringBuilder(); long lastUIUpdateTime = System.currentTimeMillis();
                         int liveErrorCount = 0; 
 
@@ -3653,16 +3651,27 @@ jobs:
                             
                             allSentencesBlocks.add(finalSentenceBlocks);
 
-                            StringBuilder liveFullText = new StringBuilder();
+                            StringBuilder liveFullText = new StringBuilder(text.length() + 100);
+                            int liveDocIndex = 1;
+                            boolean livePendingMarker = isMultiDocLive;
+                            
                             for (List<TextBlock> sent : allSentencesBlocks) {
                                 for (TextBlock tb : sent) {
+                                    if (livePendingMarker && liveDocIndex == 1) {
+                                        liveFullText.append("<font color='#757575'>［文档").append(liveDocIndex).append("］</font><br>");
+                                        liveDocIndex++; livePendingMarker = false;
+                                    }
                                     liveFullText.append(tb.current.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"));
+                                    if (tb.current.contains("---------------------------------")) {
+                                        liveFullText.append("<br><font color='#757575'>［文档").append(liveDocIndex).append("］</font><br>");
+                                        liveDocIndex++;
+                                    }
                                 }
                             }
                             String liveTextHtml = liveFullText.toString().replace("\n", "<br>");
 
                             long now = System.currentTimeMillis(); final int currentProgress = sIdx + 1;
-                            if (now - lastUIUpdateTime > 300) {
+                            if (now - lastUIUpdateTime > 350) {
                                 lastUIUpdateTime = now;
                                 final String progHtml = "<b>AI 正在审查中...</b><br>已耗时 " + String.format("%.1f", (now-startTime)/1000.0) + " 秒<br>进度：" + currentProgress + " / " + sentences.length + "<br><br>" + 
                                 (liveErrorsHtml.length() > 0 ? "<b><font color='#757575'>【发现错误】：</font></b><br>" + liveErrorsHtml.toString() : "") + 
@@ -3747,8 +3756,31 @@ jobs:
                 currentClauseLinks.clear();
                 Map<TextBlock, TargetSpan> blockToTargetSpan = new HashMap<>();
                 
+                // 【新增】判断是否多文档，初始化文档标识游标
+                boolean isMultiDoc = false;
                 for (List<TextBlock> sentence : allSentencesBlocks) {
                     for (TextBlock b : sentence) {
+                        if (b.current.contains("---------------------------------")) { isMultiDoc = true; break; }
+                    }
+                }
+                int docIndex = 1;
+                boolean pendingDocMarker = isMultiDoc;
+                
+                for (List<TextBlock> sentence : allSentencesBlocks) {
+                    for (TextBlock b : sentence) {
+                        // 在头部插入第一个标识
+                        if (pendingDocMarker && docIndex == 1) {
+                            String marker = "［文档" + docIndex + "］\n";
+                            int mStart1 = ssbFull.length(); ssbFull.append(marker);
+                            ssbFull.setSpan(new ForegroundColorSpan(0xFF757575), mStart1, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            ssbFull.setSpan(new IgnoredInCopySpan(), mStart1, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            
+                            int mStart2 = ssbFullEditor.length(); ssbFullEditor.append(marker);
+                            ssbFullEditor.setSpan(new ForegroundColorSpan(0xFF757575), mStart2, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            ssbFullEditor.setSpan(new IgnoredInCopySpan(), mStart2, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            docIndex++; pendingDocMarker = false;
+                        }
+                        
                         boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
                         // errorOffsets 已被 TargetSpan 动态锚点替代
                         
@@ -3788,6 +3820,19 @@ jobs:
                             if (!b.current.equals(b.original)) { // Green wavy line for both user and model
                                 ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                             }
+                        }
+                        
+                        // 【新增】在分割线后插入下一个标识
+                        if (b.current.contains("---------------------------------")) {
+                            String marker = "［文档" + docIndex + "］\n";
+                            int mStart1 = ssbFull.length(); ssbFull.append(marker);
+                            ssbFull.setSpan(new ForegroundColorSpan(0xFF757575), mStart1, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            ssbFull.setSpan(new IgnoredInCopySpan(), mStart1, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            
+                            int mStart2 = ssbFullEditor.length(); ssbFullEditor.append(marker);
+                            ssbFullEditor.setSpan(new ForegroundColorSpan(0xFF757575), mStart2, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            ssbFullEditor.setSpan(new IgnoredInCopySpan(), mStart2, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            docIndex++;
                         }
                     }
                 }
