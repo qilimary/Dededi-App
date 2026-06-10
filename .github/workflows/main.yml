@@ -1637,7 +1637,7 @@ jobs:
                 "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面",
                 "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "获得", "取得", "赢得", "免得", "懒得",
                 "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地",
-                "如鱼得水", "留得", "留的", "拍立得", "坏的"
+                "如鱼得水", "留得", "留的", "拍立得", "坏的"，"使得"
             };
 
             private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3;
@@ -2681,6 +2681,7 @@ jobs:
                     
                     android.widget.Toast.makeText(MainActivity.this, "已添加首行缩进", android.widget.Toast.LENGTH_SHORT).show();
                 });
+            }
                 
                 Button btnEditorUndo = findViewById(R.id.btnEditorUndo);
                 btnEditorUndo.setOnClickListener(v -> {
