@@ -1522,6 +1522,10 @@ jobs:
         import com.google.mlkit.vision.text.TextRecognition;
         import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
         import com.google.mlkit.vision.text.TextRecognizer;
+        import android.animation.Animator;
+        import android.animation.AnimatorListenerAdapter;
+        import android.view.ViewAnimationUtils;
+        import android.view.ViewGroup;
 
         public class MainActivity extends AppCompatActivity {
             static { System.loadLibrary("dededi"); }
@@ -2365,26 +2369,54 @@ jobs:
                     private final boolean[] isLongPressTriggered = {false};
                     private final float[] startX = {0f};
                     private final float[] startY = {0f};
+                    private final float[] rawTouchPos = {0f, 0f}; // 记录手指的绝对坐标
                     private final Handler handler = new Handler(Looper.getMainLooper());
                     private final Runnable longPressRunnable = () -> {
                         if (outputText.getText().length() == 0 || "正在加载...".equals(outputText.getText().toString()) || "AI已加载。".equals(outputText.getText().toString())) return;
                         isLongPressTriggered[0] = true;
                         outputText.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
                         
-                        if (isManuallyEditedOut) {
-                            lastEditorSpannable = new SpannableStringBuilder(outputText.getText());
-                        }
-                        originalEditorText = lastEditorSpannable.toString();
+                        // === 水波纹扩散动画 ===
+                        ViewGroup parent = (ViewGroup) scrollView.getParent();
+                        int[] parentLoc = new int[2];
+                        parent.getLocationOnScreen(parentLoc);
+                        int cx = (int) (rawTouchPos[0] - parentLoc[0]);
+                        int cy = (int) (rawTouchPos[1] - parentLoc[1]);
                         
-                        isEditorSelfModifying = true;
-                        expandedEditText.setText(lastEditorSpannable);
-                        isEditorSelfModifying = false;
+                        View rippleView = new View(MainActivity.this);
+                        rippleView.setBackgroundColor(Color.parseColor("#20000000")); // 浅灰色半透明遮罩
+                        rippleView.setVisibility(View.INVISIBLE);
+                        parent.addView(rippleView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                         
-                        expandedEditorOverlay.setAlpha(0f);
-                        expandedEditorOverlay.setTranslationY(150f);
-                        expandedEditorOverlay.setVisibility(View.VISIBLE);
-                        expandedEditorOverlay.animate().alpha(1f).translationY(0f).setDuration(250).start();
-                        Toast.makeText(MainActivity.this, "进入全屏便签：原有的跳转序号仍可点击滑动", Toast.LENGTH_SHORT).show();
+                        float maxRadius = (float) Math.hypot(Math.max(cx, parent.getWidth() - cx), Math.max(cy, parent.getHeight() - cy));
+                        
+                        Animator reveal = ViewAnimationUtils.createCircularReveal(rippleView, cx, cy, 0f, maxRadius);
+                        reveal.setDuration(350);
+                        rippleView.setVisibility(View.VISIBLE);
+                        reveal.start();
+                        
+                        reveal.addListener(new AnimatorListenerAdapter() {
+                            @Override
+                            public void onAnimationEnd(Animator animation) {
+                                parent.removeView(rippleView);
+                                
+                                // === 动画结束后执行原有展开逻辑 ===
+                                if (isManuallyEditedOut) {
+                                    lastEditorSpannable = new SpannableStringBuilder(outputText.getText());
+                                }
+                                originalEditorText = lastEditorSpannable.toString();
+                                
+                                isEditorSelfModifying = true;
+                                expandedEditText.setText(lastEditorSpannable);
+                                isEditorSelfModifying = false;
+                                
+                                expandedEditorOverlay.setAlpha(0f);
+                                expandedEditorOverlay.setTranslationY(150f);
+                                expandedEditorOverlay.setVisibility(View.VISIBLE);
+                                expandedEditorOverlay.animate().alpha(1f).translationY(0f).setDuration(250).start();
+                                Toast.makeText(MainActivity.this, "进入全屏便签：原有的跳转序号仍可点击滑动", Toast.LENGTH_SHORT).show();
+                            }
+                        });
                     };
 
                     @Override
@@ -2394,6 +2426,8 @@ jobs:
                                 isLongPressTriggered[0] = false;
                                 startX[0] = event.getX();
                                 startY[0] = event.getY();
+                                rawTouchPos[0] = event.getRawX(); // 记录绝对X
+                                rawTouchPos[1] = event.getRawY(); // 记录绝对Y
                                 handler.postDelayed(longPressRunnable, 600);
                                 break;
                             case MotionEvent.ACTION_MOVE:
@@ -2527,7 +2561,7 @@ jobs:
                             "举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n" +
                             "【交互与拓展功能】\n" +
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
-                            "• 便签模式：长按底部纠错框区域，即可滑出便签编辑器进行全局排版或修改漏掉的错字，完成后支持直接导出。\n" +
+                            "• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
                             "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
                             "• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n" +
