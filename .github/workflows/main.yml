@@ -346,41 +346,62 @@ jobs:
         import android.content.Intent;
         import android.net.Uri;
         import android.os.Bundle;
+        import android.os.Handler;
+        import android.os.Looper;
         import android.widget.Toast;
-
+        import java.util.ArrayList;
+        import java.util.List;
+        
         public class FilePickerActivity extends Activity {
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
-                Toast.makeText(this, "支持 txt、md、docx、pptx、pdf 及图片格式", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "支持 txt、md、docx、pptx、pdf 及图片格式\n(最多支持上传20个)", Toast.LENGTH_LONG).show();
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); // 【新增】开启多选支持
                 intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/pdf", "image/*"});
                 startActivityForResult(intent, 103);
             }
-
+        
             @Override
             protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                 super.onActivityResult(requestCode, resultCode, data);
                 if (requestCode == 103 && resultCode == RESULT_OK && data != null) {
-                    Uri uri = data.getData();
-                    if (uri != null) {
-                        Toast.makeText(this, "正在处理导入文件...", Toast.LENGTH_SHORT).show();
-                        MainActivity.extractTextFromUriAsync(this, uri, new MainActivity.TextExtractCallback() {
-                            @Override public void onStart() {}
-                            @Override public void onProgress(int progress, int max) {}
-                            @Override public void onExtracted(String text) {
-                                if (text != null && !text.trim().isEmpty()) {
+                    List<Uri> uris = new ArrayList<>();
+                    if (data.getClipData() != null) {
+                        int count = data.getClipData().getItemCount();
+                        for (int i = 0; i < Math.min(count, 20); i++) uris.add(data.getClipData().getItemAt(i).getUri());
+                    } else if (data.getData() != null) {
+                        uris.add(data.getData());
+                    }
+        
+                    if (!uris.isEmpty()) {
+                        Toast.makeText(this, "正在处理导入文件，请稍候...", Toast.LENGTH_SHORT).show();
+                        new Thread(() -> {
+                            StringBuilder combined = new StringBuilder();
+                            for (int i = 0; i < uris.size(); i++) {
+                                // 使用优化后的同步解析方法
+                                String text = MainActivity.extractTextFromUriSync(this, uris.get(i), null);
+                                if (text == null) text = "";
+                                
+                                if (uris.size() > 1) combined.append("［文档").append(i + 1).append("］\n");
+                                combined.append(text);
+                                if (i < uris.size() - 1) combined.append("\n\n---------------------------------\n\n");
+                            }
+                            final String finalText = combined.toString();
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                if (!finalText.trim().isEmpty()) {
                                     Intent serviceIntent = new Intent(FilePickerActivity.this, FloatingService.class);
-                                    serviceIntent.putExtra("IMPORTED_TEXT", text);
+                                    serviceIntent.putExtra("IMPORTED_TEXT", finalText);
                                     startService(serviceIntent);
                                 } else {
                                     Toast.makeText(FilePickerActivity.this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
                                 }
                                 finish();
-                            }
-                        });
-                        return; // Async call handles finish
+                            });
+                        }).start();
+                        return;
                     }
                 }
                 finish();
@@ -2159,71 +2180,92 @@ jobs:
             private void openFilePicker() {
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/plain", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/pdf", "image/*"});
                 startActivityForResult(intent, 102);
             }
 
+            public static String extractTextFromUriSync(Context context, android.net.Uri uri, TextExtractCallback callback) {
+                try {
+                    String mimeType = context.getContentResolver().getType(uri);
+                    String name = getFileName(context, uri);
+                    if (name != null) name = name.toLowerCase();
+
+                    if ((name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".bmp") || name.endsWith(".webp"))) ||
+                        (mimeType != null && mimeType.startsWith("image/"))) {
+                        Bitmap bitmap = android.provider.MediaStore.Images.Media.getBitmap(context.getContentResolver(), uri);
+                        String result = performOcrOnBitmap(bitmap, context, callback);
+                        bitmap.recycle();
+                        return result;
+                    } else if ((name != null && name.endsWith(".pdf")) || "application/pdf".equals(mimeType)) {
+                        return performOcrOnPdf(uri, context, callback);
+                    }
+                    return extractTextFromUri(context, uri);
+                } catch (Exception e) {
+                    return "";
+                }
+            }
+
             private void saveHistory(String text) {
                 if (text == null || text.trim().isEmpty()) return;
-                try {
-                    String historyStr = sp.getString("history_records", "[]");
-                    JSONArray historyArray = new JSONArray(historyStr);
-                    
-                    int currentHash = text.hashCode();
-                    if (historyArray.length() > 0) {
-                        JSONObject lastRecord = historyArray.getJSONObject(0);
-                        if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) return;
-                        if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) return;
-                    }
-                    
-                    JSONObject newRecord = new JSONObject();
-                    newRecord.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
-                    newRecord.put("textHash", currentHash);
-                    
-                    String preview = text.length() > 16 ? text.substring(0, 16).replace("\n", " ") + "..." : text.replace("\n", " ");
-                    newRecord.put("preview", preview);
-                    
-                    String fileId = UUID.randomUUID().toString();
-                    newRecord.put("file", fileId);
-                    lastSavedHistoryFileId = fileId;
-                    
-                    File dir = new File(getFilesDir(), "history");
-                    if (!dir.exists()) dir.mkdirs();
-                    
-                    // 保存原文
-                    FileOutputStream fos = new FileOutputStream(new File(dir, fileId + ".txt"));
-                    fos.write(text.getBytes("UTF-8"));
-                    fos.close();
-                    
-                    // 如果有纠错结果，也保存下来
-                    if (!allSentencesBlocks.isEmpty()) {
-                        String blocksJson = serializeBlocks(allSentencesBlocks);
-                        FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
-                        fosBlocks.write(blocksJson.getBytes("UTF-8"));
-                        fosBlocks.close();
-                    }
-                    
-                    JSONArray newArray = new JSONArray();
-                    newArray.put(newRecord);
-                    int limit = Math.min(historyArray.length(), 49);
-                    for (int i = 0; i < limit; i++) {
-                        newArray.put(historyArray.getJSONObject(i));
-                    }
-                    
-                    if (historyArray.length() >= 50) {
-                        for (int i = 49; i < historyArray.length(); i++) {
-                            String oldFileId = historyArray.getJSONObject(i).optString("file", "");
-                            if (!oldFileId.isEmpty()) {
-                                new File(dir, oldFileId + ".txt").delete();
-                                new File(dir, oldFileId + "_blocks.json").delete();
-                              
+                new Thread(() -> {
+                    try {
+                        String historyStr = sp.getString("history_records", "[]");
+                        JSONArray historyArray = new JSONArray(historyStr);
+                        
+                        int currentHash = text.hashCode();
+                        if (historyArray.length() > 0) {
+                            JSONObject lastRecord = historyArray.getJSONObject(0);
+                            if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) return;
+                            if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) return;
+                        }
+                        
+                        JSONObject newRecord = new JSONObject();
+                        newRecord.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
+                        newRecord.put("textHash", currentHash);
+                        
+                        String preview = text.length() > 16 ? text.substring(0, 16).replace("\n", " ") + "..." : text.replace("\n", " ");
+                        newRecord.put("preview", preview);
+                        
+                        String fileId = UUID.randomUUID().toString();
+                        newRecord.put("file", fileId);
+                        lastSavedHistoryFileId = fileId;
+                        
+                        File dir = new File(getFilesDir(), "history");
+                        if (!dir.exists()) dir.mkdirs();
+                        
+                        FileOutputStream fos = new FileOutputStream(new File(dir, fileId + ".txt"));
+                        fos.write(text.getBytes("UTF-8"));
+                        fos.close();
+                        
+                        if (!allSentencesBlocks.isEmpty()) {
+                            String blocksJson = serializeBlocks(allSentencesBlocks);
+                            FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
+                            fosBlocks.write(blocksJson.getBytes("UTF-8"));
+                            fosBlocks.close();
+                        }
+                        
+                        JSONArray newArray = new JSONArray();
+                        newArray.put(newRecord);
+                        int limit = Math.min(historyArray.length(), 49);
+                        for (int i = 0; i < limit; i++) {
+                            newArray.put(historyArray.getJSONObject(i));
+                        }
+                        
+                        if (historyArray.length() >= 50) {
+                            for (int i = 49; i < historyArray.length(); i++) {
+                                String oldFileId = historyArray.getJSONObject(i).optString("file", "");
+                                if (!oldFileId.isEmpty()) {
+                                    new File(dir, oldFileId + ".txt").delete();
+                                    new File(dir, oldFileId + "_blocks.json").delete();
+                                }
                             }
                         }
-                    }
-                    
-                    sp.edit().putString("history_records", newArray.toString()).apply();
-                    renderHistoryUI();
-                } catch (Exception e) {}
+                        
+                        sp.edit().putString("history_records", newArray.toString()).apply();
+                        runOnUiThread(() -> renderHistoryUI());
+                    } catch (Exception e) {}
+                }).start();
             }
             
             @SuppressLint("ClickableViewAccessibility")
@@ -2728,7 +2770,7 @@ jobs:
                 });
 
                 btnImport.setOnClickListener(v -> {
-                    Toast.makeText(this, "支持 txt、md、docx、pptx、pdf 及各种图片格式", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "支持 txt、md、docx、pptx、pdf 及各种图片格式。（最多上传20个）", Toast.LENGTH_SHORT).show();
                     openFilePicker();
                 });
 
@@ -2837,6 +2879,9 @@ jobs:
                             }
                         }
                         
+                        // 滤除自动生成的 ［文档X］ 标识符。(?m) 为多行模式
+                        textToSave = textToSave.replaceAll("(?m)^［文档\\d+］\\n?", "");
+                        
                         pendingSaveText = textToSave;
                         try {
                             Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -2853,7 +2898,8 @@ jobs:
                         } catch (Exception e) { Toast.makeText(this, "调起失败: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }
                     }).show();
                 });
-                
+                        
+                        
                 Button btnAddTypo = findViewById(R.id.btnAddTypo);
                 EditText etOriginal = findViewById(R.id.etOriginal);
                 EditText etCorrected = findViewById(R.id.etCorrected);
@@ -3212,23 +3258,52 @@ jobs:
                     } else { Toast.makeText(this, "悬浮窗权限未被授予，无法开启", Toast.LENGTH_SHORT).show(); }
                 }
                 if (requestCode == 102 && resultCode == RESULT_OK && data != null) {
-                    android.net.Uri uri = data.getData();
-                    if (uri != null) {
+                    List<android.net.Uri> uris = new ArrayList<>();
+                    if (data.getClipData() != null) {
+                        int count = data.getClipData().getItemCount();
+                        int limit = Math.min(count, 20);
+                        for (int i = 0; i < limit; i++) uris.add(data.getClipData().getItemAt(i).getUri());
+                        if (count > 20) Toast.makeText(this, "最多支持选择20个文件，已截断前20个", Toast.LENGTH_SHORT).show();
+                    } else if (data.getData() != null) {
+                        uris.add(data.getData());
+                    }
+
+                    if (!uris.isEmpty()) {
                         Toast.makeText(this, "正在处理导入文件，请稍候...", Toast.LENGTH_SHORT).show();
-                        extractTextFromUriAsync(this, uri, new TextExtractCallback() {
-                            @Override public void onStart() { progressBar.setVisibility(View.VISIBLE); progressBar.setProgress(0); }
-                            @Override public void onProgress(int p, int m) { progressBar.setMax(m); progressBar.setProgress(p); }
-                            @Override public void onExtracted(String text) {
+                        progressBar.setVisibility(View.VISIBLE);
+                        progressBar.setProgress(0);
+
+                        new Thread(() -> {
+                            StringBuilder combined = new StringBuilder();
+                            for (int i = 0; i < uris.size(); i++) {
+                                final int fileIndex = i;
+                                String text = extractTextFromUriSync(this, uris.get(i), new TextExtractCallback() {
+                                    @Override public void onStart() {}
+                                    @Override public void onProgress(int p, int m) {
+                                        int overallProgress = (fileIndex * 100 / uris.size()) + (p * 100 / m / uris.size());
+                                        new Handler(Looper.getMainLooper()).post(() -> progressBar.setProgress(overallProgress));
+                                    }
+                                    @Override public void onExtracted(String t) {}
+                                });
+
+                                if (text == null) text = "";
+                                if (uris.size() > 1) combined.append("［文档").append(i + 1).append("］\n");
+                                combined.append(text);
+                                if (i < uris.size() - 1) combined.append("\n\n---------------------------------\n\n");
+                            }
+
+                            final String finalText = combined.toString();
+                            new Handler(Looper.getMainLooper()).post(() -> {
                                 progressBar.setVisibility(View.INVISIBLE);
-                                if (text != null && !text.trim().isEmpty()) {
-                                    inputText.setText(text);
-                                    saveHistory(text);
+                                if (!finalText.trim().isEmpty()) {
+                                    inputText.setText(finalText);
+                                    saveHistory(finalText);
                                     Toast.makeText(MainActivity.this, "导入成功", Toast.LENGTH_SHORT).show();
                                 } else {
                                     Toast.makeText(MainActivity.this, "无法读取文件内容或未识别到文字", Toast.LENGTH_SHORT).show();
                                 }
-                            }
-                        });
+                            });
+                        }).start();
                     }
                 }
                 if (requestCode == 101 && resultCode == RESULT_OK && data != null && data.getData() != null) {
