@@ -565,7 +565,7 @@ jobs:
                         <View android:id="@+id/scrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end"/>
                     </FrameLayout>
                 </LinearLayout>
-
+                
                 <FrameLayout
                     android:id="@+id/expandedEditorOverlay"
                     android:layout_width="match_parent"
@@ -588,19 +588,6 @@ jobs:
                             android:gravity="center_vertical"
                             android:background="@color/card_bg"
                             android:elevation="4dp">
-                            
-                            <Button
-                                android:id="@+id/btnEditorCollapse"
-                                android:layout_width="52dp"
-                                android:layout_height="52dp"
-                                android:text="↓"
-                                android:textColor="#03A9F4"
-                                android:textSize="22sp"
-                                android:background="?android:attr/selectableItemBackgroundBorderless"
-                                android:textStyle="bold"
-                                android:padding="0dp"/>
-                                
-                            <Space android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
                             
                             <Button
                                 android:id="@+id/btnEditorCollapse"
@@ -654,7 +641,7 @@ jobs:
                                 android:background="?android:attr/selectableItemBackgroundBorderless"
                                 android:focusable="false"
                                 android:padding="0dp"/>
-                            
+                        </LinearLayout>
 
                         <EditText
                             android:id="@+id/expandedEditText"
@@ -672,7 +659,6 @@ jobs:
                     
                     <View android:id="@+id/editorScrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end" android:layout_marginTop="52dp"/>
                 </FrameLayout>
-            </FrameLayout>
 
             <LinearLayout android:id="@+id/drawerContent"
                 android:layout_width="315dp" android:layout_height="match_parent"
