@@ -3571,6 +3571,10 @@ jobs:
                         
                         allSentencesBlocks.clear(); StringBuilder liveErrorsHtml = new StringBuilder(); long lastUIUpdateTime = System.currentTimeMillis();
                         int liveErrorCount = 0; 
+                        
+                        // 【优化】提取至循环外，仅组装一次，节省大量内存与CPU耗时
+                        List<String> combinedIgnore = new ArrayList<>(Arrays.asList(IGNORE_WORDS));
+                        combinedIgnore.addAll(typoMap.keySet());
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             if (!isCheckingMain) {
@@ -3587,8 +3591,6 @@ jobs:
                             if (sentence.isEmpty()) continue;
                             List<TextBlock> currentSentenceBlocks = new ArrayList<>();
                             
-                            List<String> combinedIgnore = new ArrayList<>(Arrays.asList(IGNORE_WORDS));
-                            combinedIgnore.addAll(typoMap.keySet());
                             boolean[] isIgnored = new boolean[sentence.length()];
                             for (String w : combinedIgnore) {
                                 int idx = sentence.indexOf(w);
@@ -3613,9 +3615,9 @@ jobs:
                                     long fUnk = fastVocab.getOrDefault("[UNK]", 1L); long fMask = fastVocab.getOrDefault("[MASK]", 2L);
                                     long[] ids = new long[sentence.length()];
                                     for (int i = 0; i < sentence.length(); i++) {
-                                        String ch = String.valueOf(sentence.charAt(i));
-                                        if (!isIgnored[i] && (ch.equals("的") || ch.equals("地") || ch.equals("得"))) ids[i] = fMask;
-                                        else ids[i] = fastVocab.getOrDefault(ch, fUnk);
+                                        char c = sentence.charAt(i); // 【优化】原始char对比性能最高
+                                        if (!isIgnored[i] && (c == '的' || c == '地' || c == '得')) ids[i] = fMask;
+                                        else ids[i] = fastVocab.getOrDefault(String.valueOf(c), fUnk);
                                     }
                                     Tensor inputTensor = Tensor.fromBlob(ids, new long[]{1, sentence.length()});
                                     scores = fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
@@ -3624,9 +3626,9 @@ jobs:
                                     long[] ids = new long[exactLen]; long[] masks = new long[exactLen]; long[] types = new long[exactLen];
                                     ids[0] = clsId; masks[0] = 1; types[0] = 0;
                                     for (int i = 0; i < sentence.length(); i++) {
-                                        String ch = String.valueOf(sentence.charAt(i));
-                                        if (!isIgnored[i] && (ch.equals("的") || ch.equals("地") || ch.equals("得"))) ids[i + 1] = maskId;
-                                        else ids[i + 1] = proVocab.getOrDefault(ch, unkId);
+                                        char c = sentence.charAt(i); // 【优化】原始char对比性能最高
+                                        if (!isIgnored[i] && (c == '的' || c == '地' || c == '得')) ids[i + 1] = maskId;
+                                        else ids[i + 1] = proVocab.getOrDefault(String.valueOf(c), unkId);
                                         masks[i + 1] = 1; types[i + 1] = 0;
                                     }
                                     ids[exactLen - 1] = sepId; masks[exactLen - 1] = 1; types[exactLen - 1] = 0;
