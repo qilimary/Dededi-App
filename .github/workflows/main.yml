@@ -463,10 +463,8 @@ jobs:
             android:layout_width="match_parent" android:layout_height="match_parent"
             android:fitsSystemWindows="true">
 
-            <!-- 全局包裹容器，用于铺满全屏 -->
             <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
             
-                <!-- 原始的主界面内容 -->
                 <LinearLayout 
                     android:layout_width="match_parent" android:layout_height="match_parent"
                     android:orientation="vertical" android:padding="14dp" android:background="@color/bg_color">
@@ -569,7 +567,6 @@ jobs:
                     </FrameLayout>
                 </LinearLayout>
 
-                <!-- 全局便签遮罩 -->
                 <FrameLayout
                     android:id="@+id/expandedEditorOverlay"
                     android:layout_width="match_parent"
@@ -644,7 +641,6 @@ jobs:
                             android:scrollbars="vertical"/>
                     </LinearLayout>
                     
-                    <!-- 全局便签的隐藏滑动区 -->
                     <View android:id="@+id/editorScrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end" android:layout_marginTop="52dp"/>
                 </FrameLayout>
             </FrameLayout>
@@ -1445,6 +1441,7 @@ jobs:
 
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
+        import android.annotation.SuppressLint;
         import android.content.ClipData;
         import android.content.ClipboardManager;
         import android.content.Context;
@@ -1602,9 +1599,10 @@ jobs:
             private boolean isRestoringHistory = false;
             private String lastSavedHistoryFileId = null;
             
-            // 【新增】用于标记是否处于便签编辑模式应用后
+            // 用于标记是否处于便签编辑模式应用后
             private boolean isManuallyEditedOut = false;
             private String originalEditorText = "";
+            private SpannableStringBuilder lastEditorSpannable;
 
             public static class TextBlock {
                 String original, current, modelCorrected;
@@ -1620,13 +1618,47 @@ jobs:
                 }
             }
             
-            // 【新增】区分普通修改和跳转的 Span 类
             public abstract static class JumpSpan extends ClickableSpan { }
             public abstract static class EditSpan extends ClickableSpan { }
 
-            // 【新增】自定义的 Span 标记，被此标记包裹的内容在提取纯文本时会被智能跳过过滤掉
             public static class IgnoredInCopySpan extends android.text.style.CharacterStyle {
                 @Override public void updateDrawState(TextPaint tp) {}
+            }
+            
+            public static class WavyUnderlineSpan extends android.text.style.ReplacementSpan {
+                private int color;
+                private android.graphics.Paint wavePaint;
+                private android.graphics.Path wavePath;
+                public WavyUnderlineSpan(int color) {
+                    this.color = color;
+                    wavePaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                    wavePaint.setColor(color);
+                    wavePaint.setStyle(android.graphics.Paint.Style.STROKE);
+                    wavePaint.setStrokeWidth(3.5f);
+                    wavePath = new android.graphics.Path();
+                }
+                @Override
+                public int getSize(android.graphics.Paint paint, CharSequence text, int start, int end, android.graphics.Paint.FontMetricsInt fm) {
+                    return (int) paint.measureText(text, start, end);
+                }
+                @Override
+                public void draw(android.graphics.Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, android.graphics.Paint paint) {
+                    canvas.drawText(text, start, end, x, y, paint);
+                    float width = paint.measureText(text, start, end);
+                    wavePath.reset();
+                    float waveLength = 12f;
+                    float amplitude = 2.5f;
+                    float startX = x;
+                    float endX = x + width;
+                    float currentY = y + paint.getFontMetrics().descent + 3;
+                    wavePath.moveTo(startX, currentY);
+                    for (float i = startX; i < endX; i += waveLength) {
+                        float nextX = Math.min(i + waveLength, endX);
+                        wavePath.quadTo(i + waveLength / 4, currentY - amplitude, i + waveLength / 2, currentY);
+                        wavePath.quadTo(i + waveLength * 3 / 4, currentY + amplitude, nextX, currentY);
+                    }
+                    canvas.drawPath(wavePath, wavePaint);
+                }
             }
 
             public static String extractCleanTextFromSpanned(Spanned sp) {
@@ -2151,6 +2183,7 @@ jobs:
                 } catch (Exception e) {}
             }
             
+            @SuppressLint("ClickableViewAccessibility")
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
@@ -2241,29 +2274,64 @@ jobs:
                     return true;
                 });
 
-                outputText.setOnLongClickListener(v -> {
-                    if (outputText.getText().length() == 0 || "正在加载...".equals(outputText.getText().toString()) || "AI已加载。".equals(outputText.getText().toString())) return false;
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
-                    
-                    SpannableString ss = new SpannableString(outputText.getText());
-                    // 仅脱落编辑弹窗事件(EditSpan)，完美保留跳转链接事件(JumpSpan)
-                    EditSpan[] edits = ss.getSpans(0, ss.length(), EditSpan.class);
-                    for (EditSpan c : edits) ss.removeSpan(c);
-                    
-                    originalEditorText = ss.toString();
-                    expandedEditText.setText(ss);
-                    
-                    expandedEditorOverlay.setAlpha(0f);
-                    expandedEditorOverlay.setTranslationY(150f);
-                    expandedEditorOverlay.setVisibility(View.VISIBLE);
-                    expandedEditorOverlay.animate().alpha(1f).translationY(0f).setDuration(250).start();
-                    Toast.makeText(this, "进入全屏便签：原有的跳转序号仍可点击滑动", Toast.LENGTH_SHORT).show();
-                    return true;
+                outputText.setOnTouchListener(new View.OnTouchListener() {
+                    private final boolean[] isLongPressTriggered = {false};
+                    private final float[] startX = {0f};
+                    private final float[] startY = {0f};
+                    private final Handler handler = new Handler(Looper.getMainLooper());
+                    private final Runnable longPressRunnable = () -> {
+                        if (outputText.getText().length() == 0 || "正在加载...".equals(outputText.getText().toString()) || "AI已加载。".equals(outputText.getText().toString())) return;
+                        isLongPressTriggered[0] = true;
+                        outputText.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                        
+                        if (isManuallyEditedOut) {
+                            lastEditorSpannable = new SpannableStringBuilder(outputText.getText());
+                        }
+                        originalEditorText = lastEditorSpannable.toString();
+                        expandedEditText.setText(lastEditorSpannable);
+                        
+                        expandedEditorOverlay.setAlpha(0f);
+                        expandedEditorOverlay.setTranslationY(150f);
+                        expandedEditorOverlay.setVisibility(View.VISIBLE);
+                        expandedEditorOverlay.animate().alpha(1f).translationY(0f).setDuration(250).start();
+                        Toast.makeText(MainActivity.this, "进入全屏便签：原有的跳转序号仍可点击滑动", Toast.LENGTH_SHORT).show();
+                    };
+
+                    @Override
+                    public boolean onTouch(View v, MotionEvent event) {
+                        switch (event.getActionMasked()) {
+                            case MotionEvent.ACTION_DOWN:
+                                isLongPressTriggered[0] = false;
+                                startX[0] = event.getX();
+                                startY[0] = event.getY();
+                                handler.postDelayed(longPressRunnable, 800);
+                                break;
+                            case MotionEvent.ACTION_MOVE:
+                                if (Math.abs(event.getX() - startX[0]) > 20 || Math.abs(event.getY() - startY[0]) > 20) {
+                                    handler.removeCallbacks(longPressRunnable);
+                                }
+                                break;
+                            case MotionEvent.ACTION_UP:
+                            case MotionEvent.ACTION_CANCEL:
+                                handler.removeCallbacks(longPressRunnable);
+                                if (isLongPressTriggered[0]) {
+                                    MotionEvent cancelEvent = MotionEvent.obtain(event);
+                                    cancelEvent.setAction(MotionEvent.ACTION_CANCEL);
+                                    v.onTouchEvent(cancelEvent);
+                                    cancelEvent.recycle();
+                                    return true;
+                                }
+                                break;
+                        }
+                        return false;
+                    }
                 });
 
                 Runnable applyEditorChanges = () -> {
-                    isManuallyEditedOut = true;
-                    outputText.setText(expandedEditText.getText());
+                    if (!expandedEditText.getText().toString().equals(originalEditorText)) {
+                        isManuallyEditedOut = true;
+                        outputText.setText(expandedEditText.getText());
+                    }
                     expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> expandedEditorOverlay.setVisibility(View.GONE)).start();
                 };
 
@@ -2279,7 +2347,6 @@ jobs:
                             })
                             .show();
                     } else {
-                        // 没有任何改动，直接无痕丝滑退出
                         expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> expandedEditorOverlay.setVisibility(View.GONE)).start();
                     }
                 });
@@ -3330,14 +3397,23 @@ jobs:
                 for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) currentErrors++; } }
                 
                 final int[] baseOffsetObj = {0}; 
+                final int[] baseOffsetEditorObj = {0};
                 
                 SpannableStringBuilder ssbFull = new SpannableStringBuilder();
+                SpannableStringBuilder ssbFullEditor = new SpannableStringBuilder();
+                
                 List<Integer> errorOffsets = new ArrayList<>();
+                List<Integer> editorErrorOffsets = new ArrayList<>();
+                
                 for (List<TextBlock> sentence : allSentencesBlocks) {
                     for (TextBlock b : sentence) {
-                        if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                        boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
+                        if (isError) {
                             errorOffsets.add(ssbFull.length());
+                            editorErrorOffsets.add(ssbFullEditor.length());
                         }
+                        
+                        // 生成主视窗富文本
                         int start = ssbFull.length(); ssbFull.append(b.current);
                         if (b.isMutable) {
                             EditSpan span = new EditSpan() {
@@ -3355,17 +3431,45 @@ jobs:
                             };
                             ssbFull.setSpan(span, start, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                         }
+                        
+                        // 生成便签专用的纯净富文本
+                        int startEd = ssbFullEditor.length(); ssbFullEditor.append(b.current);
+                        if (b.isMutable) {
+                            if (!b.current.equals(b.original) && !b.userModified) {
+                                ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFFE53935), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            } else if (b.userModified) {
+                                ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            } else {
+                                ssbFullEditor.setSpan(new ForegroundColorSpan(0xFF2196F3), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            }
+                        }
                     }
                 }
                 
                 SpannableStringBuilder ssb = new SpannableStringBuilder();
+                SpannableStringBuilder ssbEditor = new SpannableStringBuilder();
+                
                 if (currentErrors == 0) {
                     String header = "检查完毕！未检测到错误。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n\n";
-                    SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(headerSp);
+                    SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                    ssb.append(headerSp);
+                    SpannableString headerSpEd = new SpannableString(header); headerSpEd.setSpan(new ForegroundColorSpan(0xFF4CAF50), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssbEditor.append(headerSpEd);
                 } else {
                     String header = "检查完毕！共更正 " + currentErrors + " 处。耗时 " + String.format("%.2f", lastTimeMs/1000.0) + " 秒。\n（点击序号可快速跳转）\n\n";
-                    SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(headerSp);
-                    SpannableString listHeader = new SpannableString("【纠错清单：】\n"); listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(listHeader);
+                    SpannableString headerSp = new SpannableString(header); headerSp.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                    ssb.append(headerSp);
+                    SpannableString headerSpEd = new SpannableString(header); headerSpEd.setSpan(new ForegroundColorSpan(0xFF757575), 0, header.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssbEditor.append(headerSpEd);
+                    
+                    SpannableString listHeader = new SpannableString("【纠错清单：】\n"); 
+                    listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                    listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                    ssb.append(listHeader);
+                    SpannableString listHeaderEd = new SpannableString("【纠错清单：】\n"); 
+                    listHeaderEd.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                    listHeaderEd.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    ssbEditor.append(listHeaderEd);
                     
                     int listErrIdx = 0; 
                     for (List<TextBlock> sentence : allSentencesBlocks) {
@@ -3382,12 +3486,17 @@ jobs:
                             
                             if (!errsInClause.isEmpty()) {
                                 int stStart = ssb.length();
-                                ssb.append("[");
+                                int stStartEd = ssbEditor.length();
+                                
+                                ssb.append("["); ssbEditor.append("[");
                                 for (int i = 0; i < errsInClause.size(); i++) {
-                                    ssb.append(String.valueOf(listErrIdx + i + 1));
-                                    if (i < errsInClause.size() - 1) ssb.append(",");
+                                    String numStr = String.valueOf(listErrIdx + i + 1);
+                                    ssb.append(numStr); ssbEditor.append(numStr);
+                                    if (i < errsInClause.size() - 1) {
+                                        ssb.append(","); ssbEditor.append(",");
+                                    }
                                 }
-                                ssb.append("] ");
+                                ssb.append("] "); ssbEditor.append("] ");
                                 
                                 final int firstErrIdxInClause = listErrIdx;
                                 JumpSpan jumpSpan = new JumpSpan() {
@@ -3399,12 +3508,7 @@ jobs:
                                             if (layout != null) {
                                                 int line = layout.getLineForOffset(absOff);
                                                 int y = layout.getLineTop(line);
-                                                
-                                                if (tv.getId() == R.id.outputText) {
-                                                    scrollView.smoothScrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
-                                                } else {
-                                                    tv.scrollTo(0, Math.max(0, y - tv.getHeight() / 3));
-                                                }
+                                                scrollView.smoothScrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
                                                 
                                                 int lineStart = layout.getLineStart(line);
                                                 int lineEnd = layout.getLineEnd(line);
@@ -3424,16 +3528,50 @@ jobs:
                                 };
                                 ssb.setSpan(jumpSpan, stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
+                                JumpSpan jumpSpanEd = new JumpSpan() {
+                                    @Override public void onClick(View w) {
+                                        if (firstErrIdxInClause < editorErrorOffsets.size()) {
+                                            int absOff = baseOffsetEditorObj[0] + editorErrorOffsets.get(firstErrIdxInClause);
+                                            TextView tv = (TextView) w;
+                                            Layout layout = tv.getLayout();
+                                            if (layout != null) {
+                                                int line = layout.getLineForOffset(absOff);
+                                                int y = layout.getLineTop(line);
+                                                tv.scrollTo(0, Math.max(0, y - tv.getHeight() / 3));
+                                                
+                                                int lineStart = layout.getLineStart(line);
+                                                int lineEnd = layout.getLineEnd(line);
+                                                if (tv.getText() instanceof Spannable) {
+                                                    Spannable spanText = (Spannable) tv.getText();
+                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
+                                                    spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                                    Handler handler = new Handler(Looper.getMainLooper());
+                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 500);
+                                                    handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); }, 800);
+                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 1300);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
+                                };
+                                ssbEditor.setSpan(jumpSpanEd, stStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                
                                 for (TextBlock b : clause) {
                                     if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                         int oldTextStart = ssb.length(); 
-                                        ssb.append(b.original); 
+                                        int oldTextStartEd = ssbEditor.length();
+                                        ssb.append(b.original); ssbEditor.append(b.original);
                                         ssb.setSpan(new StrikethroughSpan(), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                         ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                                        ssb.append(" ");
+                                        ssbEditor.setSpan(new StrikethroughSpan(), oldTextStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        ssb.append(" "); ssbEditor.append(" ");
                                         
                                         int newStart = ssb.length(); 
-                                        ssb.append(b.current);
+                                        int newStartEd = ssbEditor.length();
+                                        ssb.append(b.current); ssbEditor.append(b.current);
+                                        
                                         EditSpan clickSpan = new EditSpan() {
                                             @Override public void onClick(View w) { showEditDialog(b); }
                                             @Override public void updateDrawState(TextPaint ds) { 
@@ -3447,6 +3585,13 @@ jobs:
                                         };
                                         ssb.setSpan(clickSpan, newStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                         
+                                        if (!b.current.equals(b.original) && !b.userModified) {
+                                            ssbEditor.setSpan(new WavyUnderlineSpan(0xFFE53935), newStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        } else if (b.userModified) {
+                                            ssbEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), newStartEd, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        }
+                                        
+                                        // 置信度只添加到主视窗
                                         if (!b.userModified && b.type == 1) {
                                             String confStr = "置信度: " + String.format("%.2f", b.conf);
                                             int confStart = ssb.length(); ssb.append("(").append(confStr).append(")"); 
@@ -3460,28 +3605,39 @@ jobs:
                                         
                                         listErrIdx++;
                                     } else { 
-                                        ssb.append(b.current); 
+                                        ssb.append(b.current); ssbEditor.append(b.current);
                                     }
                                 }
-                                ssb.append("\n"); 
+                                ssb.append("\n"); ssbEditor.append("\n");
                             }
                         }
                     }
-                    SpannableString sep = new SpannableString("\n---------------------------------\n\n"); sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(sep);
+                    SpannableString sep = new SpannableString("\n---------------------------------\n\n"); 
+                    sep.setSpan(new ForegroundColorSpan(0xFF757575), 0, sep.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                    ssb.append(sep); ssbEditor.append(sep);
                 }
                 
-                SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); ssb.append(fullHeader);
+                SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); 
+                fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                ssb.append(fullHeader); ssbEditor.append(fullHeader);
                 
-                // 【核心变更】把报告栏头部区域的所有内容打上屏蔽标记，防止便签编辑后提取纯文本时混入
                 int topSectionEnd = ssb.length();
                 if (topSectionEnd > 0) {
                     ssb.setSpan(new IgnoredInCopySpan(), 0, topSectionEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
+                int topSectionEndEd = ssbEditor.length();
+                if (topSectionEndEd > 0) {
+                    ssbEditor.setSpan(new IgnoredInCopySpan(), 0, topSectionEndEd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
                 
                 baseOffsetObj[0] = ssb.length();
                 ssb.append(ssbFull);
+                baseOffsetEditorObj[0] = ssbEditor.length();
+                ssbEditor.append(ssbFullEditor);
                 
-                // 更新最近一条历史记录的纠错结果
+                lastEditorSpannable = ssbEditor;
+                
                 if (lastSavedHistoryFileId != null && !allSentencesBlocks.isEmpty()) {
                     try {
                         File dir = new File(getFilesDir(), "history");
