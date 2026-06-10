@@ -2296,7 +2296,14 @@ jobs:
                 expandedEditText.setMovementMethod(LinkMovementMethod.getInstance());
 
                 expandedEditText.addTextChangedListener(new TextWatcher() {
-                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                        if (isEditorSelfModifying || isCheckingMain || currentClauseLinks == null) return;
+                        try {
+                            SpannableStringBuilder snapshot = new SpannableStringBuilder(s);
+                            editorUndoStack.push(snapshot);
+                            if (editorUndoStack.size() > 100) editorUndoStack.remove(0);
+                        } catch (Exception e) {}
+                    }
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
                     @Override public void afterTextChanged(Editable s) {
                         if (isCheckingMain || currentClauseLinks == null || isEditorSelfModifying) return;
@@ -2360,10 +2367,13 @@ jobs:
                             if (isEditorSelfModifying) return null;
                             Editable editable = expandedEditText.getText();
                             if (editable != null) {
-                                HeaderEndSpan[] spans = editable.getSpans(0, editable.length(), HeaderEndSpan.class);
+                                IgnoredInCopySpan[] spans = editable.getSpans(0, editable.length(), IgnoredInCopySpan.class);
                                 if (spans.length > 0) {
-                                    int lockedEnd = editable.getSpanStart(spans[0]);
-                                    if (lockedEnd > 0 && dstart < lockedEnd) {
+                                    int maxLockedEnd = 0;
+                                    for (IgnoredInCopySpan span : spans) {
+                                        maxLockedEnd = Math.max(maxLockedEnd, editable.getSpanEnd(span));
+                                    }
+                                    if (maxLockedEnd > 0 && dstart < maxLockedEnd) {
                                         return dest.subSequence(dstart, dend);
                                     }
                                 }
@@ -2536,14 +2546,7 @@ jobs:
                 loadSettings(currentIsFast);
                 
                 inputText.addTextChangedListener(new TextWatcher() {
-                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                        if (isEditorSelfModifying || isCheckingMain) return;
-                        try {
-                            SpannableStringBuilder snapshot = new SpannableStringBuilder(s);
-                            editorUndoStack.push(snapshot);
-                            if (editorUndoStack.size() > 100) editorUndoStack.remove(0);
-                        } catch (Exception e) {}
-                    }
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
                     @Override public void afterTextChanged(Editable s) { 
                         int count = s.toString().replaceAll("[\\p{P}\\p{S}\\s]", "").length();
@@ -3779,28 +3782,35 @@ jobs:
                                     @Override public void onClick(View w) {
                                         try {
                                             if (!link.isDead && !link.targetSpans.isEmpty()) {
-                                                EditText et = (EditText) w;
-                                                Editable editable = et.getText();
+                                                TextView tv = (TextView) w;
+                                                Spanned spanText = (Spanned) tv.getText();
                                                 TargetSpan firstTarget = null;
                                                 for (TargetSpan ts : link.targetSpans) {
-                                                    int tsStart = editable.getSpanStart(ts);
-                                                    if (tsStart >= 0 && tsStart < editable.length()) { firstTarget = ts; break; }
+                                                    int tsStart = spanText.getSpanStart(ts);
+                                                    if (tsStart >= 0 && tsStart < spanText.length()) { firstTarget = ts; break; }
                                                 }
                                                 if (firstTarget != null) {
-                                                    int pos = editable.getSpanStart(firstTarget);
-                                                    Layout layout = et.getLayout();
-                                                    if (layout != null && pos >= 0 && pos < editable.length()) {
+                                                    int pos = spanText.getSpanStart(firstTarget);
+                                                    Layout layout = tv.getLayout();
+                                                    if (layout != null && pos >= 0 && pos < spanText.length()) {
                                                         int line = layout.getLineForOffset(pos);
                                                         int y = layout.getLineTop(line);
-                                                        et.scrollTo(0, Math.max(0, y - et.getHeight() / 3));
+                                                        if (tv instanceof EditText) {
+                                                            tv.scrollTo(0, Math.max(0, y - tv.getHeight() / 3));
+                                                        } else {
+                                                            scrollView.scrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
+                                                        }
                                                         int lineStart = layout.getLineStart(line);
                                                         int lineEnd = layout.getLineEnd(line);
                                                         BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
-                                                        editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                                        Handler handler = new Handler(Looper.getMainLooper());
-                                                        handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); et.invalidate(); } catch(Exception e){} }, 500);
-                                                        handler.postDelayed(() -> { try { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); et.invalidate(); } catch(Exception e){} }, 800);
-                                                        handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); et.invalidate(); } catch(Exception e){} }, 1300);
+                                                        if (spanText instanceof Spannable) {
+                                                            Spannable editable = (Spannable) spanText;
+                                                            editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                                            Handler handler = new Handler(Looper.getMainLooper());
+                                                            handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 500);
+                                                            handler.postDelayed(() -> { try { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); } catch(Exception e){} }, 800);
+                                                            handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 1300);
+                                                        }
                                                     }
                                                 }
                                             }
@@ -3879,10 +3889,6 @@ jobs:
                 baseOffsetObj[0] = ssb.length();
                 ssb.append(ssbFull);
                 ssbEditor.append(ssbFullEditor);
-                
-                if (edHeaderEnd > 0 && ssbEditor.length() > edHeaderEnd) {
-                    ssbEditor.setSpan(new HeaderEndSpan(), edHeaderEnd, edHeaderEnd + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
                 
                 lastEditorSpannable = ssbEditor;
                 
