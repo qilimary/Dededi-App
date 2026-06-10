@@ -585,7 +585,7 @@ jobs:
                     </FrameLayout>
                 </LinearLayout>
                 
-                    <FrameLayout
+                <FrameLayout
                     android:id="@+id/expandedEditorOverlay"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
@@ -662,7 +662,6 @@ jobs:
                                 android:padding="0dp"/>
                         </LinearLayout>
 
-                        <!-- 新增一层 FrameLayout 用以放置 NestedScrollView 和右侧滚动条 -->
                         <FrameLayout
                             android:layout_width="match_parent"
                             android:layout_height="match_parent">
@@ -691,6 +690,7 @@ jobs:
 
                             <View android:id="@+id/editorScrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end"/>
                         </FrameLayout>
+                        
                     </LinearLayout>
                 </FrameLayout>
 
