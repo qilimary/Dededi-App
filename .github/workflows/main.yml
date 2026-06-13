@@ -1,5 +1,4 @@
 
-
 name: Build Android APK
 
 on:
@@ -3895,6 +3894,7 @@ jobs:
                                         if (errIdx < errsInClause.size() - 1) sentenceErrorHtml.append(",");
                                     }
                                     sentenceErrorHtml.append("]</b></font> ");
+                                 
                                     
                                     for (TextBlock b : clause) {
                                         String safeOrig = b.original.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
@@ -4044,7 +4044,7 @@ jobs:
                         
                         boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
                         // errorOffsets 已被 TargetSpan 动态锚点替代
-
+                        
                         // 生成主视窗富文本
                         int start = ssbFull.length(); ssbFull.append(b.current);
                         if (isError) {
@@ -4156,7 +4156,7 @@ jobs:
                                                     if (mainTs != null) {
                                                         int pos = spanText.getSpanStart(mainTs);
                                                         if (pos >= 0 && pos <= spanText.length()) {
-                                                            Layout layout = tv.getLayout();                                Layout layout = tv.getLayout();
+                                                            Layout layout = tv.getLayout();
                                                             if (layout != null) {
                                                                 int line = layout.getLineForOffset(pos);
                                                                 int y = layout.getLineTop(line);
@@ -4181,7 +4181,6 @@ jobs:
                                 };
                                 ssb.setSpan(jumpSpan, stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
-                                
                                 for (TextBlock b : clause) {
                                     if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                         int oldTextStart = ssb.length(); 
@@ -4193,7 +4192,6 @@ jobs:
                                             ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                         }
                                         ssb.append(" ");
-                                
                                         
                                         int newStart = ssb.length(); 
                                         ssb.append(b.current);
@@ -4254,9 +4252,6 @@ jobs:
                                             if (!link.isDead && !link.targetSpans.isEmpty()) {
                                                 TextView tv = (TextView) w;
                                                 Spanned spanText = (Spanned) tv.getText();
-                                                
-                                                
-                                                
                                                 TargetSpan firstTarget = null;
                                                 for (TargetSpan ts : link.targetSpans) {
                                                     int tsStart = spanText.getSpanStart(ts);
@@ -4267,12 +4262,9 @@ jobs:
                                                     Layout layout = tv.getLayout();
                                                     if (layout != null && pos >= 0 && pos <= spanText.length()) {
                                                         int line = layout.getLineForOffset(pos);
-                                                
                                                         int y = layout.getLineTop(line);
                                                         if (tv instanceof EditText) {
-                                                            // 【修复】立即将光标吸附到目标位置，防止底层动画重绘导致视窗反弹回顶部
                                                             ((EditText) tv).setSelection(pos);
-                                                            // 将目标行定位到屏幕中上部
                                                             ScrollView editorScroll = ((android.app.Activity) tv.getContext()).findViewById(R.id.editorScrollView);
                                                             if (editorScroll != null) {
                                                                 editorScroll.post(() -> editorScroll.scrollTo(0, Math.max(0, y - editorScroll.getHeight() / 3)));
