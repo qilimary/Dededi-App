@@ -3910,20 +3910,20 @@ jobs:
                                 if (b.isMutable) {
                                     currentClause.add(b);
                                 } else {
-                                    String text = b.original;
+                                    String origText = b.original;
                                     int lastCut = 0;
-                                    for (int k = 0; k < text.length(); k++) {
-                                        char c = text.charAt(k);
+                                    for (int k = 0; k < origText.length(); k++) {
+                                        char c = origText.charAt(k);
                                         if (c == '，' || c == ',' || c == '；' || c == ';' || c == '、' || c == '\n') {
-                                            String part = text.substring(lastCut, k + 1);
+                                            String part = origText.substring(lastCut, k + 1);
                                             if (!part.isEmpty()) currentClause.add(new TextBlock(part, part, false, 0f, 0));
                                             rawClauses.add(currentClause);
                                             currentClause = new ArrayList<>();
                                             lastCut = k + 1;
                                         }
                                     }
-                                    if (lastCut < text.length()) {
-                                        String part = text.substring(lastCut);
+                                    if (lastCut < origText.length()) {
+                                        String part = origText.substring(lastCut);
                                         currentClause.add(new TextBlock(part, part, false, 0f, 0));
                                     }
                                 }
