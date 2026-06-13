@@ -1387,6 +1387,33 @@ jobs:
                                     while (i < b.original.length()) {
                                         boolean matchedTypo = false;
                                         boolean matchedQuant = false;
+                                        boolean matchedGram = false;
+
+                                        // 优先匹配动态语病规则
+                                        for (MainActivity.GramRule rule : MainActivity.gramRules) {
+                                            java.util.regex.Matcher m = rule.pattern.matcher(b.original.substring(i));
+                                            if (m.find()) {
+                                                if (normalBuf.length() > 0) {
+                                                    finalSentenceBlocks.add(new MainActivity.TextBlock(normalBuf.toString(), normalBuf.toString(), false, 0f, 0));
+                                                    normalBuf.setLength(0);
+                                                }
+                                                String originalSub = m.group(0);
+                                                String correctedSub = m.replaceFirst(rule.replacementTemplate);
+                                                
+                                                // 标记为 type 6 (语病规则，前端只标红波浪线，不加后缀标注)
+                                                finalSentenceBlocks.add(new MainActivity.TextBlock(originalSub, correctedSub, true, 1.0f, 6));
+                                                
+                                                errorCount[0]++;
+                                                final String errLog = "发现错误：" + originalSub + " → " + correctedSub + " | 共 " + errorCount[0] + " 处";
+                                                syncShowStatus(errLog, true);
+                                                
+                                                i += originalSub.length();
+                                                matchedGram = true;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if (matchedGram) continue;
                                         
                                         if (MainActivity.maxTypoLen > 0) {
                                             for (int len = Math.min(MainActivity.maxTypoLen, b.original.length() - i); len >= MainActivity.minTypoLen; len--) {
@@ -1612,6 +1639,31 @@ jobs:
                 public QuantifierRule(String p, String a) { primaryQuant = p; allowedQuants = a; }
             }
             public static final Map<Character, QuantifierRule> quantRules = new HashMap<>();
+
+            // ===== 新增：通用句式语病规则 =====
+            public static class GramRule {
+                public java.util.regex.Pattern pattern;
+                public String replacementTemplate;
+                public GramRule(String regex, String template) {
+                    pattern = java.util.regex.Pattern.compile(regex);
+                    replacementTemplate = template;
+                }
+            }
+            public static final List<GramRule> gramRules = new ArrayList<>();
+            static {
+                // 中间允许跨越 1-15 个字符（最短匹配），彻底解决啰嗦语病，且绝不会误伤
+                gramRules.add(new GramRule("^(大概|大约)(.{1,15}?)(左右|上下)", "$1$2"));
+                gramRules.add(new GramRule("^(超过|高达|多达)(.{1,15}?)(以上)", "$1$2"));
+                gramRules.add(new GramRule("^(低于|少于|不足)(.{1,15}?)(以下)", "$1$2"));
+                gramRules.add(new GramRule("^(原因是)(.{1,15}?)(造成的)", "$1$2"));
+                gramRules.add(new GramRule("^(由于)(.{1,15}?)(的结果)", "$1$2"));
+                gramRules.add(new GramRule("^(截至|截止到)(.{1,15}?)(为止)", "$1$2"));
+                gramRules.add(new GramRule("^(是因为)(.{1,15}?)(的原因)", "$1$2"));
+                gramRules.add(new GramRule("^(围绕)(.{1,15}?)(为中心)", "以$2为中心"));
+                gramRules.add(new GramRule("^(从)(.{1,15}?)(为出发点)", "以$2为出发点"));
+                gramRules.add(new GramRule("^(打着)(.{1,15}?)(为幌子)", "以$2为幌子"));
+                gramRules.add(new GramRule("^(借着)(.{1,15}?)(为名义)", "以$2为名义"));
+            }
             static {
                 quantRules.put('牛', new QuantifierRule("头", "头"));
                 quantRules.put('马', new QuantifierRule("匹", "匹"));
