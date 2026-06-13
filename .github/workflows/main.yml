@@ -3882,6 +3882,10 @@ jobs:
                             List<TextBlock> finalSentenceBlocks = new ArrayList<>();
                             StringBuilder normalOrig = new StringBuilder();
                             StringBuilder normalCurr = new StringBuilder();
+                            
+                            
+                            
+                            
                             for (TextBlock b : intermediateBlocks) {
                                 if (b.type == 0 && !b.isMutable) {
                                     normalOrig.append(b.original);
@@ -3900,42 +3904,78 @@ jobs:
                             }
                             
                             // UI更新：计算并输出当前段落的错误状态
-                            List<List<TextBlock>> clauses = new ArrayList<>(); 
+                            List<List<TextBlock>> rawClauses = new ArrayList<>();
                             List<TextBlock> currentClause = new ArrayList<>();
                             for (TextBlock b : finalSentenceBlocks) {
-                                currentClause.add(b); char lastChar = b.original.charAt(b.original.length() - 1);
-                                if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') { clauses.add(currentClause); currentClause = new ArrayList<>(); }
-                            }
-                            if (!currentClause.isEmpty()) clauses.add(currentClause);
-                            
-                            boolean sentenceHasError = false; StringBuilder sentenceErrorHtml = new StringBuilder();
-                            for (List<TextBlock> clause : clauses) {
-                                if (hasError(clause)) {
-                                    sentenceHasError = true;
-                                    List<TextBlock> errsInClause = new ArrayList<>();
-                                    for (TextBlock b : clause) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) errsInClause.add(b); }
-                                    
-                                    sentenceErrorHtml.append("<font color='#2196F3'><b>[");
-                                    for (int errIdx = 0; errIdx < errsInClause.size(); errIdx++) {
-                                        sentenceErrorHtml.append(liveErrorCount + errIdx + 1);
-                                        if (errIdx < errsInClause.size() - 1) sentenceErrorHtml.append(",");
+                                if (b.isMutable) {
+                                    currentClause.add(b);
+                                } else {
+                                    String text = b.original;
+                                    int lastCut = 0;
+                                    for (int k = 0; k < text.length(); k++) {
+                                        char c = text.charAt(k);
+                                        if (c == '，' || c == ',' || c == '；' || c == ';' || c == '、' || c == '\n') {
+                                            String part = text.substring(lastCut, k + 1);
+                                            if (!part.isEmpty()) currentClause.add(new TextBlock(part, part, false, 0f, 0));
+                                            rawClauses.add(currentClause);
+                                            currentClause = new ArrayList<>();
+                                            lastCut = k + 1;
+                                        }
                                     }
-                                    sentenceErrorHtml.append("]</b></font> ");
-                                 
-                                    
-                                    for (TextBlock b : clause) {
-                                        String safeOrig = b.original.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-                                        String safeCurr = b.current.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-                                        if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
-                                            liveErrorCount++;
-                                            String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : ((b.type == 4) ? " (自定义)" : "");
-                                            String origColor = (b.type == 6) ? "#E53935" : "#9E9E9E";
-                                            sentenceErrorHtml.append("<font color='").append(origColor).append("'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
-                                        } else { sentenceErrorHtml.append(safeOrig); }
+                                    if (lastCut < text.length()) {
+                                        String part = text.substring(lastCut);
+                                        currentClause.add(new TextBlock(part, part, false, 0f, 0));
                                     }
                                 }
                             }
-                            if (sentenceHasError) liveErrorsHtml.append(sentenceErrorHtml.toString()).append("<br><br>");
+                            if (!currentClause.isEmpty()) rawClauses.add(currentClause);
+
+                            List<List<TextBlock>> errorGroups = new ArrayList<>();
+                            List<TextBlock> currentGroup = new ArrayList<>();
+                            for (List<TextBlock> c : rawClauses) {
+                                boolean hasErr = false;
+                                for (TextBlock b : c) {
+                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                        hasErr = true; break;
+                                    }
+                                }
+                                if (hasErr) {
+                                    currentGroup.addAll(c);
+                                } else {
+                                    if (!currentGroup.isEmpty()) {
+                                        errorGroups.add(currentGroup);
+                                        currentGroup = new ArrayList<>();
+                                    }
+                                }
+                            }
+                            if (!currentGroup.isEmpty()) errorGroups.add(currentGroup);
+                            
+                            boolean sentenceHasError = false; StringBuilder sentenceErrorHtml = new StringBuilder();
+                            for (List<TextBlock> group : errorGroups) {
+                                sentenceHasError = true;
+                                List<TextBlock> errsInGroup = new ArrayList<>();
+                                for (TextBlock b : group) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) errsInGroup.add(b); }
+                                
+                                sentenceErrorHtml.append("<font color='#2196F3'><b>[");
+                                for (int errIdx = 0; errIdx < errsInGroup.size(); errIdx++) {
+                                    sentenceErrorHtml.append(liveErrorCount + errIdx + 1);
+                                    if (errIdx < errsInGroup.size() - 1) sentenceErrorHtml.append(",");
+                                }
+                                sentenceErrorHtml.append("]</b></font> ");
+                                
+                                for (TextBlock b : group) {
+                                    String safeOrig = b.original.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+                                    String safeCurr = b.current.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                        liveErrorCount++;
+                                        String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : ((b.type == 4) ? " (自定义)" : "");
+                                        String origColor = (b.type == 6) ? "#E53935" : "#9E9E9E";
+                                        sentenceErrorHtml.append("<font color='").append(origColor).append("'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
+                                    } else { sentenceErrorHtml.append(safeOrig); }
+                                }
+                                sentenceErrorHtml.append("<br>");
+                            }
+                            if (sentenceHasError) liveErrorsHtml.append(sentenceErrorHtml.toString()).append("<br>");
                             
                             allSentencesBlocks.add(finalSentenceBlocks);
 
@@ -4163,12 +4203,51 @@ jobs:
                     
                     int listErrIdx = 0; 
                     for (List<TextBlock> sentence : allSentencesBlocks) {
-                        List<List<TextBlock>> clauses = new ArrayList<>(); List<TextBlock> currentClause = new ArrayList<>();
+                        List<List<TextBlock>> rawClauses = new ArrayList<>();
+                        List<TextBlock> currentClause = new ArrayList<>();
                         for (TextBlock b : sentence) {
-                            currentClause.add(b); char lastChar = b.original.charAt(b.original.length() - 1);
-                            if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') { clauses.add(currentClause); currentClause = new ArrayList<>(); }
+                            if (b.isMutable) {
+                                currentClause.add(b);
+                            } else {
+                                String text = b.original;
+                                int lastCut = 0;
+                                for (int k = 0; k < text.length(); k++) {
+                                    char c = text.charAt(k);
+                                    if (c == '，' || c == ',' || c == '；' || c == ';' || c == '、' || c == '\n') {
+                                        String part = text.substring(lastCut, k + 1);
+                                        if (!part.isEmpty()) currentClause.add(new TextBlock(part, part, false, 0f, 0));
+                                        rawClauses.add(currentClause);
+                                        currentClause = new ArrayList<>();
+                                        lastCut = k + 1;
+                                    }
+                                }
+                                if (lastCut < text.length()) {
+                                    String part = text.substring(lastCut);
+                                    currentClause.add(new TextBlock(part, part, false, 0f, 0));
+                                }
+                            }
                         }
-                        if (!currentClause.isEmpty()) clauses.add(currentClause);
+                        if (!currentClause.isEmpty()) rawClauses.add(currentClause);
+
+                        List<List<TextBlock>> clauses = new ArrayList<>();
+                        List<TextBlock> currentGroup = new ArrayList<>();
+                        for (List<TextBlock> c : rawClauses) {
+                            boolean hasErr = false;
+                            for (TextBlock b : c) {
+                                if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                    hasErr = true; break;
+                                }
+                            }
+                            if (hasErr) {
+                                currentGroup.addAll(c);
+                            } else {
+                                if (!currentGroup.isEmpty()) {
+                                    clauses.add(currentGroup);
+                                    currentGroup = new ArrayList<>();
+                                }
+                            }
+                        }
+                        if (!currentGroup.isEmpty()) clauses.add(currentGroup);
                         
                         for (List<TextBlock> clause : clauses) {
                             List<TextBlock> errsInClause = new ArrayList<>();
