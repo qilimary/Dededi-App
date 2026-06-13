@@ -1,4 +1,5 @@
 
+
 name: Build Android APK
 
 on:
@@ -1277,185 +1278,232 @@ jobs:
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) continue;
                             
-                            List<MainActivity.TextBlock> currentSentenceBlocks = new ArrayList<>();
-                            
-                            boolean[] isProcessed = new boolean[sentence.length()];
-                            class PreBlock {
-                                int length; String original; String replacement; int type;
-                                PreBlock(int l, String o, String r, int t) { length=l; original=o; replacement=r; type=t; }
-                            }
-                            Map<Integer, PreBlock> preBlocks = new HashMap<>();
+                            List<MainActivity.TextBlock> intermediateBlocks = new ArrayList<>();
+                            int i = 0;
+                            while (i < sentence.length()) {
+                                boolean matchedTypo = false;
+                                boolean matchedGram = false;
+                                boolean matchedQuant = false;
 
-                            // 1. 优先匹配动态语病规则
-                            for (MainActivity.GramRule rule : MainActivity.gramRules) {
-                                java.util.regex.Matcher m = rule.pattern.matcher(sentence);
-                                while (m.find()) {
-                                    boolean overlap = false;
-                                    for(int k = m.start(); k < m.end(); k++) { if(isProcessed[k]) overlap = true; }
-                                    if(!overlap) {
-                                        for(int k = m.start(); k < m.end(); k++) isProcessed[k] = true;
-                                        String orig = m.group(0);
-                                        String repl = rule.pattern.matcher(orig).replaceFirst(rule.replacementTemplate);
-                                        preBlocks.put(m.start(), new PreBlock(orig.length(), orig, repl, 6));
-                                    }
-                                }
-                            }
-
-                            // 2. 匹配错词库（自定义+内置）
-                            for (int i = 0; i < sentence.length(); i++) {
-                                if (isProcessed[i]) continue;
                                 if (MainActivity.maxTypoLen > 0) {
                                     for (int len = Math.min(MainActivity.maxTypoLen, sentence.length() - i); len >= MainActivity.minTypoLen; len--) {
-                                        boolean overlap = false;
-                                        for(int k = i; k < i + len; k++) { if(isProcessed[k]) { overlap = true; break; } }
-                                        if(overlap) continue;
-
                                         String sub = sentence.substring(i, i + len);
                                         if (MainActivity.typoMap.containsKey(sub)) {
                                             String correct = MainActivity.typoMap.get(sub);
-                                            int bType = MainActivity.customTypoKeys.contains(sub) ? 4 : 2;
-                                            for(int k = i; k < i + len; k++) isProcessed[k] = true;
-                                            preBlocks.put(i, new PreBlock(len, sub, correct, bType));
+                                            boolean isRealTypo = !sub.equals(correct);
+                                            int blockType = MainActivity.customTypoKeys.contains(sub) ? 4 : 2;
+                                            intermediateBlocks.add(new MainActivity.TextBlock(sub, correct, isRealTypo, 1.0f, blockType));
+                                            if (isRealTypo) {
+                                                errorCount[0]++;
+                                                final String errLog = "发现错误：" + sub + " → " + correct + " | 共 " + errorCount[0] + " 处";
+                                                syncShowStatus(errLog, true);
+                                            }
+                                            i += len;
+                                            matchedTypo = true;
                                             break;
                                         }
                                     }
                                 }
-                            }
+                                if (matchedTypo) continue;
 
-                            // 3. 匹配忽略词白名单
-                            for (String w : MainActivity.IGNORE_WORDS) {
-                                int idx = sentence.indexOf(w);
-                                while (idx >= 0) {
-                                    boolean overlap = false;
-                                    for(int k = idx; k < idx + w.length(); k++) { if(isProcessed[k]) overlap = true; }
-                                    if(!overlap) {
-                                        for(int k = idx; k < idx + w.length(); k++) isProcessed[k] = true;
-                                        preBlocks.put(idx, new PreBlock(w.length(), w, w, 0));
+                                for (MainActivity.GramRule rule : MainActivity.gramRules) {
+                                    java.util.regex.Matcher m = rule.pattern.matcher(sentence.substring(i));
+                                    if (m.lookingAt()) {
+                                        String g1 = m.group(1);
+                                        String g2 = m.group(2);
+                                        String g3 = m.group(3);
+                                        String rep1 = rule.prefixReplace != null ? rule.prefixReplace : g1;
+                                        String rep3 = rule.suffixReplace != null ? rule.suffixReplace : g3;
+
+                                        if (!g1.equals(rep1)) {
+                                            intermediateBlocks.add(new MainActivity.TextBlock(g1, rep1, true, 1.0f, 6));
+                                            errorCount[0]++;
+                                            String logRep = rep1.isEmpty() ? "(删除)" : rep1;
+                                            final String errLog = "发现错误：" + g1 + " → " + logRep + " | 共 " + errorCount[0] + " 处";
+                                            syncShowStatus(errLog, true);
+                                        } else {
+                                            for (int k = 0; k < g1.length(); k++) {
+                                                intermediateBlocks.add(new MainActivity.TextBlock(String.valueOf(g1.charAt(k)), String.valueOf(g1.charAt(k)), false, 0f, 0));
+                                            }
+                                        }
+
+                                        for (int k = 0; k < g2.length(); k++) {
+                                            intermediateBlocks.add(new MainActivity.TextBlock(String.valueOf(g2.charAt(k)), String.valueOf(g2.charAt(k)), false, 0f, 0));
+                                        }
+
+                                        if (!g3.equals(rep3)) {
+                                            intermediateBlocks.add(new MainActivity.TextBlock(g3, rep3, true, 1.0f, 6));
+                                            errorCount[0]++;
+                                            String logRep = rep3.isEmpty() ? "(删除)" : rep3;
+                                            final String errLog = "发现错误：" + g3 + " → " + logRep + " | 共 " + errorCount[0] + " 处";
+                                            syncShowStatus(errLog, true);
+                                        } else {
+                                            for (int k = 0; k < g3.length(); k++) {
+                                                intermediateBlocks.add(new MainActivity.TextBlock(String.valueOf(g3.charAt(k)), String.valueOf(g3.charAt(k)), false, 0f, 0));
+                                            }
+                                        }
+
+                                        i += m.group(0).length();
+                                        matchedGram = true;
+                                        break;
                                     }
-                                    idx = sentence.indexOf(w, idx + 1);
                                 }
-                            }
-
-                            boolean hasTarget = false;
-                            for (int i = 0; i < sentence.length(); i++) {
-                                char c = sentence.charAt(i);
-                                if ((c == '的' || c == '地' || c == '得') && !isProcessed[i]) { hasTarget = true; break; }
-                            }
-
-                            float[] scores = null;
-                            if (hasTarget && temp > 0.0f) {
-                                int vocabSize = isFastMode ? 3 : MainActivity.proVocab.size();
-                                if (isFastMode) {
-                                    long fUnk = MainActivity.fastVocab.getOrDefault("[UNK]", 1L); long fMask = MainActivity.fastVocab.getOrDefault("[MASK]", 2L);
-                                    long[] ids = new long[sentence.length()];
-                                    for (int i = 0; i < sentence.length(); i++) {
-                                        char c = sentence.charAt(i);
-                                        if (!isProcessed[i] && (c == '的' || c == '地' || c == '得')) ids[i] = fMask;
-                                        else ids[i] = MainActivity.fastVocab.getOrDefault(String.valueOf(c), fUnk);
-                                    }
-                                    Tensor inputTensor = Tensor.fromBlob(ids, new long[]{1, sentence.length()});
-                                    scores = MainActivity.fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
-                                } else {
-                                    int exactLen = sentence.length() + 2;
-                                    long[] ids = new long[exactLen]; long[] masks = new long[exactLen]; long[] types = new long[exactLen];
-                                    ids[0] = MainActivity.clsId; masks[0] = 1; types[0] = 0;
-                                    for (int i = 0; i < sentence.length(); i++) {
-                                        char c = sentence.charAt(i);
-                                        if (!isProcessed[i] && (c == '的' || c == '地' || c == '得')) ids[i + 1] = MainActivity.maskId;
-                                        else ids[i + 1] = MainActivity.proVocab.getOrDefault(String.valueOf(c), MainActivity.unkId);
-                                        masks[i + 1] = 1; types[i + 1] = 0;
-                                    }
-                                    ids[exactLen - 1] = MainActivity.sepId; masks[exactLen - 1] = 1; types[exactLen - 1] = 0;
-                                    Tensor tIds = Tensor.fromBlob(ids, new long[]{1, exactLen}); Tensor tMasks = Tensor.fromBlob(masks, new long[]{1, exactLen}); Tensor tTypes = Tensor.fromBlob(types, new long[]{1, exactLen});
-                                    IValue outputVal = MainActivity.proModule.forward(IValue.from(tIds), IValue.from(tMasks), IValue.from(tTypes));
-                                    Tensor outTensor = outputVal.isTuple() ? outputVal.toTuple()[0].toTensor() : outputVal.toTensor();
-                                    scores = outTensor.getDataAsFloatArray();
-                                }
-                            }
-
-                            List<MainActivity.TextBlock> finalSentenceBlocks = new ArrayList<>();
-                            StringBuilder normalText = new StringBuilder();
-                            Runnable flushNormal = () -> {
-                                if(normalText.length() > 0) { 
-                                    finalSentenceBlocks.add(new MainActivity.TextBlock(normalText.toString(), normalText.toString(), false, 0f, 0)); 
-                                    normalText.setLength(0); 
-                                }
-                            };
-
-                            for (int i = 0; i < sentence.length(); i++) {
-                                if (preBlocks.containsKey(i)) {
-                                    flushNormal.run();
-                                    PreBlock pb = preBlocks.get(i);
-                                    if (pb.type == 0 || pb.original.equals(pb.replacement)) {
-                                        normalText.append(pb.original);
-                                    } else {
-                                        finalSentenceBlocks.add(new MainActivity.TextBlock(pb.original, pb.replacement, true, 1.0f, pb.type));
-                                        errorCount[0]++;
-                                        final String errLog = "发现错误：" + pb.original + " → " + pb.replacement + " | 共 " + errorCount[0] + " 处";
-                                        syncShowStatus(errLog, true);
-                                    }
-                                    i += pb.length - 1;
-                                    continue;
-                                }
+                                if (matchedGram) continue;
 
                                 if (i > 0 && i + 1 < sentence.length()) {
-                                    if (normalText.length() > 0) {
-                                        char numChar = normalText.charAt(normalText.length() - 1);
-                                        char quantChar = sentence.charAt(i);
-                                        char nounChar = sentence.charAt(i + 1);
-                                        if (MainActivity.KNOWN_QUANTS.indexOf(quantChar) >= 0 && MainActivity.NUMS.indexOf(numChar) >= 0) {
-                                            if (MainActivity.quantRules.containsKey(nounChar)) {
-                                                MainActivity.QuantifierRule rule = MainActivity.quantRules.get(nounChar);
-                                                if (rule.allowedQuants.indexOf(quantChar) < 0) {
-                                                    char nextC = (i + 2 < sentence.length()) ? sentence.charAt(i + 2) : '\0';
-                                                    if (MainActivity.isSafeCharAfterNoun(nextC)) {
-                                                        flushNormal.run();
-                                                        finalSentenceBlocks.add(new MainActivity.TextBlock(String.valueOf(quantChar), rule.primaryQuant, true, 1.0f, 3));
-                                                        errorCount[0]++;
-                                                        final String errLog = "发现错误：" + numChar + quantChar + nounChar + " → " + numChar + rule.primaryQuant + nounChar + " | 共 " + errorCount[0] + " 处";
-                                                        syncShowStatus(errLog, true);
-                                                        i += 1;
-                                                        continue;
-                                                    }
+                                    char numChar = sentence.charAt(i - 1);
+                                    char quantChar = sentence.charAt(i);
+                                    char nounChar = sentence.charAt(i + 1);
+                                    if (MainActivity.KNOWN_QUANTS.indexOf(quantChar) >= 0 && MainActivity.NUMS.indexOf(numChar) >= 0) {
+                                        if (MainActivity.quantRules.containsKey(nounChar)) {
+                                            MainActivity.QuantifierRule rule = MainActivity.quantRules.get(nounChar);
+                                            if (rule.allowedQuants.indexOf(quantChar) < 0) {
+                                                char nextC = (i + 2 < sentence.length()) ? sentence.charAt(i + 2) : '\0';
+                                                if (MainActivity.isSafeCharAfterNoun(nextC)) {
+                                                    intermediateBlocks.add(new MainActivity.TextBlock(String.valueOf(quantChar), rule.primaryQuant, true, 1.0f, 3));
+                                                    errorCount[0]++;
+                                                    final String errLog = "发现错误：" + numChar + quantChar + nounChar + " → " + numChar + rule.primaryQuant + nounChar + " | 共 " + errorCount[0] + " 处";
+                                                    syncShowStatus(errLog, true);
+                                                    i += 1;
+                                                    matchedQuant = true;
                                                 }
                                             }
                                         }
                                     }
                                 }
+                                if (matchedQuant) continue;
 
-                                char ch = sentence.charAt(i);
-                                if ((ch == '的' || ch == '地' || ch == '得') && scores != null && !isProcessed[i]) {
-                                    flushNormal.run();
-                                    int vocabSize = isFastMode ? 3 : MainActivity.proVocab.size();
-                                    float s0, s1, s2;
-                                    if (isFastMode) {
-                                        int base = i * 3; 
-                                        s0 = (float) Math.exp(scores[base] / temp); s1 = (float) Math.exp(scores[base + 1] / temp); s2 = (float) Math.exp(scores[base + 2] / temp);
-                                    } else {
-                                        int seqPos = i + 1; 
-                                        s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.deId] / temp); s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.diId] / temp); s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.de2Id] / temp);
+                                intermediateBlocks.add(new MainActivity.TextBlock(String.valueOf(sentence.charAt(i)), String.valueOf(sentence.charAt(i)), false, 0f, 0));
+                                i++;
+                            }
+
+                            StringBuilder inferSb = new StringBuilder();
+                            for (MainActivity.TextBlock b : intermediateBlocks) {
+                                inferSb.append(b.current);
+                            }
+                            String inferText = inferSb.toString();
+
+                            MainActivity.TextBlock[] mapList = new MainActivity.TextBlock[inferText.length()];
+                            int cursor2 = 0;
+                            for (MainActivity.TextBlock b : intermediateBlocks) {
+                                for (int k = 0; k < b.current.length(); k++) {
+                                    mapList[cursor2++] = b;
+                                }
+                            }
+
+                            boolean[] isIgnored = new boolean[inferText.length()];
+                            int cursor = 0;
+                            for (MainActivity.TextBlock b : intermediateBlocks) {
+                                int len = b.current.length();
+                                if (b.type != 0) {
+                                    for (int k = 0; k < len; k++) isIgnored[cursor + k] = true;
+                                }
+                                cursor += len;
+                            }
+
+                            for (String w : MainActivity.IGNORE_WORDS) {
+                                int idx = inferText.indexOf(w);
+                                while (idx >= 0) {
+                                    for (int k = 0; k < w.length(); k++) isIgnored[idx + k] = true;
+                                    idx = inferText.indexOf(w, idx + 1);
+                                }
+                            }
+
+                            boolean hasTarget = false;
+                            for (int j = 0; j < inferText.length(); j++) {
+                                char c = inferText.charAt(j);
+                                if ((c == '的' || c == '地' || c == '得') && !isIgnored[j]) { hasTarget = true; break; }
+                            }
+
+                            if (hasTarget && temp > 0.0f) {
+                                float[] scores;
+                                int vocabSize = isFastMode ? 3 : MainActivity.proVocab.size();
+                                if (isFastMode) {
+                                    long fUnk = MainActivity.fastVocab.getOrDefault("[UNK]", 1L);
+                                    long fMask = MainActivity.fastVocab.getOrDefault("[MASK]", 2L);
+                                    long[] ids = new long[inferText.length()];
+                                    for (int j = 0; j < inferText.length(); j++) {
+                                        char c = inferText.charAt(j);
+                                        if (!isIgnored[j] && (c == '的' || c == '地' || c == '得')) ids[j] = fMask;
+                                        else ids[j] = MainActivity.fastVocab.getOrDefault(String.valueOf(c), fUnk);
                                     }
-                                    float sum = s0 + s1 + s2; float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
-                                    int maxIdx = 0; float maxProb = p0;
-                                    if (p1 > maxProb) { maxProb = p1; maxIdx = 1; }
-                                    if (p2 > maxProb) { maxProb = p2; maxIdx = 2; }
-                                    float threshold = maxIdx == 1 ? tDi : (maxIdx == 2 ? tDe3 : tDe);
-                                    String pred = labels[maxIdx];
-                                    boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
-                                    finalSentenceBlocks.add(new MainActivity.TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb, 1));
-                                    
-                                    if (changed) {
-                                        errorCount[0]++;
-                                        final String errLog = "发现错误：" + ch + " → " + pred + " (置信度:" + String.format("%.2f", maxProb) + ") | 共 " + errorCount[0] + " 处";
-                                        syncShowStatus(errLog, false);
+                                    Tensor inputTensor = Tensor.fromBlob(ids, new long[]{1, inferText.length()});
+                                    scores = MainActivity.fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
+                                } else {
+                                    int exactLen = inferText.length() + 2;
+                                    long[] ids = new long[exactLen]; long[] masks = new long[exactLen]; long[] types = new long[exactLen];
+                                    ids[0] = MainActivity.clsId; masks[0] = 1; types[0] = 0;
+                                    for (int j = 0; j < inferText.length(); j++) {
+                                        char c = inferText.charAt(j);
+                                        if (!isIgnored[j] && (c == '的' || c == '地' || c == '得')) ids[j + 1] = MainActivity.maskId;
+                                        else ids[j + 1] = MainActivity.proVocab.getOrDefault(String.valueOf(c), MainActivity.unkId);
+                                        masks[j + 1] = 1; types[j + 1] = 0;
                                     }
-                                    continue;
+                                    ids[exactLen - 1] = MainActivity.sepId; masks[exactLen - 1] = 1; types[exactLen - 1] = 0;
+                                    Tensor tIds = Tensor.fromBlob(ids, new long[]{1, exactLen});
+                                    Tensor tMasks = Tensor.fromBlob(masks, new long[]{1, exactLen});
+                                    Tensor tTypes = Tensor.fromBlob(types, new long[]{1, exactLen});
+                                    IValue outputVal = MainActivity.proModule.forward(IValue.from(tIds), IValue.from(tMasks), IValue.from(tTypes));
+                                    Tensor outTensor = outputVal.isTuple() ? outputVal.toTuple()[0].toTensor() : outputVal.toTensor();
+                                    scores = outTensor.getDataAsFloatArray();
                                 }
 
-                                normalText.append(ch);
-                                if (ch == '，' || ch == ',' || ch == '；' || ch == ';' || ch == '、' || ch == '\n') flushNormal.run();
+                                for (int j = 0; j < inferText.length(); j++) {
+                                    char ch = inferText.charAt(j);
+                                    if (!isIgnored[j] && (ch == '的' || ch == '地' || ch == '得')) {
+                                        float s0, s1, s2;
+                                        if (isFastMode) {
+                                            int base = j * 3;
+                                            s0 = (float) Math.exp(scores[base] / temp); s1 = (float) Math.exp(scores[base + 1] / temp); s2 = (float) Math.exp(scores[base + 2] / temp);
+                                        } else {
+                                            int seqPos = j + 1;
+                                            s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.deId] / temp);
+                                            s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.diId] / temp);
+                                            s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)MainActivity.de2Id] / temp);
+                                        }
+                                        float sum = s0 + s1 + s2; float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
+                                        int maxIdx = 0; float maxProb = p0;
+                                        if (p1 > maxProb) { maxProb = p1; maxIdx = 1; }
+                                        if (p2 > maxProb) { maxProb = p2; maxIdx = 2; }
+                                        float threshold = maxIdx == 1 ? tDi : (maxIdx == 2 ? tDe3 : tDe);
+                                        String pred = labels[maxIdx];
+                                        boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
+
+                                        if (changed) {
+                                            MainActivity.TextBlock b = mapList[j];
+                                            b.current = pred;
+                                            b.modelCorrected = pred;
+                                            b.isMutable = true;
+                                            b.conf = maxProb;
+                                            b.type = 1;
+                                            
+                                            errorCount[0]++;
+                                            final String errLog = "发现错误：" + ch + " → " + pred + " (置信度:" + String.format("%.2f", maxProb) + ") | 共 " + errorCount[0] + " 处";
+                                            syncShowStatus(errLog, false);
+                                        }
+                                    }
+                                }
                             }
-                            flushNormal.run();
+
+                            List<MainActivity.TextBlock> finalSentenceBlocks = new ArrayList<>();
+                            StringBuilder normalOrig = new StringBuilder();
+                            StringBuilder normalCurr = new StringBuilder();
+                            for (MainActivity.TextBlock b : intermediateBlocks) {
+                                if (b.type == 0 && !b.isMutable) {
+                                    normalOrig.append(b.original);
+                                    normalCurr.append(b.current);
+                                } else {
+                                    if (normalOrig.length() > 0) {
+                                        finalSentenceBlocks.add(new MainActivity.TextBlock(normalOrig.toString(), normalCurr.toString(), false, 0f, 0));
+                                        normalOrig.setLength(0);
+                                        normalCurr.setLength(0);
+                                    }
+                                    finalSentenceBlocks.add(b);
+                                }
+                            }
+                            if (normalOrig.length() > 0) {
+                                finalSentenceBlocks.add(new MainActivity.TextBlock(normalOrig.toString(), normalCurr.toString(), false, 0f, 0));
+                            }
                             
                             for (MainActivity.TextBlock b : finalSentenceBlocks) {
                                 fullCleanText.append(b.current);
@@ -1614,29 +1662,29 @@ jobs:
             }
             public static final Map<Character, QuantifierRule> quantRules = new HashMap<>();
 
-            // ===== 新增：通用句式语病规则 =====
             public static class GramRule {
                 public java.util.regex.Pattern pattern;
-                public String replacementTemplate;
-                public GramRule(String regex, String template) {
+                public String prefixReplace;
+                public String suffixReplace;
+                public GramRule(String regex, String prefRep, String suffRep) {
                     pattern = java.util.regex.Pattern.compile(regex);
-                    replacementTemplate = template;
+                    prefixReplace = prefRep;
+                    suffixReplace = suffRep;
                 }
             }
             public static final List<GramRule> gramRules = new ArrayList<>();
             static {
-                // 中间允许跨越 1-15 个字符（最短匹配），彻底解决啰嗦语病，且绝不会误伤
-                gramRules.add(new GramRule("^(大概|大约)(.{1,15}?)(左右|上下)", "$1$2"));
-                gramRules.add(new GramRule("^(超过|高达|多达)(.{1,15}?)(以上)", "$1$2"));
-                gramRules.add(new GramRule("^(低于|少于|不足)(.{1,15}?)(以下)", "$1$2"));
-                gramRules.add(new GramRule("^(原因是)(.{1,15}?)(造成的)", "$1$2"));
-                gramRules.add(new GramRule("^(由于)(.{1,15}?)(的结果)", "$1$2"));
-                gramRules.add(new GramRule("^(截至|截止到)(.{1,15}?)(为止)", "$1$2"));
-                gramRules.add(new GramRule("^(是因为)(.{1,15}?)(的原因)", "$1$2"));
-                gramRules.add(new GramRule("^(围绕)(.{1,15}?)(为中心)", "以$2为中心"));
-                gramRules.add(new GramRule("^(从)(.{1,15}?)(为出发点)", "以$2为出发点"));
-                gramRules.add(new GramRule("^(打着)(.{1,15}?)(为幌子)", "以$2为幌子"));
-                gramRules.add(new GramRule("^(借着)(.{1,15}?)(为名义)", "以$2为名义"));
+                gramRules.add(new GramRule("(大概|大约)(.{1,15}?)(左右|上下)", null, ""));
+                gramRules.add(new GramRule("(超过|高达|多达)(.{1,15}?)(以上)", null, ""));
+                gramRules.add(new GramRule("(低于|少于|不足)(.{1,15}?)(以下)", null, ""));
+                gramRules.add(new GramRule("(原因是)(.{1,15}?)(造成的)", null, ""));
+                gramRules.add(new GramRule("(由于)(.{1,15}?)(的结果)", null, ""));
+                gramRules.add(new GramRule("(截至|截止到)(.{1,15}?)(为止)", null, ""));
+                gramRules.add(new GramRule("(是因为)(.{1,15}?)(的原因)", null, ""));
+                gramRules.add(new GramRule("(围绕)(.{1,15}?)(为中心)", "以", null));
+                gramRules.add(new GramRule("(从)(.{1,15}?)(为出发点)", "以", null));
+                gramRules.add(new GramRule("(打着)(.{1,15}?)(为幌子)", "以", null));
+                gramRules.add(new GramRule("(借着)(.{1,15}?)(为名义)", "以", null));
             }
             static {
                 quantRules.put('牛', new QuantifierRule("头", "头"));
@@ -3611,179 +3659,223 @@ jobs:
 
                             String sentence = sentences[sIdx];
                             if (sentence.isEmpty()) continue;
-                            
-                            boolean[] isProcessed = new boolean[sentence.length()];
-                            class PreBlock {
-                                int length; String original; String replacement; int type;
-                                PreBlock(int l, String o, String r, int t) { length=l; original=o; replacement=r; type=t; }
-                            }
-                            Map<Integer, PreBlock> preBlocks = new HashMap<>();
 
-                            // 1. 优先匹配动态语病规则
-                            for (GramRule rule : gramRules) {
-                                java.util.regex.Matcher m = rule.pattern.matcher(sentence);
-                                while (m.find()) {
-                                    boolean overlap = false;
-                                    for(int k = m.start(); k < m.end(); k++) { if(isProcessed[k]) overlap = true; }
-                                    if(!overlap) {
-                                        for(int k = m.start(); k < m.end(); k++) isProcessed[k] = true;
-                                        String orig = m.group(0);
-                                        String repl = rule.pattern.matcher(orig).replaceFirst(rule.replacementTemplate);
-                                        preBlocks.put(m.start(), new PreBlock(orig.length(), orig, repl, 6));
-                                    }
-                                }
-                            }
+                            // === PASS 1: 先行处理语法规则与错词，生成纯净中间态序列 ===
+                            List<TextBlock> intermediateBlocks = new ArrayList<>();
+                            int i = 0;
+                            while (i < sentence.length()) {
+                                boolean matchedTypo = false;
+                                boolean matchedGram = false;
+                                boolean matchedQuant = false;
 
-                            // 2. 匹配错词库（自定义优先级最高，其次内置）
-                            for (int i = 0; i < sentence.length(); i++) {
-                                if (isProcessed[i]) continue;
                                 if (maxTypoLen > 0) {
                                     for (int len = Math.min(maxTypoLen, sentence.length() - i); len >= minTypoLen; len--) {
-                                        boolean overlap = false;
-                                        for(int k = i; k < i + len; k++) { if(isProcessed[k]) { overlap = true; break; } }
-                                        if(overlap) continue;
-
                                         String sub = sentence.substring(i, i + len);
                                         if (typoMap.containsKey(sub)) {
                                             String correct = typoMap.get(sub);
-                                            int bType = customTypoKeys.contains(sub) ? 4 : 2;
-                                            for(int k = i; k < i + len; k++) isProcessed[k] = true;
-                                            preBlocks.put(i, new PreBlock(len, sub, correct, bType));
+                                            boolean isRealTypo = !sub.equals(correct);
+                                            int blockType = customTypoKeys.contains(sub) ? 4 : 2;
+                                            intermediateBlocks.add(new TextBlock(sub, correct, isRealTypo, 1.0f, blockType));
+                                            i += len;
+                                            matchedTypo = true;
                                             break;
                                         }
                                     }
                                 }
-                            }
+                                if (matchedTypo) continue;
 
-                            // 3. 匹配忽略词白名单 (屏蔽模型处理)
-                            for (String w : IGNORE_WORDS) {
-                                int idx = sentence.indexOf(w);
-                                while (idx >= 0) {
-                                    boolean overlap = false;
-                                    for(int k = idx; k < idx + w.length(); k++) { if(isProcessed[k]) overlap = true; }
-                                    if(!overlap) {
-                                        for(int k = idx; k < idx + w.length(); k++) isProcessed[k] = true;
-                                        preBlocks.put(idx, new PreBlock(w.length(), w, w, 0));
+                                for (GramRule rule : gramRules) {
+                                    java.util.regex.Matcher m = rule.pattern.matcher(sentence.substring(i));
+                                    if (m.lookingAt()) {
+                                        String g1 = m.group(1);
+                                        String g2 = m.group(2);
+                                        String g3 = m.group(3);
+                                        String rep1 = rule.prefixReplace != null ? rule.prefixReplace : g1;
+                                        String rep3 = rule.suffixReplace != null ? rule.suffixReplace : g3;
+
+                                        if (!g1.equals(rep1)) {
+                                            intermediateBlocks.add(new TextBlock(g1, rep1, true, 1.0f, 6));
+                                        } else {
+                                            for (int k = 0; k < g1.length(); k++) {
+                                                intermediateBlocks.add(new TextBlock(String.valueOf(g1.charAt(k)), String.valueOf(g1.charAt(k)), false, 0f, 0));
+                                            }
+                                        }
+
+                                        for (int k = 0; k < g2.length(); k++) {
+                                            intermediateBlocks.add(new TextBlock(String.valueOf(g2.charAt(k)), String.valueOf(g2.charAt(k)), false, 0f, 0));
+                                        }
+
+                                        if (!g3.equals(rep3)) {
+                                            intermediateBlocks.add(new TextBlock(g3, rep3, true, 1.0f, 6));
+                                        } else {
+                                            for (int k = 0; k < g3.length(); k++) {
+                                                intermediateBlocks.add(new TextBlock(String.valueOf(g3.charAt(k)), String.valueOf(g3.charAt(k)), false, 0f, 0));
+                                            }
+                                        }
+
+                                        i += m.group(0).length();
+                                        matchedGram = true;
+                                        break;
                                     }
-                                    idx = sentence.indexOf(w, idx + 1);
                                 }
-                            }
+                                if (matchedGram) continue;
 
-                            // 模型判断是否有需要推理的目标
-                            boolean hasTarget = false;
-                            for (int i = 0; i < sentence.length(); i++) {
-                                char c = sentence.charAt(i);
-                                if ((c == '的' || c == '地' || c == '得') && !isProcessed[i]) { hasTarget = true; break; }
-                            }
-
-                            float[] scores = null;
-                            if (hasTarget && temp > 0.0f) {
-                                int vocabSize = isFastMode ? 3 : proVocab.size();
-                                if (isFastMode) {
-                                    long fUnk = fastVocab.getOrDefault("[UNK]", 1L); long fMask = fastVocab.getOrDefault("[MASK]", 2L);
-                                    long[] ids = new long[sentence.length()];
-                                    for (int i = 0; i < sentence.length(); i++) {
-                                        char c = sentence.charAt(i);
-                                        // 保护词汇不遮罩，给模型更好的上下文
-                                        if (!isProcessed[i] && (c == '的' || c == '地' || c == '得')) ids[i] = fMask;
-                                        else ids[i] = fastVocab.getOrDefault(String.valueOf(c), fUnk);
-                                    }
-                                    Tensor inputTensor = Tensor.fromBlob(ids, new long[]{1, sentence.length()});
-                                    scores = fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
-                                } else {
-                                    int exactLen = sentence.length() + 2;
-                                    long[] ids = new long[exactLen]; long[] masks = new long[exactLen]; long[] types = new long[exactLen];
-                                    ids[0] = clsId; masks[0] = 1; types[0] = 0;
-                                    for (int i = 0; i < sentence.length(); i++) {
-                                        char c = sentence.charAt(i);
-                                        // 保护词汇不遮罩，给模型更好的上下文
-                                        if (!isProcessed[i] && (c == '的' || c == '地' || c == '得')) ids[i + 1] = maskId;
-                                        else ids[i + 1] = proVocab.getOrDefault(String.valueOf(c), unkId);
-                                        masks[i + 1] = 1; types[i + 1] = 0;
-                                    }
-                                    ids[exactLen - 1] = sepId; masks[exactLen - 1] = 1; types[exactLen - 1] = 0;
-                                    Tensor tIds = Tensor.fromBlob(ids, new long[]{1, exactLen}); Tensor tMasks = Tensor.fromBlob(masks, new long[]{1, exactLen}); Tensor tTypes = Tensor.fromBlob(types, new long[]{1, exactLen});
-                                    IValue outputVal = proModule.forward(IValue.from(tIds), IValue.from(tMasks), IValue.from(tTypes));
-                                    Tensor outTensor = outputVal.isTuple() ? outputVal.toTuple()[0].toTensor() : outputVal.toTensor();
-                                    scores = outTensor.getDataAsFloatArray();
-                                }
-                            }
-
-                            List<TextBlock> finalSentenceBlocks = new ArrayList<>();
-                            StringBuilder normalText = new StringBuilder();
-                            Runnable flushNormal = () -> {
-                                if(normalText.length() > 0) { 
-                                    finalSentenceBlocks.add(new TextBlock(normalText.toString(), normalText.toString(), false, 0f, 0)); 
-                                    normalText.setLength(0); 
-                                }
-                            };
-
-                            // 一次性从左到右合成所有结果（规则、词库、模型无缝拼接）
-                            for (int i = 0; i < sentence.length(); i++) {
-                                if (preBlocks.containsKey(i)) {
-                                    flushNormal.run();
-                                    PreBlock pb = preBlocks.get(i);
-                                    if (pb.type == 0 || pb.original.equals(pb.replacement)) {
-                                        normalText.append(pb.original); // 白名单直接转为普通文本，防止触发高亮
-                                    } else {
-                                        finalSentenceBlocks.add(new TextBlock(pb.original, pb.replacement, true, 1.0f, pb.type));
-                                    }
-                                    i += pb.length - 1;
-                                    continue;
-                                }
-
-                                // 量词规则
                                 if (i > 0 && i + 1 < sentence.length()) {
-                                    if (normalText.length() > 0) {
-                                        char numChar = normalText.charAt(normalText.length() - 1);
-                                        char quantChar = sentence.charAt(i);
-                                        char nounChar = sentence.charAt(i + 1);
-                                        if (KNOWN_QUANTS.indexOf(quantChar) >= 0 && NUMS.indexOf(numChar) >= 0) {
-                                            if (quantRules.containsKey(nounChar)) {
-                                                QuantifierRule rule = quantRules.get(nounChar);
-                                                if (rule.allowedQuants.indexOf(quantChar) < 0) {
-                                                    char nextC = (i + 2 < sentence.length()) ? sentence.charAt(i + 2) : '\0';
-                                                    if (isSafeCharAfterNoun(nextC)) {
-                                                        flushNormal.run();
-                                                        finalSentenceBlocks.add(new TextBlock(String.valueOf(quantChar), rule.primaryQuant, true, 1.0f, 3));
-                                                        i += 1;
-                                                        continue;
-                                                    }
+                                    char numChar = sentence.charAt(i - 1);
+                                    char quantChar = sentence.charAt(i);
+                                    char nounChar = sentence.charAt(i + 1);
+                                    if (KNOWN_QUANTS.indexOf(quantChar) >= 0 && NUMS.indexOf(numChar) >= 0) {
+                                        if (quantRules.containsKey(nounChar)) {
+                                            QuantifierRule rule = quantRules.get(nounChar);
+                                            if (rule.allowedQuants.indexOf(quantChar) < 0) {
+                                                char nextC = (i + 2 < sentence.length()) ? sentence.charAt(i + 2) : '\0';
+                                                if (isSafeCharAfterNoun(nextC)) {
+                                                    intermediateBlocks.add(new TextBlock(String.valueOf(quantChar), rule.primaryQuant, true, 1.0f, 3));
+                                                    i += 1;
+                                                    matchedQuant = true;
                                                 }
                                             }
                                         }
                                     }
                                 }
+                                if (matchedQuant) continue;
 
-                                char ch = sentence.charAt(i);
-                                if ((ch == '的' || ch == '地' || ch == '得') && scores != null && !isProcessed[i]) {
-                                    flushNormal.run();
-                                    int vocabSize = isFastMode ? 3 : proVocab.size();
-                                    float s0, s1, s2;
-                                    if (isFastMode) {
-                                        int base = i * 3; 
-                                        s0 = (float) Math.exp(scores[base] / temp); s1 = (float) Math.exp(scores[base + 1] / temp); s2 = (float) Math.exp(scores[base + 2] / temp);
-                                    } else {
-                                        int seqPos = i + 1; 
-                                        s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)deId] / temp); s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)diId] / temp); s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)de2Id] / temp);
+                                intermediateBlocks.add(new TextBlock(String.valueOf(sentence.charAt(i)), String.valueOf(sentence.charAt(i)), false, 0f, 0));
+                                i++;
+                            }
+
+                            // 拼装纯净序列，准备送入模型
+                            StringBuilder inferSb = new StringBuilder();
+                            for (TextBlock b : intermediateBlocks) {
+                                inferSb.append(b.current);
+                            }
+                            String inferText = inferSb.toString();
+
+                            // 构建映射表，将纯净序列的每个字映射回原始的 TextBlock
+                            TextBlock[] mapList = new TextBlock[inferText.length()];
+                            int cursor2 = 0;
+                            for (TextBlock b : intermediateBlocks) {
+                                for (int k = 0; k < b.current.length(); k++) {
+                                    mapList[cursor2++] = b;
+                                }
+                            }
+
+                            // 保护已经被前面的规则修改过或属于系统保护词库的部分
+                            boolean[] isIgnored = new boolean[inferText.length()];
+                            int cursor = 0;
+                            for (TextBlock b : intermediateBlocks) {
+                                int len = b.current.length();
+                                if (b.type != 0) { // type非0说明是被规则捕捉的词（包含已被更正的错词或锁定白名单）
+                                    for (int k = 0; k < len; k++) isIgnored[cursor + k] = true;
+                                }
+                                cursor += len;
+                            }
+
+                            for (String w : IGNORE_WORDS) {
+                                int idx = inferText.indexOf(w);
+                                while (idx >= 0) {
+                                    for (int k = 0; k < w.length(); k++) isIgnored[idx + k] = true;
+                                    idx = inferText.indexOf(w, idx + 1);
+                                }
+                            }
+
+                            boolean hasTarget = false;
+                            for (int j = 0; j < inferText.length(); j++) {
+                                char c = inferText.charAt(j);
+                                if ((c == '的' || c == '地' || c == '得') && !isIgnored[j]) { hasTarget = true; break; }
+                            }
+
+                            // === PASS 2: 模型推理与修改 ===
+                            if (hasTarget && temp > 0.0f) {
+                                float[] scores;
+                                int vocabSize = isFastMode ? 3 : proVocab.size();
+                                if (isFastMode) {
+                                    long fUnk = fastVocab.getOrDefault("[UNK]", 1L);
+                                    long fMask = fastVocab.getOrDefault("[MASK]", 2L);
+                                    long[] ids = new long[inferText.length()];
+                                    for (int j = 0; j < inferText.length(); j++) {
+                                        char c = inferText.charAt(j);
+                                        if (!isIgnored[j] && (c == '的' || c == '地' || c == '得')) ids[j] = fMask;
+                                        else ids[j] = fastVocab.getOrDefault(String.valueOf(c), fUnk);
                                     }
-                                    float sum = s0 + s1 + s2; float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
-                                    int maxIdx = 0; float maxProb = p0;
-                                    if (p1 > maxProb) { maxProb = p1; maxIdx = 1; }
-                                    if (p2 > maxProb) { maxProb = p2; maxIdx = 2; }
-                                    float threshold = maxIdx == 1 ? tDi : (maxIdx == 2 ? tDe3 : tDe);
-                                    String pred = labels[maxIdx];
-                                    boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
-                                    finalSentenceBlocks.add(new TextBlock(String.valueOf(ch), changed ? pred : String.valueOf(ch), true, maxProb, 1));
-                                    continue;
+                                    Tensor inputTensor = Tensor.fromBlob(ids, new long[]{1, inferText.length()});
+                                    scores = fastModule.forward(IValue.from(inputTensor)).toTensor().getDataAsFloatArray();
+                                } else {
+                                    int exactLen = inferText.length() + 2;
+                                    long[] ids = new long[exactLen]; long[] masks = new long[exactLen]; long[] types = new long[exactLen];
+                                    ids[0] = clsId; masks[0] = 1; types[0] = 0;
+                                    for (int j = 0; j < inferText.length(); j++) {
+                                        char c = inferText.charAt(j);
+                                        if (!isIgnored[j] && (c == '的' || c == '地' || c == '得')) ids[j + 1] = maskId;
+                                        else ids[j + 1] = proVocab.getOrDefault(String.valueOf(c), unkId);
+                                        masks[j + 1] = 1; types[j + 1] = 0;
+                                    }
+                                    ids[exactLen - 1] = sepId; masks[exactLen - 1] = 1; types[exactLen - 1] = 0;
+                                    Tensor tIds = Tensor.fromBlob(ids, new long[]{1, exactLen});
+                                    Tensor tMasks = Tensor.fromBlob(masks, new long[]{1, exactLen});
+                                    Tensor tTypes = Tensor.fromBlob(types, new long[]{1, exactLen});
+                                    IValue outputVal = proModule.forward(IValue.from(tIds), IValue.from(tMasks), IValue.from(tTypes));
+                                    Tensor outTensor = outputVal.isTuple() ? outputVal.toTuple()[0].toTensor() : outputVal.toTensor();
+                                    scores = outTensor.getDataAsFloatArray();
                                 }
 
-                                normalText.append(ch);
-                                if (ch == '，' || ch == ',' || ch == '；' || ch == ';' || ch == '、' || ch == '\n') flushNormal.run();
+                                for (int j = 0; j < inferText.length(); j++) {
+                                    char ch = inferText.charAt(j);
+                                    if (!isIgnored[j] && (ch == '的' || ch == '地' || ch == '得')) {
+                                        float s0, s1, s2;
+                                        if (isFastMode) {
+                                            int base = j * 3;
+                                            s0 = (float) Math.exp(scores[base] / temp); s1 = (float) Math.exp(scores[base + 1] / temp); s2 = (float) Math.exp(scores[base + 2] / temp);
+                                        } else {
+                                            int seqPos = j + 1;
+                                            s0 = (float) Math.exp(scores[seqPos * vocabSize + (int)deId] / temp);
+                                            s1 = (float) Math.exp(scores[seqPos * vocabSize + (int)diId] / temp);
+                                            s2 = (float) Math.exp(scores[seqPos * vocabSize + (int)de2Id] / temp);
+                                        }
+                                        float sum = s0 + s1 + s2; float p0 = s0 / sum, p1 = s1 / sum, p2 = s2 / sum;
+                                        int maxIdx = 0; float maxProb = p0;
+                                        if (p1 > maxProb) { maxProb = p1; maxIdx = 1; }
+                                        if (p2 > maxProb) { maxProb = p2; maxIdx = 2; }
+                                        float threshold = maxIdx == 1 ? tDi : (maxIdx == 2 ? tDe3 : tDe);
+                                        String pred = labels[maxIdx];
+                                        boolean changed = !pred.equals(String.valueOf(ch)) && maxProb >= threshold;
+
+                                        if (changed) {
+                                            TextBlock b = mapList[j];
+                                            b.current = pred;
+                                            b.modelCorrected = pred;
+                                            b.isMutable = true;
+                                            b.conf = maxProb;
+                                            b.type = 1;
+                                        }
+                                    }
+                                }
                             }
-                            flushNormal.run();
+
+                            // 组装最终结果序列，将未变化的字重新合为整体字符串段落，提高UI渲染效率
+                            List<TextBlock> finalSentenceBlocks = new ArrayList<>();
+                            StringBuilder normalOrig = new StringBuilder();
+                            StringBuilder normalCurr = new StringBuilder();
+                            for (TextBlock b : intermediateBlocks) {
+                                if (b.type == 0 && !b.isMutable) {
+                                    normalOrig.append(b.original);
+                                    normalCurr.append(b.current);
+                                } else {
+                                    if (normalOrig.length() > 0) {
+                                        finalSentenceBlocks.add(new TextBlock(normalOrig.toString(), normalCurr.toString(), false, 0f, 0));
+                                        normalOrig.setLength(0);
+                                        normalCurr.setLength(0);
+                                    }
+                                    finalSentenceBlocks.add(b);
+                                }
+                            }
+                            if (normalOrig.length() > 0) {
+                                finalSentenceBlocks.add(new TextBlock(normalOrig.toString(), normalCurr.toString(), false, 0f, 0));
+                            }
                             
-                            List<List<TextBlock>> clauses = new ArrayList<>(); List<TextBlock> currentClause = new ArrayList<>();
+                            // UI更新：计算并输出当前段落的错误状态
+                            List<List<TextBlock>> clauses = new ArrayList<>(); 
+                            List<TextBlock> currentClause = new ArrayList<>();
                             for (TextBlock b : finalSentenceBlocks) {
                                 currentClause.add(b); char lastChar = b.original.charAt(b.original.length() - 1);
                                 if (lastChar == '，' || lastChar == ',' || lastChar == '；' || lastChar == ';' || lastChar == '、' || lastChar == '\n') { clauses.add(currentClause); currentClause = new ArrayList<>(); }
