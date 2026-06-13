@@ -4072,6 +4072,7 @@ jobs:
                         boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
                         // errorOffsets 已被 TargetSpan 动态锚点替代
                         
+                        
                         // 生成主视窗富文本
                         int start = ssbFull.length(); ssbFull.append(b.current);
                         if (isError) {
@@ -4116,6 +4117,13 @@ jobs:
                                 int flagsEd = (spanStartEd == spanEndEd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
                                 ssbFullEditor.setSpan(ts, spanStartEd, spanEndEd, flagsEd);
                             }
+                            
+                            if (!b.current.equals(b.original)) { // Green wavy line for both user and model
+                                ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            }
+                        }
+                        
+                        
                         
                         // 【新增】在分割线后插入下一个标识
                         if (b.current.contains("---------------------------------")) {
