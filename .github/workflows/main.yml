@@ -1815,6 +1815,33 @@ jobs:
                     canvas.drawPath(wavePath, wavePaint);
                 }
             }
+            public static class ColoredStrikethroughSpan extends android.text.style.ReplacementSpan {
+                private int textColor;
+                private int lineColor;
+                public ColoredStrikethroughSpan(int textColor, int lineColor) {
+                    this.textColor = textColor;
+                    this.lineColor = lineColor;
+                }
+                @Override
+                public int getSize(android.graphics.Paint paint, CharSequence text, int start, int end, android.graphics.Paint.FontMetricsInt fm) {
+                    return (int) paint.measureText(text, start, end);
+                }
+                @Override
+                public void draw(android.graphics.Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, android.graphics.Paint paint) {
+                    int oldColor = paint.getColor();
+                    // 1. 画文字（灰色）
+                    paint.setColor(textColor);
+                    canvas.drawText(text, start, end, x, y, paint);
+                    // 2. 画中间的横线（红色）
+                    paint.setColor(lineColor);
+                    float strokeWidth = paint.getTextSize() / 14f;
+                    paint.setStrokeWidth(strokeWidth);
+                    float lineY = y - paint.getTextSize() * 0.3f; // 调整横线处于文字居中偏下位置
+                    canvas.drawLine(x, lineY, x + paint.measureText(text, start, end), lineY, paint);
+                    // 还原画笔颜色
+                    paint.setColor(oldColor);
+                }
+            }
 
             public static String extractCleanTextFromSpanned(Spanned sp) {
                 if (sp == null) return "";
@@ -4050,8 +4077,13 @@ jobs:
                         if (isError) {
                             TargetSpan mainTs = new TargetSpan(b.current);
                             blockToMainTargetSpan.put(b, mainTs);
-                            int flags = (start == ssbFull.length()) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
-                            ssbFull.setSpan(mainTs, start, ssbFull.length(), flags);
+                            int spanStart = start;
+                            int spanEnd = ssbFull.length();
+                            if (spanStart == spanEnd && spanStart > 0) {
+                                spanStart = spanStart - 1; // 【修复】如果被删为空字符串，往前借一个字符做锚点，防止被系统丢弃
+                            }
+                            int flags = (spanStart == spanEnd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
+                            ssbFull.setSpan(mainTs, spanStart, spanEnd, flags);
                         }
                         if (b.isMutable) {
                             EditSpan span = new EditSpan() {
@@ -4076,14 +4108,14 @@ jobs:
                             if (isError) {
                                 TargetSpan ts = new TargetSpan(b.current);
                                 blockToTargetSpan.put(b, ts);
-                                int flagsEd = (startEd == ssbFullEditor.length()) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
-                                ssbFullEditor.setSpan(ts, startEd, ssbFullEditor.length(), flagsEd);
+                                int spanStartEd = startEd;
+                                int spanEndEd = ssbFullEditor.length();
+                                if (spanStartEd == spanEndEd && spanStartEd > 0) {
+                                    spanStartEd = spanStartEd - 1; // 【修复】同上
+                                }
+                                int flagsEd = (spanStartEd == spanEndEd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
+                                ssbFullEditor.setSpan(ts, spanStartEd, spanEndEd, flagsEd);
                             }
-                            
-                            if (!b.current.equals(b.original)) { // Green wavy line for both user and model
-                                ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                            }
-                        }
                         
                         // 【新增】在分割线后插入下一个标识
                         if (b.current.contains("---------------------------------")) {
@@ -4185,10 +4217,11 @@ jobs:
                                     if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                         int oldTextStart = ssb.length(); 
                                         ssb.append(b.original); 
-                                        ssb.setSpan(new StrikethroughSpan(), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        // 【修改】如果是正则引起的，使用自定义的红线灰字Span
                                         if (b.type == 6) {
-                                            ssb.setSpan(new ForegroundColorSpan(0xFFE53935), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            ssb.setSpan(new ColoredStrikethroughSpan(0xFF9E9E9E, 0xFFE53935), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                         } else {
+                                            ssb.setSpan(new StrikethroughSpan(), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                             ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                         }
                                         ssb.append(" ");
@@ -4297,10 +4330,11 @@ jobs:
                                     if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                         int edOldStart = ssbEditor.length();
                                         ssbEditor.append(b.original);
-                                        ssbEditor.setSpan(new StrikethroughSpan(), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        // 【修改】便签编辑器内，如果为正则也使用自定义红线灰字
                                         if (b.type == 6) {
-                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFFE53935), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            ssbEditor.setSpan(new ColoredStrikethroughSpan(0xFF9E9E9E, 0xFFE53935), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                         } else {
+                                            ssbEditor.setSpan(new StrikethroughSpan(), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                             ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                         }
                                         ssbEditor.append(" ");
