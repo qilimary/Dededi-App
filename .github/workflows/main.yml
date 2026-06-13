@@ -3902,7 +3902,8 @@ jobs:
                                         if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                             liveErrorCount++;
                                             String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : ((b.type == 4) ? " (自定义)" : "");
-                                            sentenceErrorHtml.append("<font color='#9E9E9E'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
+                                            String origColor = (b.type == 6) ? "#E53935" : "#9E9E9E";
+                                            sentenceErrorHtml.append("<font color='").append(origColor).append("'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
                                         } else { sentenceErrorHtml.append(safeOrig); }
                                     }
                                 }
@@ -4043,13 +4044,14 @@ jobs:
                         
                         boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
                         // errorOffsets 已被 TargetSpan 动态锚点替代
-                        
+
                         // 生成主视窗富文本
                         int start = ssbFull.length(); ssbFull.append(b.current);
                         if (isError) {
                             TargetSpan mainTs = new TargetSpan(b.current);
                             blockToMainTargetSpan.put(b, mainTs);
-                            ssbFull.setSpan(mainTs, start, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            int flags = (start == ssbFull.length()) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
+                            ssbFull.setSpan(mainTs, start, ssbFull.length(), flags);
                         }
                         if (b.isMutable) {
                             EditSpan span = new EditSpan() {
@@ -4074,7 +4076,8 @@ jobs:
                             if (isError) {
                                 TargetSpan ts = new TargetSpan(b.current);
                                 blockToTargetSpan.put(b, ts);
-                                ssbFullEditor.setSpan(ts, startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                int flagsEd = (startEd == ssbFullEditor.length()) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
+                                ssbFullEditor.setSpan(ts, startEd, ssbFullEditor.length(), flagsEd);
                             }
                             
                             if (!b.current.equals(b.original)) { // Green wavy line for both user and model
@@ -4152,8 +4155,8 @@ jobs:
                                                     TargetSpan mainTs = blockToMainTargetSpan.get(b);
                                                     if (mainTs != null) {
                                                         int pos = spanText.getSpanStart(mainTs);
-                                                        if (pos >= 0 && pos < spanText.length()) {
-                                                            Layout layout = tv.getLayout();
+                                                        if (pos >= 0 && pos <= spanText.length()) {
+                                                            Layout layout = tv.getLayout();                                Layout layout = tv.getLayout();
                                                             if (layout != null) {
                                                                 int line = layout.getLineForOffset(pos);
                                                                 int y = layout.getLineTop(line);
@@ -4178,13 +4181,19 @@ jobs:
                                 };
                                 ssb.setSpan(jumpSpan, stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
+                                
                                 for (TextBlock b : clause) {
                                     if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
                                         int oldTextStart = ssb.length(); 
                                         ssb.append(b.original); 
                                         ssb.setSpan(new StrikethroughSpan(), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                                        ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        if (b.type == 6) {
+                                            ssb.setSpan(new ForegroundColorSpan(0xFFE53935), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        } else {
+                                            ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        }
                                         ssb.append(" ");
+                                
                                         
                                         int newStart = ssb.length(); 
                                         ssb.append(b.current);
@@ -4245,16 +4254,20 @@ jobs:
                                             if (!link.isDead && !link.targetSpans.isEmpty()) {
                                                 TextView tv = (TextView) w;
                                                 Spanned spanText = (Spanned) tv.getText();
+                                                
+                                                
+                                                
                                                 TargetSpan firstTarget = null;
                                                 for (TargetSpan ts : link.targetSpans) {
                                                     int tsStart = spanText.getSpanStart(ts);
-                                                    if (tsStart >= 0 && tsStart < spanText.length()) { firstTarget = ts; break; }
+                                                    if (tsStart >= 0 && tsStart <= spanText.length()) { firstTarget = ts; break; }
                                                 }
                                                 if (firstTarget != null) {
                                                     int pos = spanText.getSpanStart(firstTarget);
                                                     Layout layout = tv.getLayout();
-                                                    if (layout != null && pos >= 0 && pos < spanText.length()) {
+                                                    if (layout != null && pos >= 0 && pos <= spanText.length()) {
                                                         int line = layout.getLineForOffset(pos);
+                                                
                                                         int y = layout.getLineTop(line);
                                                         if (tv instanceof EditText) {
                                                             // 【修复】立即将光标吸附到目标位置，防止底层动画重绘导致视窗反弹回顶部
@@ -4293,7 +4306,11 @@ jobs:
                                         int edOldStart = ssbEditor.length();
                                         ssbEditor.append(b.original);
                                         ssbEditor.setSpan(new StrikethroughSpan(), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                                        ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        if (b.type == 6) {
+                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFFE53935), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        } else {
+                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                        }
                                         ssbEditor.append(" ");
                                         int edNewStart = ssbEditor.length();
                                         ssbEditor.append(b.current);
