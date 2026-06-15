@@ -1311,8 +1311,9 @@ jobs:
                                         String g1 = m.group(1);
                                         String g2 = m.group(2);
                                         String g3 = m.group(3);
-                                        String rep1 = rule.prefixReplace != null ? rule.prefixReplace : g1;
-                                        String rep3 = rule.suffixReplace != null ? rule.suffixReplace : g3;
+                                        String[] selectedOption = rule.options[(int)(Math.random() * rule.options.length)];
+                                        String rep1 = selectedOption[0] != null ? selectedOption[0] : g1;
+                                        String rep3 = selectedOption[1] != null ? selectedOption[1] : g3;
 
                                         if (!g1.equals(rep1)) {
                                             intermediateBlocks.add(new MainActivity.TextBlock(g1, rep1, true, 1.0f, 6));
@@ -1663,27 +1664,39 @@ jobs:
 
             public static class GramRule {
                 public java.util.regex.Pattern pattern;
-                public String prefixReplace;
-                public String suffixReplace;
-                public GramRule(String regex, String prefRep, String suffRep) {
+                public String[][] options;
+                public GramRule(String regex, String[][] options) {
                     pattern = java.util.regex.Pattern.compile(regex);
-                    prefixReplace = prefRep;
-                    suffixReplace = suffRep;
+                    this.options = options;
                 }
             }
             public static final List<GramRule> gramRules = new ArrayList<>();
             static {
-                gramRules.add(new GramRule("(大概|大约)(.{1,15}?)(左右|上下)", null, ""));
-                gramRules.add(new GramRule("(超过|高达|多达)(.{1,15}?)(以上)", null, ""));
-                gramRules.add(new GramRule("(低于|少于|不足)(.{1,15}?)(以下)", null, ""));
-                gramRules.add(new GramRule("(原因是)(.{1,15}?)(造成的)", null, ""));
-                gramRules.add(new GramRule("(由于)(.{1,15}?)(的结果)", null, ""));
-                gramRules.add(new GramRule("(截至|截止到)(.{1,15}?)(为止)", null, ""));
-                gramRules.add(new GramRule("(是因为)(.{1,15}?)(的原因)", null, ""));
-                gramRules.add(new GramRule("(围绕)(.{1,15}?)(为中心)", "以", null));
-                gramRules.add(new GramRule("(从)(.{1,15}?)(为出发点)", "以", null));
-                gramRules.add(new GramRule("(打着)(.{1,15}?)(为幌子)", "以", null));
-                gramRules.add(new GramRule("(借着)(.{1,15}?)(为名义)", "以", null));
+                // 引入二维数组实现多种随机替换方案。比如 { {null, ""}, {"", null} } 代表有 50%概率去掉后面，50%概率去掉前面。
+                gramRules.add(new GramRule("(大概|大约)(.{1,15}?)(左右|上下)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(超过|高达|多达)(.{1,15}?)(以上)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(低于|少于|不足)(.{1,15}?)(以下)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(原因是)(.{1,15}?)(造成的)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(由于)(.{1,15}?)(的结果)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(截至|截止到)(.{1,15}?)(为止)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(是因为)(.{1,15}?)(的原因)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(围绕)(.{1,15}?)(为中心)", new String[][]{ {"以", null} }));
+                gramRules.add(new GramRule("(从)(.{1,15}?)(为出发点)", new String[][]{ {"以", null} }));
+                gramRules.add(new GramRule("(打着)(.{1,15}?)(为幌子)", new String[][]{ {"以", null} }));
+                gramRules.add(new GramRule("(借着)(.{1,15}?)(为名义)", new String[][]{ {"以", null} }));
+                
+                // 新增高准确率的句式语病与多重否定失当规则
+                gramRules.add(new GramRule("(为了)(.{1,15}?)(为目的)", new String[][]{ {"以", null}, {null, ""} }));
+                gramRules.add(new GramRule("(旨在)(.{1,15}?)(为目的)", new String[][]{ {"以", null}, {null, ""} }));
+                gramRules.add(new GramRule("(本着)(.{1,15}?)(为原则)", new String[][]{ {"以", null}, {null, "原则"} }));
+                gramRules.add(new GramRule("(对于)(.{1,15}?)(问题上)", new String[][]{ {"在", null}, {null, "问题"} }));
+                gramRules.add(new GramRule("(经过)(.{1,15}?)(下)", new String[][]{ {"在", null}, {null, "后"} }));
+                gramRules.add(new GramRule("(切忌)(.{1,15}?)(不要)", new String[][]{ {"千万", null}, {null, ""} }));
+                gramRules.add(new GramRule("(切忌)(.{1,15}?)(不可)", new String[][]{ {"千万", null}, {null, ""} }));
+                gramRules.add(new GramRule("(避免)(.{1,15}?)(不要)", new String[][]{ {null, ""} }));
+                gramRules.add(new GramRule("(防止)(.{1,15}?)(不要)", new String[][]{ {null, ""} }));
+                gramRules.add(new GramRule("(防止)(.{1,15}?)(不再)", new String[][]{ {null, "再次"} }));
+                gramRules.add(new GramRule("(防止)(.{1,15}?)(不被)", new String[][]{ {null, "被"} }));
             }
             static {
                 quantRules.put('牛', new QuantifierRule("头", "头"));
@@ -3716,8 +3729,9 @@ jobs:
                                         String g1 = m.group(1);
                                         String g2 = m.group(2);
                                         String g3 = m.group(3);
-                                        String rep1 = rule.prefixReplace != null ? rule.prefixReplace : g1;
-                                        String rep3 = rule.suffixReplace != null ? rule.suffixReplace : g3;
+                                        String[] selectedOption = rule.options[(int)(Math.random() * rule.options.length)];
+                                        String rep1 = selectedOption[0] != null ? selectedOption[0] : g1;
+                                        String rep3 = selectedOption[1] != null ? selectedOption[1] : g3;
 
                                         if (!g1.equals(rep1)) {
                                             intermediateBlocks.add(new TextBlock(g1, rep1, true, 1.0f, 6));
