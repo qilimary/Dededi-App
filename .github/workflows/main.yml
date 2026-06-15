@@ -76,7 +76,7 @@ jobs:
         encrypt_file('roberta_mobile.ptl', 'sys_core_p.dat')
         EOF
         python encrypt.py
-
+        
     - name: Scaffold Android Project
       run: |
         mkdir -p app/src/main/java/com/app/dededi
@@ -85,6 +85,7 @@ jobs:
         mkdir -p app/src/main/res/values-night
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/mipmap-anydpi-v26
+        mkdir -p app/src/main/res/mipmap-xxxhdpi       # <--- 【加上这一行】创建文件夹
         mkdir -p app/src/main/assets
         mkdir -p app/src/main/cpp
         mkdir -p gradle/wrapper
@@ -94,7 +95,7 @@ jobs:
         cp student_vocab.json app/src/main/assets/ || true
         cp roberta_vocab.json app/src/main/assets/
         cp 错别字.txt app/src/main/assets/ || true
-        cp app_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true
+        cp app_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true # 现在拷贝就能成功了
 
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
