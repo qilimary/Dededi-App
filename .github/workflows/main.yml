@@ -77,8 +77,8 @@ jobs:
         EOF
         python encrypt.py
         
-      - name: Scaffold Android Project
-        run: |
+    - name: Scaffold Android Project
+      run: |
         mkdir -p app/src/main/java/com/app/dededi
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
@@ -95,8 +95,7 @@ jobs:
         cp roberta_vocab.json app/src/main/assets/
         cp 错别字.txt app/src/main/assets/ || true
 
-        # --- 万能智能图标识别代码 ---
-        # 自动抓取你上传的任意图片
+
         ICON_FILE=$(find . -maxdepth 3 -type f \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) | head -n 1)
         if [ -n "$ICON_FILE" ]; then
             EXT="${ICON_FILE##*.}"
@@ -104,7 +103,7 @@ jobs:
             cp "$ICON_FILE" "app/src/main/res/mipmap-xxxhdpi/ic_launcher.$EXT"
             cp "$ICON_FILE" "app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.$EXT"
         else
-            # 万一没找到图片，生成一个透明底的空白防崩图标，保证编译绝对成功
+            
             echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABESURBVGhD7cExAQAAAMKg9U9tCy8gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAuBoZxQAB1KDBaQAAAABJRU5ErkJggg==" | base64 -d > app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
             cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
         fi
