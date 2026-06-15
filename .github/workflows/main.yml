@@ -84,7 +84,7 @@ jobs:
         mkdir -p app/src/main/res/values
         mkdir -p app/src/main/res/values-night
         mkdir -p app/src/main/res/drawable
-        mkdir -p app/src/main/res/mipmap-anydpi-v26
+        mkdir -p app/src/main/res/mipmap-xxxhdpi
         mkdir -p app/src/main/assets
         mkdir -p app/src/main/cpp
         mkdir -p gradle/wrapper
@@ -94,6 +94,9 @@ jobs:
         cp student_vocab.json app/src/main/assets/ || true
         cp roberta_vocab.json app/src/main/assets/
         cp 错别字.txt app/src/main/assets/ || true
+        
+        cp app_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true
+        cp app_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png || true
 
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
@@ -250,14 +253,6 @@ jobs:
         </resources>
         EOF
         
-        cat << 'EOF' > app/src/main/res/drawable/ic_dededi_fg.xml
-        <vector xmlns:android="http://schemas.android.com/apk/res/android"
-            android:width="108dp" android:height="108dp" android:viewportWidth="24" android:viewportHeight="24">
-            <group android:scaleX="0.75" android:scaleY="0.75" android:pivotX="12" android:pivotY="12">
-                <path android:fillColor="#FFFFFF" android:pathData="M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z"/>
-            </group>
-        </vector>
-        EOF
 
         cat << 'EOF' > app/src/main/res/drawable/circle_bg.xml
         <?xml version="1.0" encoding="utf-8"?>
@@ -296,13 +291,6 @@ jobs:
         </selector>
         EOF
         
-        cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-        <?xml version="1.0" encoding="utf-8"?>
-        <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-            <background android:drawable="@color/icon_bg"/>
-            <foreground android:drawable="@drawable/ic_dededi_fg"/>
-        </adaptive-icon>
-        EOF
 
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
@@ -1672,7 +1660,7 @@ jobs:
             }
             public static final List<GramRule> gramRules = new ArrayList<>();
             static {
-                // 引入二维数组实现多种随机替换方案。比如 { {null, ""}, {"", null} } 代表有 50%概率去掉后面，50%概率去掉前面。
+                // 【句式杂糅】随机替换前后缀
                 gramRules.add(new GramRule("(大概|大约)(.{1,15}?)(左右|上下)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(超过|高达|多达)(.{1,15}?)(以上)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(低于|少于|不足)(.{1,15}?)(以下)", new String[][]{ {null, ""}, {"", null} }));
@@ -1684,19 +1672,35 @@ jobs:
                 gramRules.add(new GramRule("(从)(.{1,15}?)(为出发点)", new String[][]{ {"以", null} }));
                 gramRules.add(new GramRule("(打着)(.{1,15}?)(为幌子)", new String[][]{ {"以", null} }));
                 gramRules.add(new GramRule("(借着)(.{1,15}?)(为名义)", new String[][]{ {"以", null} }));
-                
-                // 新增高准确率的句式语病与多重否定失当规则
                 gramRules.add(new GramRule("(为了)(.{1,15}?)(为目的)", new String[][]{ {"以", null}, {null, ""} }));
                 gramRules.add(new GramRule("(旨在)(.{1,15}?)(为目的)", new String[][]{ {"以", null}, {null, ""} }));
                 gramRules.add(new GramRule("(本着)(.{1,15}?)(为原则)", new String[][]{ {"以", null}, {null, "原则"} }));
                 gramRules.add(new GramRule("(对于)(.{1,15}?)(问题上)", new String[][]{ {"在", null}, {null, "问题"} }));
                 gramRules.add(new GramRule("(经过)(.{1,15}?)(下)", new String[][]{ {"在", null}, {null, "后"} }));
+                gramRules.add(new GramRule("(目的是)( *)(为了)", new String[][]{ {"是", null}, {null, ""} }));
+
+                // 【多重否定失当】绝对错误
                 gramRules.add(new GramRule("(切忌)(.{1,15}?)(不要)", new String[][]{ {"千万", null}, {null, ""} }));
                 gramRules.add(new GramRule("(切忌)(.{1,15}?)(不可)", new String[][]{ {"千万", null}, {null, ""} }));
                 gramRules.add(new GramRule("(避免)(.{1,15}?)(不要)", new String[][]{ {null, ""} }));
                 gramRules.add(new GramRule("(防止)(.{1,15}?)(不要)", new String[][]{ {null, ""} }));
                 gramRules.add(new GramRule("(防止)(.{1,15}?)(不再)", new String[][]{ {null, "再次"} }));
                 gramRules.add(new GramRule("(防止)(.{1,15}?)(不被)", new String[][]{ {null, "被"} }));
+                gramRules.add(new GramRule("(无时无刻)( *)(都)", new String[][]{ {null, "不"} }));
+
+                // 【逻辑与约数冲突】达/多达 后面不能跟约数（包括阿拉伯数字与中文数字）
+                gramRules.add(new GramRule("(达|多达|高达|达到)( *)(几十|十几|四五十|五六十|六七十|七八十|八九十|两三百|三四百|四五百|五六百|七八百|八九百|[0-9]+多|[0-9]+余|[0-9]+几|[一二两三四五六七八九十百千万亿]+多|[一二两三四五六七八九十百千万亿]+余|[一二两三四五六七八九十百千万亿]+几)", new String[][]{ {"有", null}, {"", null} }));
+                gramRules.add(new GramRule("(达|多达|高达|达到)( *)(大约|大概|将近|差不多|近|不下|不下于)", new String[][]{ {"有", null}, {"", null} }));
+                // 【约数重复冲突】大约/近/超过等词后面不能跟左右/上下等约数词
+                gramRules.add(new GramRule("(大约|大概|约|近|将近|差不多|超|超过|超出|达|高达|达到)( *)([0-9一二两三四五六七八九十百千万亿]+)( *)(左右|上下)", new String[][]{ {"有", null}, {"", null} }));
+                     
+                // 【成分赘余/语义重复】绝对错误词汇
+
+                gramRules.add(new GramRule("(互相|相互)( *)(厮打|角逐|探讨|商榷)", new String[][]{ {"", null} }));
+                gramRules.add(new GramRule("(并非)( *)(是)", new String[][]{ {null, ""} }));
+                gramRules.add(new GramRule("(第一|最佳)( *)(首选)", new String[][]{ {"", null} }));
+                gramRules.add(new GramRule("(很多|许多|众多|大量)( *)(莘莘学子)", new String[][]{ {"", null} }));
+                
             }
             static {
                 quantRules.put('牛', new QuantifierRule("头", "头"));
