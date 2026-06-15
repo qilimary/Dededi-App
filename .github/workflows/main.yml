@@ -76,7 +76,7 @@ jobs:
         encrypt_file('roberta_mobile.ptl', 'sys_core_p.dat')
         EOF
         python encrypt.py
-        
+
     - name: Scaffold Android Project
       run: |
         mkdir -p app/src/main/java/com/app/dededi
@@ -84,7 +84,7 @@ jobs:
         mkdir -p app/src/main/res/values
         mkdir -p app/src/main/res/values-night
         mkdir -p app/src/main/res/drawable
-        mkdir -p app/src/main/res/mipmap-xxxhdpi
+        mkdir -p app/src/main/res/mipmap-anydpi-v26
         mkdir -p app/src/main/assets
         mkdir -p app/src/main/cpp
         mkdir -p gradle/wrapper
@@ -94,20 +94,7 @@ jobs:
         cp student_vocab.json app/src/main/assets/ || true
         cp roberta_vocab.json app/src/main/assets/
         cp 错别字.txt app/src/main/assets/ || true
-
-
-        ICON_FILE=$(find . -maxdepth 3 -type f \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \) | head -n 1)
-        if [ -n "$ICON_FILE" ]; then
-            EXT="${ICON_FILE##*.}"
-            EXT=$(echo "$EXT" | tr '[:upper:]' '[:lower:]')
-            cp "$ICON_FILE" "app/src/main/res/mipmap-xxxhdpi/ic_launcher.$EXT"
-            cp "$ICON_FILE" "app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.$EXT"
-        else
-            
-            echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABESURBVGhD7cExAQAAAMKg9U9tCy8gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAuBoZxQAB1KDBaQAAAABJRU5ErkJggg==" | base64 -d > app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-            cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-        fi
-    
+        cp app_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true
 
         cat << 'EOF' > gradle.properties
         android.useAndroidX=true
@@ -264,6 +251,14 @@ jobs:
         </resources>
         EOF
         
+        cat << 'EOF' > app/src/main/res/drawable/ic_dededi_fg.xml
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="108dp" android:height="108dp" android:viewportWidth="24" android:viewportHeight="24">
+            <group android:scaleX="0.75" android:scaleY="0.75" android:pivotX="12" android:pivotY="12">
+                <path android:fillColor="#FFFFFF" android:pathData="M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z"/>
+            </group>
+        </vector>
+        EOF
 
         cat << 'EOF' > app/src/main/res/drawable/circle_bg.xml
         <?xml version="1.0" encoding="utf-8"?>
@@ -302,7 +297,7 @@ jobs:
         </selector>
         EOF
         
-
+        
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -1708,10 +1703,8 @@ jobs:
                 // 【成分赘余/语义重复】绝对错误词汇
 
                 gramRules.add(new GramRule("(互相|相互)( *)(厮打|角逐|探讨|商榷)", new String[][]{ {"", null} }));
-                gramRules.add(new GramRule("(并非)( *)(是)", new String[][]{ {null, ""} }));
-                gramRules.add(new GramRule("(第一|最佳)( *)(首选)", new String[][]{ {"", null} }));
-                gramRules.add(new GramRule("(很多|许多|众多|大量)( *)(莘莘学子)", new String[][]{ {"", null} }));
                 
+                gramRules.add(new GramRule("(第一|最佳)( *)(首选)", new String[][]{ {"", null} })); 
             }
             static {
                 quantRules.put('牛', new QuantifierRule("头", "头"));
