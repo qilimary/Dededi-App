@@ -1822,6 +1822,8 @@ jobs:
                 private int color;
                 private android.graphics.Paint wavePaint;
                 private android.graphics.Path wavePath;
+                private float cachedWidth = -1f; // 【渲染优化】缓存已计算的波浪路径宽度
+                
                 public WavyUnderlineSpan(int color) {
                     this.color = color;
                     wavePaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
@@ -1838,19 +1840,28 @@ jobs:
                 public void draw(android.graphics.Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, android.graphics.Paint paint) {
                     canvas.drawText(text, start, end, x, y, paint);
                     float width = paint.measureText(text, start, end);
-                    wavePath.reset();
-                    float waveLength = 12f;
-                    float amplitude = 2.5f;
-                    float startX = x;
-                    float endX = x + width;
-                    float currentY = y + paint.getFontMetrics().descent + 3;
-                    wavePath.moveTo(startX, currentY);
-                    for (float i = startX; i < endX; i += waveLength) {
-                        float nextX = Math.min(i + waveLength, endX);
-                        wavePath.quadTo(i + waveLength / 4, currentY - amplitude, i + waveLength / 2, currentY);
-                        wavePath.quadTo(i + waveLength * 3 / 4, currentY + amplitude, nextX, currentY);
+                    
+                    // 【渲染优化】避免在 60fps 的 draw 循环中重复进行大量贝塞尔曲线的数学运算
+                    if (cachedWidth != width) {
+                        cachedWidth = width;
+                        wavePath.reset();
+                        float waveLength = 12f;
+                        float amplitude = 2.5f;
+                        float endX = width;
+                        float currentY = paint.getFontMetrics().descent + 3;
+                        wavePath.moveTo(0, currentY);
+                        for (float i = 0; i < endX; i += waveLength) {
+                            float nextX = Math.min(i + waveLength, endX);
+                            wavePath.quadTo(i + waveLength / 4, currentY - amplitude, i + waveLength / 2, currentY);
+                            wavePath.quadTo(i + waveLength * 3 / 4, currentY + amplitude, nextX, currentY);
+                        }
                     }
+                    
+                    // 利用平移矩阵作画，复用缓存路径
+                    int saveCount = canvas.save();
+                    canvas.translate(x, y);
                     canvas.drawPath(wavePath, wavePaint);
+                    canvas.restoreToCount(saveCount);
                 }
             }
             public static class ColoredStrikethroughSpan extends android.text.style.ReplacementSpan {
@@ -2086,12 +2097,14 @@ jobs:
                 TextRecognizer recognizer = TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
                 StringBuilder fullText = new StringBuilder();
 
-                List<Bitmap> chunks = new ArrayList<>();
+                List<Integer> splitPoints = new ArrayList<>();
+                splitPoints.add(0);
                 int maxH = 3000;
                 int currentY = 0;
+                // 1. 仅计算切割坐标点，不在此处生成 Bitmap 占据内存
                 while(currentY < fullBitmap.getHeight()) {
                     if (fullBitmap.getHeight() - currentY <= maxH) {
-                        chunks.add(Bitmap.createBitmap(fullBitmap, 0, currentY, fullBitmap.getWidth(), fullBitmap.getHeight() - currentY));
+                        splitPoints.add(fullBitmap.getHeight());
                         break;
                     }
                     int searchStart = Math.max(currentY + maxH / 2, currentY + 10);
@@ -2121,21 +2134,26 @@ jobs:
                     } else {
                         splitY = bestRow; 
                     }
-                    chunks.add(Bitmap.createBitmap(fullBitmap, 0, currentY, fullBitmap.getWidth(), splitY - currentY));
+                    splitPoints.add(splitY);
                     currentY = splitY;
                 }
 
-                for (int i = 0; i < chunks.size(); i++) {
+                // 2. 流式处理：动态生成 -> 识别 -> 立即回收销毁
+                int totalChunks = splitPoints.size() - 1;
+                for (int i = 0; i < totalChunks; i++) {
                     final int progress = i + 1;
                     if(callback != null) {
-                        new Handler(Looper.getMainLooper()).post(() -> callback.onProgress(progress, chunks.size()));
+                        new Handler(Looper.getMainLooper()).post(() -> callback.onProgress(progress, totalChunks));
                     }
-                    Bitmap chunk = chunks.get(i);
+                    int startY = splitPoints.get(i);
+                    int height = splitPoints.get(i + 1) - startY;
+                    Bitmap chunk = Bitmap.createBitmap(fullBitmap, 0, startY, fullBitmap.getWidth(), height);
+                    
                     InputImage image = InputImage.fromBitmap(chunk, 0);
                     Task<Text> result = recognizer.process(image);
                     Text text = Tasks.await(result);
                     fullText.append(text.getText()).append("\n");
-                    chunk.recycle();
+                    chunk.recycle(); // 【优化核心】处理完立即释放内存
                 }
                 return cleanOcrText(fixPunctuation(fullText.toString()));
             }
@@ -3196,7 +3214,10 @@ jobs:
                                 File dir = new File(getFilesDir(), "history");
                                 for(int i=0; i<arr.length(); i++) {
                                     String fileId = arr.getJSONObject(i).optString("file", "");
-                                    if(!fileId.isEmpty()) new File(dir, fileId + ".txt").delete();
+                                    if(!fileId.isEmpty()) {
+                                        new File(dir, fileId + ".txt").delete();
+                                        new File(dir, fileId + "_blocks.json").delete(); // 【存储优化】修复：顺手干掉体积庞大的隐藏 JSON 渲染文件
+                                    }
                                 }
                             } catch(Exception e) {}
                             sp.edit().putString("history_records", "[]").apply();
@@ -3624,6 +3645,19 @@ jobs:
 
             private Module loadDecryptedModule(Context context, String assetName, String cacheKey) throws Exception {
                 File cacheFile = new File(context.getFilesDir(), cacheKey + ".ptl");
+                
+                // 【存储优化】自动清理历史残留。如果你修改了 cacheKey 更新模型，会自动把旧版本的几百兆 .ptl 残留文件删掉
+                File[] existingFiles = context.getFilesDir().listFiles();
+                if (existingFiles != null) {
+                    String prefix = cacheKey.contains("_v") ? cacheKey.substring(0, cacheKey.indexOf("_v")) : cacheKey;
+                    for (File f : existingFiles) {
+                        String name = f.getName();
+                        if (name.endsWith(".ptl") && name.startsWith(prefix) && !name.equals(cacheFile.getName())) {
+                            f.delete();
+                        }
+                    }
+                }
+
                 if (cacheFile.exists() && cacheFile.length() > 0) {
                     try { return LiteModuleLoader.load(cacheFile.getAbsolutePath()); } catch (Exception e) { cacheFile.delete(); }
                 }
@@ -3632,7 +3666,8 @@ jobs:
                 cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(ivBytes));
                 File tempFile = new File(context.getFilesDir(), cacheKey + "_tmp.ptl");
                 try (InputStream is = context.getAssets().open(assetName); CipherInputStream cis = new CipherInputStream(is, cipher); GZIPInputStream gis = new GZIPInputStream(cis); FileOutputStream os = new FileOutputStream(tempFile)) {
-                    byte[] buffer = new byte[8192]; int read; while ((read = gis.read(buffer)) != -1) os.write(buffer, 0, read);
+                    // 【速度优化】将解压时的搬运小车（缓冲块）从 8KB 换成 128KB大卡车，首次加载数百兆模型时的解压耗时大幅降低！
+                    byte[] buffer = new byte[128 * 1024]; int read; while ((read = gis.read(buffer)) != -1) os.write(buffer, 0, read);
                     os.flush();
                 }
                 tempFile.renameTo(cacheFile); return LiteModuleLoader.load(cacheFile.getAbsolutePath());
