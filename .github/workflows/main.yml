@@ -19,13 +19,13 @@ jobs:
       with:
         python-version: '3.10'
         cache: 'pip'
-
+    
     - name: Cache Model Download
       id: cache-model
       uses: actions/cache@v4
       with:
         path: dededi_mobile_model_quantized.zip
-        key: model-v1-${{ hashFiles('**/*.txt') }}-10NTeKyG6JigASVwsekKs3MJl0Ev4Oj29
+        key: model-v1-10NTeKyG6JigASVwsekKs3MJl0Ev4Oj29
 
     - name: Install Python Dependencies
       run: pip install gdown torch pycryptodome
@@ -41,6 +41,8 @@ jobs:
         
         echo "正在解压..."
         unzip -o dededi_mobile_model_quantized.zip
+        
+    
         
         cat << 'EOF' > convert.py
         import json
