@@ -14,13 +14,30 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Cache Model Download
+      id: cache-model
+      uses: actions/cache@v4
+      with:
+        path: dededi_mobile_model_quantized.zip
+        key: model-v1-${{ hashFiles('**/*.txt') }}-10NTeKyG6JigASVwsekKs3MJl0Ev4Oj29
+
     - name: Install Python Dependencies
       run: pip install gdown torch pycryptodome
 
     - name: Download, Unzip and Preprocess Pro Model
       run: |
-        echo "正在利用云端从 Google Drive 下载专业版大模型..."
-        gdown 10NTeKyG6JigASVwsekKs3MJl0Ev4Oj29 -O dededi_mobile_model_quantized.zip
+        if [ ! -f dededi_mobile_model_quantized.zip ]; then
+          echo "正在利用云端从 Google Drive 下载专业版大模型..."
+          gdown 10NTeKyG6JigASVwsekKs3MJl0Ev4Oj29 -O dededi_mobile_model_quantized.zip
+        else
+          echo "使用缓存的模型文件，跳过下载..."
+        fi
         
         echo "正在解压..."
         unzip -o dededi_mobile_model_quantized.zip
@@ -46,9 +63,10 @@ jobs:
         with open('roberta_vocab.json', 'w', encoding='utf-8') as f:
             json.dump(clean_vocab, f, ensure_ascii=False)
             
-        model = torch.jit.load(model_path)
-        optimized_model = optimize_for_mobile(model)
-        optimized_model._save_for_lite_interpreter('roberta_mobile.ptl')
+        with torch.no_grad():
+            model = torch.jit.load(model_path)
+            optimized_model = optimize_for_mobile(model)
+            optimized_model._save_for_lite_interpreter('roberta_mobile.ptl')
         EOF
         
         python convert.py
@@ -57,7 +75,7 @@ jobs:
       run: |
         cat << 'EOF' > encrypt.py
         import os
-        import lzma
+        import gzip
         from Crypto.Cipher import AES
         from Crypto.Util.Padding import pad
 
@@ -67,10 +85,7 @@ jobs:
         def encrypt_file(file_in, file_out):
             if not os.path.exists(file_in): return
             with open(file_in, 'rb') as f: data = f.read()
-            
-            # 【极致优化】抛弃 gzip，使用 lzma 并开启最高压榨级别 9
-            compressed_data = lzma.compress(data, preset=9)
-            
+            compressed_data = gzip.compress(data, compresslevel=9)
             cipher = AES.new(KEY, AES.MODE_CBC, IV)
             enc_data = cipher.encrypt(pad(compressed_data, AES.block_size))
             with open(file_out, 'wb') as f: f.write(enc_data)
@@ -101,9 +116,13 @@ jobs:
         cp app_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true # 现在拷贝就能成功了
 
         cat << 'EOF' > gradle.properties
+        
         android.useAndroidX=true
         android.enableJetifier=true
         org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m
+        org.gradle.parallel=true
+        org.gradle.caching=true
+        
         EOF
 
         cat << 'EOF' > build.gradle
@@ -122,11 +141,22 @@ jobs:
         add_library(dededi SHARED native-lib.cpp)
         find_library(log-lib log)
         target_link_libraries(dededi ${log-lib})
+        
+        # 体积与性能优化
+        target_compile_options(dededi PRIVATE
+            -O2
+            -fvisibility=hidden
+            -ffunction-sections
+            -fdata-sections
+        )
+        set_target_properties(dededi PROPERTIES LINK_FLAGS "-Wl,--gc-sections -Wl,--strip-all")
+        
         EOF
 
         cat << 'EOF' > app/src/main/cpp/native-lib.cpp
-        #include <jni.h>
-
+        
+                #include <jni.h>
+        
         extern "C" JNIEXPORT jbyteArray JNICALL
         Java_com_app_dededi_MainActivity_getSecretKey(JNIEnv* env, jobject) {
             char k[] = { (char)('x'^0x37), (char)('T'^0x37), (char)('9'^0x37), (char)('#'^0x37),
@@ -138,12 +168,11 @@ jobs:
                          (char)('z'^0x37), (char)('R'^0x37), (char)('1'^0x37), (char)('%'^0x37),
                          (char)('y'^0x37), (char)('W'^0x37), (char)('0'^0x37), (char)('&'^0x37) };
             jbyteArray ret = env->NewByteArray(32);
-            jbyte bytes[32];
-            for(int i=0; i<32; i++) bytes[i] = k[i] ^ 0x37;
-            env->SetByteArrayRegion(ret, 0, 32, bytes);
+            for(int i=0; i<32; i++) k[i] ^= 0x37;
+            env->SetByteArrayRegion(ret, 0, 32, reinterpret_cast<jbyte*>(k));
             return ret;
         }
-
+        
         extern "C" JNIEXPORT jbyteArray JNICALL
         Java_com_app_dededi_MainActivity_getSecretIV(JNIEnv* env, jobject) {
             char iv[] = { (char)('1'^0x37), (char)('2'^0x37), (char)('3'^0x37), (char)('4'^0x37),
@@ -151,9 +180,8 @@ jobs:
                           (char)('9'^0x37), (char)('0'^0x37), (char)('1'^0x37), (char)('2'^0x37),
                           (char)('3'^0x37), (char)('4'^0x37), (char)('5'^0x37), (char)('6'^0x37) };
             jbyteArray ret = env->NewByteArray(16);
-            jbyte bytes[16];
-            for(int i=0; i<16; i++) bytes[i] = iv[i] ^ 0x37;
-            env->SetByteArrayRegion(ret, 0, 16, bytes);
+            for(int i=0; i<16; i++) iv[i] ^= 0x37;
+            env->SetByteArrayRegion(ret, 0, 16, reinterpret_cast<jbyte*>(iv));
             return ret;
         }
         EOF
@@ -188,23 +216,31 @@ jobs:
                 targetCompatibility JavaVersion.VERSION_11
             }
         }
+        packagingOptions {
+            exclude 'META-INF/AL2.0'
+            exclude 'META-INF/LGPL2.1'
+            exclude 'META-INF/DEPENDENCIES'
+            exclude 'META-INF/LICENSE*'
+            exclude 'META-INF/NOTICE*'
+            exclude 'META-INF/*.kotlin_module'
+        }
         dependencies {
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.8.0'
             implementation 'org.pytorch:pytorch_android_lite:1.13.0'
             implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
             implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
-            // 【新增这行】添加 LZMA/XZ 极限解压算法的支持库
-            implementation 'org.tukaani:xz:1.9' 
         }
-
         EOF
 
         cat << 'EOF' > app/proguard-rules.pro
+        -allowaccessmodification
+        -repackageclasses ''
         -keep class org.pytorch.** { *; }
         -keep class com.facebook.jni.** { *; }
         -keepclasseswithmembers class * { native <methods>; }
         -dontwarn org.pytorch.**
+        
         EOF
 
         cat << 'EOF' > app/src/main/res/values/colors.xml
@@ -1550,8 +1586,6 @@ jobs:
 
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
-        // 在 MainActivity.java 开头 import 很多包的地方，加入这行：
-        import org.tukaani.xz.XZInputStream;
         import android.annotation.SuppressLint;
         import android.content.ClipData;
         import android.content.ClipboardManager;
@@ -3650,27 +3684,21 @@ jobs:
                 Iterator<String> keys = json.keys();
                 while(keys.hasNext()) { String key = keys.next(); map.put(key, (long) json.getInt(key)); }
             }
-            
+
             private Module loadDecryptedModule(Context context, String assetName, String cacheKey) throws Exception {
                 File cacheFile = new File(context.getFilesDir(), cacheKey + ".ptl");
-                if (cacheFile.exists() && cacheFile.length() > 0) {
-                    try { return LiteModuleLoader.load(cacheFile.getAbsolutePath()); } catch (Exception e) { cacheFile.delete(); }
+                
+                // 【存储优化】自动清理历史残留。如果你修改了 cacheKey 更新模型，会自动把旧版本的几百兆 .ptl 残留文件删掉
+                File[] existingFiles = context.getFilesDir().listFiles();
+                if (existingFiles != null) {
+                    String prefix = cacheKey.contains("_v") ? cacheKey.substring(0, cacheKey.indexOf("_v")) : cacheKey;
+                    for (File f : existingFiles) {
+                        String name = f.getName();
+                        if (name.endsWith(".ptl") && name.startsWith(prefix) && !name.equals(cacheFile.getName())) {
+                            f.delete();
+                        }
+                    }
                 }
-                byte[] keyBytes = getSecretKey(); byte[] ivBytes = getSecretIV();
-                Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-                cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(ivBytes));
-                File tempFile = new File(context.getFilesDir(), cacheKey + "_tmp.ptl");
-                try (InputStream is = context.getAssets().open(assetName); 
-                     CipherInputStream cis = new CipherInputStream(is, cipher); 
-                     org.tukaani.xz.XZInputStream xzis = new org.tukaani.xz.XZInputStream(cis); 
-                     FileOutputStream os = new FileOutputStream(tempFile)) {
-                    byte[] buffer = new byte[32768]; int read; while ((read = xzis.read(buffer)) != -1) os.write(buffer, 0, read);
-                    os.flush();
-                }
-                tempFile.renameTo(cacheFile); return LiteModuleLoader.load(cacheFile.getAbsolutePath());
-            }
-    
-            
 
                 if (cacheFile.exists() && cacheFile.length() > 0) {
                     try { return LiteModuleLoader.load(cacheFile.getAbsolutePath()); } catch (Exception e) { cacheFile.delete(); }
