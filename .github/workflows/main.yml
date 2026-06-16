@@ -57,7 +57,7 @@ jobs:
       run: |
         cat << 'EOF' > encrypt.py
         import os
-        import gzip
+        import lzma
         from Crypto.Cipher import AES
         from Crypto.Util.Padding import pad
 
@@ -67,7 +67,10 @@ jobs:
         def encrypt_file(file_in, file_out):
             if not os.path.exists(file_in): return
             with open(file_in, 'rb') as f: data = f.read()
-            compressed_data = gzip.compress(data)
+            
+            # 【极致优化】抛弃 gzip，使用 lzma 并开启最高压榨级别 9
+            compressed_data = lzma.compress(data, preset=9)
+            
             cipher = AES.new(KEY, AES.MODE_CBC, IV)
             enc_data = cipher.encrypt(pad(compressed_data, AES.block_size))
             with open(file_out, 'wb') as f: f.write(enc_data)
@@ -191,7 +194,10 @@ jobs:
             implementation 'org.pytorch:pytorch_android_lite:1.13.0'
             implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
             implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
+            // 【新增这行】添加 LZMA/XZ 极限解压算法的支持库
+            implementation 'org.tukaani:xz:1.9' 
         }
+
         EOF
 
         cat << 'EOF' > app/proguard-rules.pro
@@ -1544,6 +1550,8 @@ jobs:
 
         cat << 'EOF' > app/src/main/java/com/app/dededi/MainActivity.java
         package com.app.dededi;
+        // 在 MainActivity.java 开头 import 很多包的地方，加入这行：
+        import org.tukaani.xz.XZInputStream;
         import android.annotation.SuppressLint;
         import android.content.ClipData;
         import android.content.ClipboardManager;
@@ -3642,21 +3650,27 @@ jobs:
                 Iterator<String> keys = json.keys();
                 while(keys.hasNext()) { String key = keys.next(); map.put(key, (long) json.getInt(key)); }
             }
-
+            
             private Module loadDecryptedModule(Context context, String assetName, String cacheKey) throws Exception {
                 File cacheFile = new File(context.getFilesDir(), cacheKey + ".ptl");
-                
-                // 【存储优化】自动清理历史残留。如果你修改了 cacheKey 更新模型，会自动把旧版本的几百兆 .ptl 残留文件删掉
-                File[] existingFiles = context.getFilesDir().listFiles();
-                if (existingFiles != null) {
-                    String prefix = cacheKey.contains("_v") ? cacheKey.substring(0, cacheKey.indexOf("_v")) : cacheKey;
-                    for (File f : existingFiles) {
-                        String name = f.getName();
-                        if (name.endsWith(".ptl") && name.startsWith(prefix) && !name.equals(cacheFile.getName())) {
-                            f.delete();
-                        }
-                    }
+                if (cacheFile.exists() && cacheFile.length() > 0) {
+                    try { return LiteModuleLoader.load(cacheFile.getAbsolutePath()); } catch (Exception e) { cacheFile.delete(); }
                 }
+                byte[] keyBytes = getSecretKey(); byte[] ivBytes = getSecretIV();
+                Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+                cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new IvParameterSpec(ivBytes));
+                File tempFile = new File(context.getFilesDir(), cacheKey + "_tmp.ptl");
+                try (InputStream is = context.getAssets().open(assetName); 
+                     CipherInputStream cis = new CipherInputStream(is, cipher); 
+                     org.tukaani.xz.XZInputStream xzis = new org.tukaani.xz.XZInputStream(cis); 
+                     FileOutputStream os = new FileOutputStream(tempFile)) {
+                    byte[] buffer = new byte[32768]; int read; while ((read = xzis.read(buffer)) != -1) os.write(buffer, 0, read);
+                    os.flush();
+                }
+                tempFile.renameTo(cacheFile); return LiteModuleLoader.load(cacheFile.getAbsolutePath());
+            }
+    
+            
 
                 if (cacheFile.exists() && cacheFile.length() > 0) {
                     try { return LiteModuleLoader.load(cacheFile.getAbsolutePath()); } catch (Exception e) { cacheFile.delete(); }
