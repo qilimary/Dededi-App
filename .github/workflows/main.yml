@@ -1,5 +1,4 @@
 
-
 name: Build Android APK
 
 on:
@@ -68,7 +67,7 @@ jobs:
         def encrypt_file(file_in, file_out):
             if not os.path.exists(file_in): return
             with open(file_in, 'rb') as f: data = f.read()
-            compressed_data = gzip.compress(data, compresslevel=9)
+            compressed_data = gzip.compress(data)
             cipher = AES.new(KEY, AES.MODE_CBC, IV)
             enc_data = cipher.encrypt(pad(compressed_data, AES.block_size))
             with open(file_out, 'wb') as f: f.write(enc_data)
@@ -120,23 +119,11 @@ jobs:
         add_library(dededi SHARED native-lib.cpp)
         find_library(log-lib log)
         target_link_libraries(dededi ${log-lib})
-        
-        # 体积与性能优化
-        target_compile_options(dededi PRIVATE
-            -O2
-            -fvisibility=hidden
-            -ffunction-sections
-            -fdata-sections
-        )
-        set_target_properties(dededi PROPERTIES LINK_FLAGS "-Wl,--gc-sections -Wl,--strip-all")
-        
         EOF
 
         cat << 'EOF' > app/src/main/cpp/native-lib.cpp
         #include <jni.h>
-        
-                #include <jni.h>
-        
+
         extern "C" JNIEXPORT jbyteArray JNICALL
         Java_com_app_dededi_MainActivity_getSecretKey(JNIEnv* env, jobject) {
             char k[] = { (char)('x'^0x37), (char)('T'^0x37), (char)('9'^0x37), (char)('#'^0x37),
@@ -148,11 +135,12 @@ jobs:
                          (char)('z'^0x37), (char)('R'^0x37), (char)('1'^0x37), (char)('%'^0x37),
                          (char)('y'^0x37), (char)('W'^0x37), (char)('0'^0x37), (char)('&'^0x37) };
             jbyteArray ret = env->NewByteArray(32);
-            for(int i=0; i<32; i++) k[i] ^= 0x37;
-            env->SetByteArrayRegion(ret, 0, 32, reinterpret_cast<jbyte*>(k));
+            jbyte bytes[32];
+            for(int i=0; i<32; i++) bytes[i] = k[i] ^ 0x37;
+            env->SetByteArrayRegion(ret, 0, 32, bytes);
             return ret;
         }
-        
+
         extern "C" JNIEXPORT jbyteArray JNICALL
         Java_com_app_dededi_MainActivity_getSecretIV(JNIEnv* env, jobject) {
             char iv[] = { (char)('1'^0x37), (char)('2'^0x37), (char)('3'^0x37), (char)('4'^0x37),
@@ -160,11 +148,11 @@ jobs:
                           (char)('9'^0x37), (char)('0'^0x37), (char)('1'^0x37), (char)('2'^0x37),
                           (char)('3'^0x37), (char)('4'^0x37), (char)('5'^0x37), (char)('6'^0x37) };
             jbyteArray ret = env->NewByteArray(16);
-            for(int i=0; i<16; i++) iv[i] ^= 0x37;
-            env->SetByteArrayRegion(ret, 0, 16, reinterpret_cast<jbyte*>(iv));
+            jbyte bytes[16];
+            for(int i=0; i<16; i++) bytes[i] = iv[i] ^ 0x37;
+            env->SetByteArrayRegion(ret, 0, 16, bytes);
             return ret;
         }
-        
         EOF
 
         cat << 'EOF' > app/build.gradle
@@ -196,14 +184,6 @@ jobs:
                 sourceCompatibility JavaVersion.VERSION_11
                 targetCompatibility JavaVersion.VERSION_11
             }
-        }
-        packagingOptions {
-            exclude 'META-INF/AL2.0'
-            exclude 'META-INF/LGPL2.1'
-            exclude 'META-INF/DEPENDENCIES'
-            exclude 'META-INF/LICENSE*'
-            exclude 'META-INF/NOTICE*'
-            exclude 'META-INF/*.kotlin_module'
         }
         dependencies {
             implementation 'androidx.appcompat:appcompat:1.6.1'
