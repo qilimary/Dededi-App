@@ -58,47 +58,40 @@ jobs:
         cat << 'EOF' > encrypt.py
         import os
         import gzip
+        from Crypto.Cipher import ARC4
 
         KEY = b'xT9#mP2!qL5*vN8^cK4@bJ7$zR1%yW0&'
-
-        def rc4(data, key):
-            S = list(range(256))
-            j = 0
-            for i in range(256):
-                j = (j + S[i] + key[i % len(key)]) % 256
-                S[i], S[j] = S[j], S[i]
-            res = bytearray(len(data))
-            i = j = 0
-            for idx in range(len(data)):
-                i = (i + 1) % 256
-                j = (j + S[i]) % 256
-                S[i], S[j] = S[j], S[i]
-                res[idx] = data[idx] ^ S[(S[i] + S[j]) % 256]
-            return bytes(res)
 
         def process_model(file_in, file_out):
             if not os.path.exists(file_in): return
             with open(file_in, 'rb') as f: data = bytearray(f.read())
-            # Obfuscate PK magic bytes (PyTorch Zip)
+            # 破坏 ZIP 头，防止自动化工具直接提取
             if len(data) > 2 and data[0] == 0x50 and data[1] == 0x4B:
                 data[0] = 0x44 # 'D'
                 data[1] = 0x45 # 'E'
             compressed = gzip.compress(data)
-            encrypted = rc4(compressed, KEY)
+            # 使用 pycryptodome 提供的底层C语言加速RC4加密，解决7分钟打包慢的问题
+            cipher = ARC4.new(KEY)
+            encrypted = cipher.encrypt(compressed)
             with open(file_out, 'wb') as f: f.write(encrypted)
 
         def process_text(file_in, file_out):
             if not os.path.exists(file_in): return
             with open(file_in, 'rb') as f: data = f.read()
             compressed = gzip.compress(data)
-            encrypted = rc4(compressed, KEY)
+            cipher = ARC4.new(KEY)
+            encrypted = cipher.encrypt(compressed)
             with open(file_out, 'wb') as f: f.write(encrypted)
 
+        print("正在加密极速模型...")
         process_model('dededi_mobile.ptl', 'sys_core_f.dat')
+        print("正在加密专业模型...")
         process_model('roberta_mobile.ptl', 'sys_core_p.dat')
+        print("正在加密词表和规则...")
         process_text('错别字.txt', 'sys_typo.dat')
         process_text('student_vocab.json', 'sys_vocab_f.dat')
         process_text('roberta_vocab.json', 'sys_vocab_p.dat')
+        print("加密完成！")
         EOF
         python encrypt.py
         
@@ -151,63 +144,12 @@ jobs:
         #include <string.h>
         #include <stdio.h>
         #include <stdlib.h>
-        #include <unistd.h>
-        #include <sys/ptrace.h>
         #include <android/asset_manager.h>
         #include <android/asset_manager_jni.h>
         #include <zlib.h>
-        #include <pthread.h>
 
         static unsigned char key[] = "xT9#mP2!qL5*vN8^cK4@bJ7$zR1%yW0&";
         static int key_len = 32;
-        static bool is_compromised = false;
-
-        void security_checks() {
-            // 1. Anti-Debug (Ptrace)
-            if (ptrace(PTRACE_TRACEME, 0, 1, 0) < 0) {
-                is_compromised = true;
-            }
-            // 2. Anti-Frida / Xposed
-            FILE *fp = fopen("/proc/self/maps", "r");
-            if (fp) {
-                char line[256];
-                while (fgets(line, sizeof(line), fp)) {
-                    if (strstr(line, "frida") || strstr(line, "xposed")) {
-                        is_compromised = true;
-                        break;
-                    }
-                }
-                fclose(fp);
-            }
-            // 3. TracerPid Check
-            fp = fopen("/proc/self/status", "r");
-            if (fp) {
-                char line[256];
-                while (fgets(line, sizeof(line), fp)) {
-                    if (strncmp(line, "TracerPid:", 10) == 0) {
-                        if (atoi(&line[10]) != 0) is_compromised = true;
-                        break;
-                    }
-                }
-                fclose(fp);
-            }
-            // 4. Anti-Root Check
-            const char* paths[] = {"/system/xbin/su", "/system/bin/su"};
-            for (int i = 0; i < 2; i++) {
-                if (access(paths[i], F_OK) == 0) is_compromised = true;
-            }
-
-            if (is_compromised) {
-                // Mutate key silently to produce garbage output
-                key[0] ^= 0x55;
-                key[5] ^= 0xAA;
-            }
-        }
-
-        __attribute__((constructor))
-        void on_load() {
-            security_checks();
-        }
 
         void rc4_process(unsigned char *data, size_t len) {
             unsigned char S[256];
@@ -292,7 +234,7 @@ jobs:
                 return JNI_FALSE;
             }
 
-            // Restore obfuscated PK header
+            // 在写回磁盘前恢复伪装过的模型头
             if (uncompressed_len > 2 && uncompressed[0] == 0x44 && uncompressed[1] == 0x45) {
                 uncompressed[0] = 0x50; // 'P'
                 uncompressed[1] = 0x4B; // 'K'
@@ -3105,7 +3047,9 @@ jobs:
                         try {
                             if (fastModule == null) fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.5");
                             if (fastVocab.isEmpty()) loadVocab(fastVocab, "sys_vocab_f.dat");
-                        } catch(Exception ignored) {}
+                        } catch(Exception e) {
+                            e.printStackTrace();
+                        }
                         
                         try {
                             if (proModule == null) proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_cache_v2.5");
@@ -3113,10 +3057,16 @@ jobs:
                             clsId = proVocab.getOrDefault("[CLS]", 101L); sepId = proVocab.getOrDefault("[SEP]", 102L);
                             maskId = proVocab.getOrDefault("[MASK]", 103L); unkId = proVocab.getOrDefault("[UNK]", 100L);
                             deId = proVocab.getOrDefault("的", 0L); diId = proVocab.getOrDefault("地", 0L); de2Id = proVocab.getOrDefault("得", 0L);
-                        } catch(Exception ignored) {}
+                        } catch(Exception e) {
+                            e.printStackTrace();
+                        }
 
                         runOnUiThread(() -> {
-                            if (!hasStartedChecking) outputText.setText("AI已加载。");
+                            if (proModule == null && fastModule == null) {
+                                outputText.setText("AI加载失败，请检查环境异常或重新安装。");
+                            } else if (!hasStartedChecking) {
+                                outputText.setText("AI已加载。");
+                            }
                         });
                     } catch (Exception ignored) {}
                 }).start();
@@ -3223,8 +3173,8 @@ jobs:
                         
                         boolean isFastMode = rbFast.isChecked();
                         if (tempVal > 0.0f) {
-                            if (isFastMode && fastModule == null) { Toast.makeText(MainActivity.this, "模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
-                            if (!isFastMode && proModule == null) { Toast.makeText(MainActivity.this, "专业版模型仍在加载，请稍候...", Toast.LENGTH_SHORT).show(); return; }
+                            if (isFastMode && fastModule == null) { Toast.makeText(MainActivity.this, "模型仍在加载或环境异常，请稍后重试", Toast.LENGTH_SHORT).show(); return; }
+                            if (!isFastMode && proModule == null) { Toast.makeText(MainActivity.this, "专业版模型仍在加载或环境异常，请稍后重试", Toast.LENGTH_SHORT).show(); return; }
                         } else {
                             Toast.makeText(MainActivity.this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                         }
@@ -3797,12 +3747,10 @@ jobs:
 
                 boolean success = decryptFileNative(context.getAssets(), assetName, cacheFile.getAbsolutePath());
                 if (!success) {
-                    throw new Exception("加载失败或运行环境异常。");
+                    throw new Exception("底层解密失败");
                 }
 
                 Module m = LiteModuleLoader.load(cacheFile.getAbsolutePath());
-                cacheFile.delete(); // 内存映射后阅后即焚，不在磁盘存留脱壳明文文件
-
                 return m;
             }
 
