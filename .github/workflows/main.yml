@@ -571,7 +571,6 @@ jobs:
 
                 LinearLayout layout = new LinearLayout(this);
                 layout.setOrientation(LinearLayout.VERTICAL);
-                // 移除了~号，为了防止下方留白过多，微调了整体的上下边距
                 layout.setPadding(35, 25, 35, 10);
 
                 TextView tvTitle = new TextView(this);
@@ -641,8 +640,6 @@ jobs:
 
                 final String finalText = rawText;
                 
-                // 解决遮挡Bug: 如果具有悬浮窗权限，必须使用 getApplicationContext() 进行实例化
-                // 这样 Dialog 才是一个纯粹的系统全局弹窗，不会被限制在 Activity 层级下方
                 android.content.Context dialogCtx = this;
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
                     dialogCtx = new android.view.ContextThemeWrapper(getApplicationContext(), android.R.style.Theme_Material_Light_Dialog_Alert);
@@ -1165,10 +1162,11 @@ jobs:
             private boolean lastStatusWasTypo = false;
             
             private SharedPreferences sp;
+            private String currentHistoryFileId = null;
             
             private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
 
-            private void saveHistory(String text) {
+            private void saveHistory(String text, String fileId) {
                 if (text == null || text.trim().isEmpty()) return;
                 new Thread(() -> {
                     try {
@@ -1189,11 +1187,7 @@ jobs:
                         String preview = text.length() > 16 ? text.substring(0, 16).replace("\n", " ") + "..." : text.replace("\n", " ");
                         newRecord.put("preview", preview);
                         
-                        String fileId = java.util.UUID.randomUUID().toString();
                         newRecord.put("file", fileId);
-                        
-                        // 同步赋予主界面的静态变量，确保悬浮窗生成的文件与主界面精准匹配
-                        MainActivity.lastSavedHistoryFileId = fileId;
                         
                         File dir = new File(getFilesDir(), "history");
                         if (!dir.exists()) dir.mkdirs();
@@ -1214,6 +1208,7 @@ jobs:
                                 if (!oldFileId.isEmpty()) {
                                     new File(dir, oldFileId + ".txt").delete();
                                     new File(dir, oldFileId + "_blocks.json").delete();
+                                    new File(dir, oldFileId + "_manual.json").delete();
                                 }
                             }
                         }
@@ -1229,8 +1224,7 @@ jobs:
                     if (editFloatInput != null) {
                         MainActivity.checkAndPromptCleanup(this, text, cleaned -> {
                             editFloatInput.setText(cleaned);
-                            
-                            saveHistory(cleaned);
+                            saveHistory(cleaned, java.util.UUID.randomUUID().toString());
                             Toast.makeText(FloatingService.this, "导入成功", Toast.LENGTH_SHORT).show();
                             if (panelInput != null && panelInput.getVisibility() != View.VISIBLE) {
                                 panelInput.setVisibility(View.VISIBLE);
@@ -1321,7 +1315,6 @@ jobs:
                     }
                     @Override public void afterTextChanged(Editable s) {
                         if (!isChecking) {
-                            // 同样加入防抖，避免海量字符阻塞服务
                             if (debounceRunnable != null) handler.removeCallbacks(debounceRunnable);
                             debounceRunnable = () -> {
                                 String textStr = s.toString();
@@ -1375,10 +1368,12 @@ jobs:
                 btnFloatCheck.setOnClickListener(v -> {
                     String text = editFloatInput.getText().toString();
                     if (!text.isEmpty()) {
-                        saveHistory(text);
+                        String fileId = java.util.UUID.randomUUID().toString();
+                        currentHistoryFileId = fileId;
+                        saveHistory(text, fileId);
                         setFocusable(false);
                         panelInput.setVisibility(View.GONE);
-                        startInference(text);
+                        startInference(text, fileId);
                     } else {
                         Toast.makeText(this, "文本为空", Toast.LENGTH_SHORT).show();
                     }
@@ -1463,7 +1458,7 @@ jobs:
                                         if (!isVisible) {
                                             String sync = sp.getString("sync_text", "");
                                             if (!sync.isEmpty() && !sync.equals(editFloatInput.getText().toString())) {
-                                                MainActivity.isCleanDialogOpen = true; // 阻断自动恢复时弹窗
+                                                MainActivity.isCleanDialogOpen = true;
                                                 editFloatInput.setText(sync);
                                                 MainActivity.isCleanDialogOpen = false;
                                             }
@@ -1530,7 +1525,7 @@ jobs:
                 });
             }
 
-            private void startInference(String text) {
+            private void startInference(String text, String fileId) {
                 boolean isFastMode = sp.getBoolean("is_fast_mode", false);
                 String prefix = isFastMode ? "fast_" : "pro_";
                 float temp = Float.parseFloat(sp.getString(prefix + "temp", isFastMode ? "1.2" : "1.0"));
@@ -1869,48 +1864,41 @@ jobs:
                         MainActivity.allSentencesBlocks = syncAllBlocks;
                         MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
                         MainActivity.hasNewFloatResult = true;
-                        
-                        MainActivity.allSentencesBlocks = syncAllBlocks;
-                            MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
-                            MainActivity.hasNewFloatResult = true;
-                            
-                            // 修复：必须在AI推理【彻底完成】后，再往历史记录写入标记块
-                            if (MainActivity.lastSavedHistoryFileId != null) {
-                                new Thread(() -> {
-                                    try {
-                                        File dir = new File(getFilesDir(), "history");
-                                        String blocksJson = MainActivity.serializeBlocks(syncAllBlocks);
-                                        FileOutputStream fosBlocks = new FileOutputStream(new File(dir, MainActivity.lastSavedHistoryFileId + "_blocks.json"));
-                                        fosBlocks.write(blocksJson.getBytes("UTF-8"));
-                                        fosBlocks.close();
-                                    } catch (Exception e) {}
-                                }).start();
-                            }
-                            
-                            if (errorCount[0] > 0) {
-                                try { Thread.sleep(1000); } catch (Exception e) {}
-                            }
-                            
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                isChecking = false; 
-                                btnFloatSwitch.setEnabled(true);
-                                if (errorCount[0] == 0) {
-                                    showStatus("未检测到错误", true);
-                                } else {
-                                    showStatus("已完成，共修正 " + errorCount[0] + " 处", true);
-                                }
-                                circleSpin.setVisibility(View.INVISIBLE);
-                                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
-                            });
-                        } catch (Exception e) {
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                isChecking = false; 
-                                btnFloatSwitch.setEnabled(true);
-                                circleSpin.setVisibility(View.INVISIBLE);
-                                Toast.makeText(FloatingService.this, "纠错中断: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                            });
+
+                        if (fileId != null) {
+                            try {
+                                File dir = new File(getFilesDir(), "history");
+                                String blocksJson = MainActivity.serializeBlocks(MainActivity.allSentencesBlocks);
+                                FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
+                                fosBlocks.write(blocksJson.getBytes("UTF-8"));
+                                fosBlocks.close();
+                            } catch (Exception e) {}
                         }
+                        
+                        if (errorCount[0] > 0) {
+                            try { Thread.sleep(1000); } catch (Exception e) {}
+                        }
+                        
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            isChecking = false; 
+                            btnFloatSwitch.setEnabled(true);
+                            if (errorCount[0] == 0) {
+                                showStatus("未检测到错误", true);
+                            } else {
+                                showStatus("已完成，共修正 " + errorCount[0] + " 处", true);
+                            }
+                            circleSpin.setVisibility(View.INVISIBLE);
+                            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
+                        });
+                    } catch (Exception e) {
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            isChecking = false; 
+                            btnFloatSwitch.setEnabled(true);
+                            circleSpin.setVisibility(View.INVISIBLE);
+                            Toast.makeText(FloatingService.this, "纠错中断: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        });
+                    }
                 }).start();
             }
 
@@ -2001,7 +1989,6 @@ jobs:
         import android.animation.Animator;
         import android.animation.AnimatorListenerAdapter;
         import android.view.ViewAnimationUtils;
-        import android.view.ViewGroup;
 
         public class MainActivity extends AppCompatActivity {
             static { System.loadLibrary("dededi"); }
@@ -2028,37 +2015,35 @@ jobs:
             }
 
             public static void checkAndPromptCleanup(Context context, String text, TextCleanCallback callback) {
-            // 修复Bug: 如果已经有弹窗，直接返回，防止二次粘贴弹窗被吞或无限循环
-            if (isCleanDialogOpen) {
-                if (callback != null) callback.onCleaned(text);
-                return;
+                if (isCleanDialogOpen) {
+                    if (callback != null) callback.onCleaned(text);
+                    return;
+                }
+                if (text == null || text.isEmpty()) {
+                    if (callback != null) callback.onCleaned(text);
+                    return;
+                }
+                int starCount = 0, hashCount = 0, dashCount = 0;
+                for (int i = 0; i < text.length(); i++) {
+                    char c = text.charAt(i);
+                    if (c == '*') starCount++;
+                    else if (c == '#') hashCount++;
+                    else if (c == '-') dashCount++;
+                }
+                if (starCount >= 4 || hashCount >= 4 || dashCount >= 4) {
+                    isCleanDialogOpen = true;
+                    SymbolCleanActivity.callback = callback;
+                    Intent intent = new Intent(context, SymbolCleanActivity.class);
+                    intent.putExtra("raw_text", text);
+                    intent.putExtra("star", starCount >= 4);
+                    intent.putExtra("hash", hashCount >= 4);
+                    intent.putExtra("dash", dashCount >= 4);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    context.startActivity(intent);
+                } else {
+                    if (callback != null) callback.onCleaned(text);
+                }
             }
-            if (text == null || text.isEmpty()) {
-                if (callback != null) callback.onCleaned(text);
-                return;
-            }
-            int starCount = 0, hashCount = 0, dashCount = 0;
-            for (int i = 0; i < text.length(); i++) {
-                char c = text.charAt(i);
-                if (c == '*') starCount++;
-                else if (c == '#') hashCount++;
-                else if (c == '-') dashCount++;
-            }
-            if (starCount >= 4 || hashCount >= 4 || dashCount >= 4) {
-                isCleanDialogOpen = true;
-                SymbolCleanActivity.callback = callback;
-                Intent intent = new Intent(context, SymbolCleanActivity.class);
-                intent.putExtra("raw_text", text);
-                intent.putExtra("star", starCount >= 4);
-                intent.putExtra("hash", hashCount >= 4);
-                intent.putExtra("dash", dashCount >= 4);
-                // 修复Bug: 加上 CLEAR_TOP 确保完全销毁旧的弹窗实例，保证每次一定能弹出来
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                context.startActivity(intent);
-            } else {
-                if (callback != null) callback.onCleaned(text);
-            }
-        }
 
             public static class QuantifierRule {
                 public String primaryQuant;
@@ -2096,7 +2081,6 @@ jobs:
                 gramRules.add(new GramRule("(目的是)( *)(为了)", new String[][]{ {"是", null}, {null, ""} }));
                 gramRules.add(new GramRule("(关键在于|关键是)(.{1,15}?)(是十分重要的|是很重要的|起到重要作用|决定性的)", new String[][]{ {"", null}, {null, ""} }));
                 gramRules.add(new GramRule("(成分是|主要成分是)(.{1,15}?)(配制而成的)", new String[][]{ {null, ""} }));
-
                 gramRules.add(new GramRule("(切忌)(.{1,15}?)(不要)", new String[][]{ {"千万", null}, {null, ""} }));
                 gramRules.add(new GramRule("(切忌)(.{1,15}?)(不可)", new String[][]{ {"千万", null}, {null, ""} }));
                 gramRules.add(new GramRule("(避免)(.{1,15}?)(不要)", new String[][]{ {null, ""} }));
@@ -2104,21 +2088,16 @@ jobs:
                 gramRules.add(new GramRule("(防止)(.{1,15}?)(不再)", new String[][]{ {null, "再次"} }));
                 gramRules.add(new GramRule("(防止)(.{1,15}?)(不被)", new String[][]{ {null, "被"} }));
                 gramRules.add(new GramRule("(无时无刻)( *)(都)", new String[][]{ {null, "不"} }));
-
                 gramRules.add(new GramRule("(达|多达|高达|达到)( *)(十几|几十|二三十|三四十|四五十|五六十|六七十|七八十|八九十|一二百|两三百|三四百|四五百|五六百|七八百|八九百|[0-9]+多|[0-9]+余|[0-9]+几|[一二两三四五六七八九十百千万亿]+多|[一二两三四五六七八九十百千万亿]+余|[一二两三四五六七八九十百千万亿]+几)", new String[][]{ {"有", null}, {"约有", null} }));
                 gramRules.add(new GramRule("(达|多达|高达|达到)( *)(大约|大概|将近|差不多|近|不下|不下于)", new String[][]{ {"有", null}, {"约有", null} }));
-                
                 gramRules.add(new GramRule("(大约|大概|约|近|将近|差不多|超|超过|超出|达|高达|达到)( *)([0-9一二两三四五六七八九十百千万亿]+ *左右|[0-9一二两三四五六七八九十百千万亿]+ *上下)", new String[][]{ {"有", null}, {"", null} }));
-                     
                 gramRules.add(new GramRule("(互相|相互)( *)(厮打|角逐|探讨|商榷)", new String[][]{ {"", null} }));
                 gramRules.add(new GramRule("(第一|最佳)( *)(首选)", new String[][]{ {"", null} })); 
-                
                 gramRules.add(new GramRule("(并非)( *)(是)", new String[][]{ {null, ""}, {"并不", null} }));
                 gramRules.add(new GramRule("(涉及|波及)( *)(到)", new String[][]{ {null, ""} }));
                 gramRules.add(new GramRule("(付诸|诉诸|见诸)( *)(于)", new String[][]{ {null, ""} }));
                 gramRules.add(new GramRule("(令人|让人|叫人)( *)(堪忧)", new String[][]{ {"", null}, {null, "担忧"} }));
                 gramRules.add(new GramRule("(首当其冲)(的? *)(问题|任务|事情|要务|条件)", new String[][]{ {"首要", null}, {"最重要", null} }));
-
                 gramRules.add(new GramRule("(改善|改变|加强)(.{0,8}?)(水平|素养)", new String[][]{ {"提高", null} }));
                 gramRules.add(new GramRule("(加快|加速)(.{0,8}?)(效率)", new String[][]{ {"提高", null} }));
                 gramRules.add(new GramRule("(缓解|减缓)(.{0,8}?)(态度|立场)", new String[][]{ {"缓和", null} }));
@@ -2166,6 +2145,89 @@ jobs:
                 return sb.toString();
             }
 
+            public static String serializeSpannable(Spannable sp) {
+                if (sp == null) return "";
+                try {
+                    JSONObject obj = new JSONObject();
+                    obj.put("text", sp.toString());
+                    JSONArray spansArr = new JSONArray();
+                    Object[] spans = sp.getSpans(0, sp.length(), Object.class);
+                    for (Object s : spans) {
+                        JSONObject sObj = new JSONObject();
+                        sObj.put("start", sp.getSpanStart(s));
+                        sObj.put("end", sp.getSpanEnd(s));
+                        sObj.put("flags", sp.getSpanFlags(s));
+                        if (s instanceof ForegroundColorSpan) {
+                            sObj.put("type", "ForegroundColorSpan");
+                            sObj.put("color", ((ForegroundColorSpan)s).getForegroundColor());
+                        } else if (s instanceof android.text.style.StyleSpan) {
+                            sObj.put("type", "StyleSpan");
+                            sObj.put("style", ((android.text.style.StyleSpan)s).getStyle());
+                        } else if (s instanceof WavyUnderlineSpan) {
+                            sObj.put("type", "WavyUnderlineSpan");
+                            sObj.put("color", ((WavyUnderlineSpan)s).color);
+                        } else if (s instanceof ColoredStrikethroughSpan) {
+                            sObj.put("type", "ColoredStrikethroughSpan");
+                            sObj.put("textColor", ((ColoredStrikethroughSpan)s).textColor);
+                            sObj.put("lineColor", ((ColoredStrikethroughSpan)s).lineColor);
+                        } else if (s instanceof StrikethroughSpan) {
+                            sObj.put("type", "StrikethroughSpan");
+                        } else if (s instanceof android.text.style.RelativeSizeSpan) {
+                            sObj.put("type", "RelativeSizeSpan");
+                            sObj.put("size", (double)((android.text.style.RelativeSizeSpan)s).getSizeChange());
+                        } else if (s instanceof IgnoredInCopySpan) {
+                            sObj.put("type", "IgnoredInCopySpan");
+                        } else {
+                            continue;
+                        }
+                        spansArr.put(sObj);
+                    }
+                    obj.put("spans", spansArr);
+                    return obj.toString();
+                } catch (Exception e) {
+                    return "";
+                }
+            }
+
+            public static SpannableStringBuilder deserializeSpannable(String json) {
+                if (json == null || json.isEmpty()) return null;
+                try {
+                    JSONObject obj = new JSONObject(json);
+                    String text = obj.getString("text");
+                    SpannableStringBuilder ssb = new SpannableStringBuilder(text);
+                    JSONArray spansArr = obj.getJSONArray("spans");
+                    for (int i = 0; i < spansArr.length(); i++) {
+                        JSONObject sObj = spansArr.getJSONObject(i);
+                        int start = sObj.getInt("start");
+                        int end = sObj.getInt("end");
+                        int flags = sObj.getInt("flags");
+                        String type = sObj.getString("type");
+                        Object span = null;
+                        if (type.equals("ForegroundColorSpan")) {
+                            span = new ForegroundColorSpan(sObj.getInt("color"));
+                        } else if (type.equals("StyleSpan")) {
+                            span = new android.text.style.StyleSpan(sObj.getInt("style"));
+                        } else if (type.equals("WavyUnderlineSpan")) {
+                            span = new WavyUnderlineSpan(sObj.getInt("color"));
+                        } else if (type.equals("ColoredStrikethroughSpan")) {
+                            span = new ColoredStrikethroughSpan(sObj.getInt("textColor"), sObj.getInt("lineColor"));
+                        } else if (type.equals("StrikethroughSpan")) {
+                            span = new StrikethroughSpan();
+                        } else if (type.equals("RelativeSizeSpan")) {
+                            span = new android.text.style.RelativeSizeSpan((float)sObj.getDouble("size"));
+                        } else if (type.equals("IgnoredInCopySpan")) {
+                            span = new IgnoredInCopySpan();
+                        }
+                        if (span != null && start >= 0 && end <= text.length() && start <= end) {
+                            ssb.setSpan(span, start, end, flags);
+                        }
+                    }
+                    return ssb;
+                } catch (Exception e) {
+                    return null;
+                }
+            }
+
             private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3;
             private TextView outputText, tvWordCount;
             private ScrollView scrollView;
@@ -2186,9 +2248,10 @@ jobs:
             private String pendingSaveText = "";
             private boolean isTyposExpanded = false;
             private boolean isRestoringHistory = false;
-            public static String lastSavedHistoryFileId = null;
+            private String lastSavedHistoryFileId = null;
             
             private boolean isManuallyEditedOut = false;
+            private boolean originalIsManuallyEdited = false;
             private String originalEditorText = "";
             private SpannableStringBuilder lastEditorSpannable;
             
@@ -2232,7 +2295,7 @@ jobs:
             }
             
             public static class WavyUnderlineSpan extends android.text.style.ReplacementSpan {
-                private int color;
+                public int color;
                 private android.graphics.Paint wavePaint;
                 private android.graphics.Path wavePath;
                 private float cachedWidth = -1f;
@@ -2276,8 +2339,8 @@ jobs:
                 }
             }
             public static class ColoredStrikethroughSpan extends android.text.style.ReplacementSpan {
-                private int textColor;
-                private int lineColor;
+                public int textColor;
+                public int lineColor;
                 public ColoredStrikethroughSpan(int textColor, int lineColor) {
                     this.textColor = textColor;
                     this.lineColor = lineColor;
@@ -2789,10 +2852,10 @@ jobs:
                 }
             }
 
-            private void saveHistory(String text, boolean saveBlocks) {
+            private void saveHistory(String text) {
                 if (text == null || text.trim().isEmpty()) return;
-                // 利用快照防止多线程数据被冲刷
-                List<List<TextBlock>> snapshotBlocks = saveBlocks ? new ArrayList<>(allSentencesBlocks) : null;
+                String fileId = UUID.randomUUID().toString();
+                lastSavedHistoryFileId = fileId;
                 new Thread(() -> {
                     try {
                         String historyStr = sp.getString("history_records", "[]");
@@ -2812,9 +2875,7 @@ jobs:
                         String preview = text.length() > 16 ? text.substring(0, 16).replace("\n", " ") + "..." : text.replace("\n", " ");
                         newRecord.put("preview", preview);
                         
-                        String fileId = UUID.randomUUID().toString();
                         newRecord.put("file", fileId);
-                        lastSavedHistoryFileId = fileId;
                         
                         File dir = new File(getFilesDir(), "history");
                         if (!dir.exists()) dir.mkdirs();
@@ -2822,13 +2883,6 @@ jobs:
                         FileOutputStream fos = new FileOutputStream(new File(dir, fileId + ".txt"));
                         fos.write(text.getBytes("UTF-8"));
                         fos.close();
-                        
-                        if (saveBlocks && snapshotBlocks != null && !snapshotBlocks.isEmpty()) {
-                            String blocksJson = serializeBlocks(snapshotBlocks);
-                            FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
-                            fosBlocks.write(blocksJson.getBytes("UTF-8"));
-                            fosBlocks.close();
-                        }
                         
                         JSONArray newArray = new JSONArray();
                         newArray.put(newRecord);
@@ -2843,6 +2897,7 @@ jobs:
                                 if (!oldFileId.isEmpty()) {
                                     new File(dir, oldFileId + ".txt").delete();
                                     new File(dir, oldFileId + "_blocks.json").delete();
+                                    new File(dir, oldFileId + "_manual.json").delete();
                                 }
                             }
                         }
@@ -3108,6 +3163,7 @@ jobs:
                             public void onAnimationEnd(Animator animation) {
                                 parent.removeView(rippleView);
                                 
+                                originalIsManuallyEdited = isManuallyEditedOut;
                                 if (isManuallyEditedOut) {
                                     lastEditorSpannable = new SpannableStringBuilder(outputText.getText());
                                 }
@@ -3159,15 +3215,23 @@ jobs:
                         return false;
                     }
                 });
-                
+
                 Runnable applyEditorChanges = () -> {
                     if (!expandedEditText.getText().toString().equals(originalEditorText)) {
                         isManuallyEditedOut = true;
                         outputText.setText(expandedEditText.getText());
                         
-                        // 核心修复：把便签里用户精心修改好的文本，作为纯文本重新存入历史记录，永不丢失
-                        String finalTxt = extractCleanTextFromSpanned((Spanned) outputText.getText());
-                        saveHistory(finalTxt, false); 
+                        if (lastSavedHistoryFileId != null) {
+                            new Thread(() -> {
+                                try {
+                                    File dir = new File(getFilesDir(), "history");
+                                    String spanJson = serializeSpannable(expandedEditText.getText());
+                                    FileOutputStream fos = new FileOutputStream(new File(dir, lastSavedHistoryFileId + "_manual.json"));
+                                    fos.write(spanJson.getBytes("UTF-8"));
+                                    fos.close();
+                                } catch (Exception e) {}
+                            }).start();
+                        }
                     }
                     expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> {
                         expandedEditorOverlay.setVisibility(View.GONE);
@@ -3175,6 +3239,7 @@ jobs:
                     }).start();
                 };
 
+                btnEditorCollapse.setOnClickListener(v -> applyEditorChanges.run());
                 
                 btnEditorClose.setOnClickListener(v -> {
                     if (!expandedEditText.getText().toString().equals(originalEditorText)) {
@@ -3286,41 +3351,35 @@ jobs:
                 
                             String currentText = previous.toString();
                             if (currentText.equals(originalEditorText)) {
-                                isManuallyEditedOut = false;
-                                renderFinalBlocks();
-                                isEditorSelfModifying = true;
-                                expandedEditText.setText(lastEditorSpannable);
-                                isEditorSelfModifying = false;
-                                editorUndoStack.clear();
-                
-                                int len2 = expandedEditText.length();
-                                expandedEditText.setSelection(Math.max(0, Math.min(restoredSelection, len2)));
-                                int finalScrollY = savedScrollY;
-                                editorScrollView.post(() -> {
-                                    try {
-                                        View child = editorScrollView.getChildAt(0);
-                                        int maxScrollY2 = child != null ? child.getHeight() - editorScrollView.getHeight() : finalScrollY;
-                                        editorScrollView.scrollTo(0, Math.max(0, Math.min(finalScrollY, maxScrollY2)));
-                                    } catch (Exception ignored) {}
-                                });
+                                isManuallyEditedOut = originalIsManuallyEdited;
+                                if (!isManuallyEditedOut) {
+                                    renderFinalBlocks();
+                                    isEditorSelfModifying = true;
+                                    expandedEditText.setText(lastEditorSpannable);
+                                    isEditorSelfModifying = false;
+                                    editorUndoStack.clear();
+                    
+                                    int len2 = expandedEditText.length();
+                                    expandedEditText.setSelection(Math.max(0, Math.min(restoredSelection, len2)));
+                                    int finalScrollY = savedScrollY;
+                                    editorScrollView.post(() -> {
+                                        try {
+                                            View child = editorScrollView.getChildAt(0);
+                                            int maxScrollY2 = child != null ? child.getHeight() - editorScrollView.getHeight() : finalScrollY;
+                                            editorScrollView.scrollTo(0, Math.max(0, Math.min(finalScrollY, maxScrollY2)));
+                                        } catch (Exception ignored) {}
+                                    });
+                                }
                             }
                         } catch (Exception e) {
                             isEditorSelfModifying = false;
                         }
                     }
                 });
-                
-                
+
                 btnEditorSave.setOnClickListener(v -> {
-                    if (!expandedEditText.getText().toString().equals(originalEditorText)) {
-                        isManuallyEditedOut = true;
-                        outputText.setText(expandedEditText.getText());
-                        
-                        // 核心修复：在便签内直接点击保存按钮时，同样存入历史
-                        String finalTxt = extractCleanTextFromSpanned((Spanned) outputText.getText());
-                        saveHistory(finalTxt, false);
-                        originalEditorText = expandedEditText.getText().toString(); // 防重复触发
-                    }
+                    isManuallyEditedOut = true;
+                    outputText.setText(expandedEditText.getText());
                     btnSaveTxt.performClick();
                 });
 
@@ -3336,7 +3395,6 @@ jobs:
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                         if (count > 2 && !isRestoringHistory && !MainActivity.isCleanDialogOpen) {
-                            // 将庞大的匹配任务剥离到子线程，并且仅处理刚被粘贴或输入的文本块(chunk)
                             String chunk = s.subSequence(start, start + count).toString();
                             new Thread(() -> {
                                 int sc = 0, hc = 0, dc = 0;
@@ -3352,7 +3410,7 @@ jobs:
                                         checkAndPromptCleanup(MainActivity.this, inputText.getText().toString(), cleaned -> {
                                             if (!cleaned.equals(inputText.getText().toString())) {
                                                 boolean old = isRestoringHistory;
-                                                isRestoringHistory = true; // 临时阻断无限循环
+                                                isRestoringHistory = true; 
                                                 inputText.setText(cleaned);
                                                 inputText.setSelection(cleaned.length());
                                                 isRestoringHistory = old;
@@ -3373,13 +3431,11 @@ jobs:
                             lastSavedHistoryFileId = null;
                         }
                         
-                        // 防抖机制：每次文字变化后取消上一次任务，延迟400ms后触发真正的耗时统计与SP存储
                         if (debounceRunnable != null) handler.removeCallbacks(debounceRunnable);
                         debounceRunnable = () -> {
-                            String textStr = s.toString(); // 提取主线程文本快照
+                            String textStr = s.toString(); 
                             new Thread(() -> {
                                 int c = 0;
-                                // 抛弃高耗时正则表达式，使用原生字符级甄别（速度提升数百倍且防止OOM）
                                 for (int i = 0; i < textStr.length(); i++) {
                                     if (Character.isLetterOrDigit(textStr.charAt(i))) {
                                         c++;
@@ -3551,7 +3607,7 @@ jobs:
                             Toast.makeText(MainActivity.this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                         }
 
-                        saveHistory(inputText.getText().toString(), false);
+                        saveHistory(inputText.getText().toString());
                         isCheckingMain = true;
                         btnCheck.setText("取消");
                         doInference(isFastMode);
@@ -3674,6 +3730,7 @@ jobs:
                                     if(!fileId.isEmpty()) {
                                         new File(dir, fileId + ".txt").delete();
                                         new File(dir, fileId + "_blocks.json").delete();
+                                        new File(dir, fileId + "_manual.json").delete();
                                     }
                                 }
                             } catch(Exception e) {}
@@ -3790,6 +3847,7 @@ jobs:
                             new Thread(() -> {
                                 String fullText = "";
                                 String blocksJson = "";
+                                String manualJson = "";
                                 if (!fileId.isEmpty()) {
                                     try {
                                         File dir = new File(getFilesDir(), "history");
@@ -3809,6 +3867,14 @@ jobs:
                                             fisB.close();
                                             blocksJson = new String(dataB, "UTF-8");
                                         }
+                                        File mf = new File(dir, fileId + "_manual.json");
+                                        if (mf.exists()) {
+                                            FileInputStream fisM = new FileInputStream(mf);
+                                            byte[] dataM = new byte[(int) mf.length()];
+                                            fisM.read(dataM);
+                                            fisM.close();
+                                            manualJson = new String(dataM, "UTF-8");
+                                        }
                                     } catch(Exception e){}
                                 } else {
                                     fullText = obj.optString("text", "");
@@ -3816,13 +3882,25 @@ jobs:
                                 
                                 final String textToSet = fullText;
                                 final String blocksToSet = blocksJson;
+                                final String manualToSet = manualJson;
+                                
                                 runOnUiThread(() -> {
                                     isRestoringHistory = true;
                                     inputText.setText(textToSet);
                                     isRestoringHistory = false;
                                     lastSavedHistoryFileId = fileId;
                                     
-                                    if (!blocksToSet.isEmpty()) {
+                                    if (!manualToSet.isEmpty()) {
+                                        SpannableStringBuilder ssb = deserializeSpannable(manualToSet);
+                                        if (ssb != null) {
+                                            isManuallyEditedOut = true;
+                                            outputText.setText(ssb);
+                                            btnCheck.setText("继续纠错");
+                                            btnCopy.setEnabled(true);
+                                            btnSaveTxt.setEnabled(true);
+                                        }
+                                    } else if (!blocksToSet.isEmpty()) {
+                                        isManuallyEditedOut = false;
                                         allSentencesBlocks = deserializeBlocks(blocksToSet);
                                         lastTimeMs = 0;
                                         renderFinalBlocks();
@@ -3830,6 +3908,7 @@ jobs:
                                         btnCopy.setEnabled(true);
                                         btnSaveTxt.setEnabled(true);
                                     } else {
+                                        isManuallyEditedOut = false;
                                         allSentencesBlocks.clear();
                                         outputText.setText("");
                                         btnCheck.setText("开始纠错");
@@ -3838,8 +3917,6 @@ jobs:
                                     progressBar.setIndeterminate(false);
                                 });
                             }).start();
-                            
-                           
                         });
                         
                         final int index = i;
@@ -3849,7 +3926,12 @@ jobs:
                                 .setPositiveButton("删除", (d, w) -> {
                                     try {
                                         String delFileId = arr.getJSONObject(index).optString("file", "");
-                                        if(!delFileId.isEmpty()) new File(new File(getFilesDir(), "history"), delFileId + ".txt").delete();
+                                        if(!delFileId.isEmpty()) {
+                                            File dir = new File(getFilesDir(), "history");
+                                            new File(dir, delFileId + ".txt").delete();
+                                            new File(dir, delFileId + "_blocks.json").delete();
+                                            new File(dir, delFileId + "_manual.json").delete();
+                                        }
                                     } catch(Exception e) {}
                                     
                                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
@@ -3890,7 +3972,7 @@ jobs:
                 super.onResume();
                 String sync = sp.getString("sync_text", "");
                 if (!sync.isEmpty() && !sync.equals(inputText.getText().toString())) {
-                    isRestoringHistory = true; // 阻断自动恢复时触发清理弹窗
+                    isRestoringHistory = true; 
                     inputText.setText(sync);
                     isRestoringHistory = false;
                 }
@@ -3942,7 +4024,7 @@ jobs:
                                     if (text != null && !text.trim().isEmpty()) {
                                         checkAndPromptCleanup(MainActivity.this, text, cleaned -> {
                                             inputText.setText(cleaned);
-                                            saveHistory(cleaned, false);
+                                            saveHistory(cleaned);
                                         });
                                     } else {
                                         Toast.makeText(MainActivity.this, "无法读取图片文字", Toast.LENGTH_SHORT).show();
@@ -4035,7 +4117,7 @@ jobs:
                                 if (!finalText.trim().isEmpty()) {
                                     checkAndPromptCleanup(MainActivity.this, finalText, cleaned -> {
                                         inputText.setText(cleaned);
-                                        saveHistory(cleaned, false);
+                                        saveHistory(cleaned);
                                         Toast.makeText(MainActivity.this, "导入成功", Toast.LENGTH_SHORT).show();
                                     });
                                 } else {
@@ -4551,6 +4633,17 @@ jobs:
                             }
                         }
                         lastTimeMs = System.currentTimeMillis() - startTime;
+                        
+                        if (lastSavedHistoryFileId != null && !allSentencesBlocks.isEmpty()) {
+                            try {
+                                File dir = new File(getFilesDir(), "history");
+                                String blocksJson = serializeBlocks(allSentencesBlocks);
+                                FileOutputStream fosBlocks = new FileOutputStream(new File(dir, lastSavedHistoryFileId + "_blocks.json"));
+                                fosBlocks.write(blocksJson.getBytes("UTF-8"));
+                                fosBlocks.close();
+                            } catch (Exception e) {}
+                        }
+                        
                         runOnUiThread(() -> { 
                             isCheckingMain = false;
                             btnCheck.setText("开始纠错");
@@ -4599,7 +4692,6 @@ jobs:
             private void renderFinalBlocks() {
                 blockToMainTargetSpan.clear();
                 int currentErrors = 0;
-                // 修复幽灵错误：只有当字和原字不同时，才算作真正的错误
                 for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && (!b.current.equals(b.original))) currentErrors++; } }
                 
                 final int[] baseOffsetObj = {0};
@@ -5065,3 +5157,6 @@ jobs:
       with:
         name: Dededi-App-APK-Pro
         path: app/build/outputs/apk/release/app-release.apk
+                    
+                    
+                    
