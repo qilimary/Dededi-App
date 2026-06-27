@@ -614,10 +614,10 @@ jobs:
                 LinearLayout customLayout = new LinearLayout(this);
                 customLayout.setOrientation(LinearLayout.HORIZONTAL);
 
-                EditText et1 = new EditText(this); et1.setId(1001); et1.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et2 = new EditText(this); et2.setId(1002); et2.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et3 = new EditText(this); et3.setId(1003); et3.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et4 = new EditText(this); et4.setId(1004); et4.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et1 = new EditText(this); et1.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et2 = new EditText(this); et2.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et3 = new EditText(this); et3.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et4 = new EditText(this); et4.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
 
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
                 lp.setMargins(6, -10, 6, -10);
@@ -652,29 +652,22 @@ jobs:
                     .setCancelable(false)
                     .setPositiveButton("是 (清理)", (d, w) -> {
                         String result = finalText;
-                        String c1 = et1.getText().toString();
-                        String c2 = et2.getText().toString();
-                        String c3 = et3.getText().toString();
-                        String c4 = et4.getText().toString();
-
-                        boolean dup = false;
-                        if (cbStar.isChecked() && (c1.equals("*") || c2.equals("*") || c3.equals("*") || c4.equals("*"))) dup = true;
-                        if (cbHash.isChecked() && (c1.equals("#") || c2.equals("#") || c3.equals("#") || c4.equals("#"))) dup = true;
-                        if (cbDash.isChecked() && (c1.equals("-") || c2.equals("-") || c3.equals("-") || c4.equals("-"))) dup = true;
-
-                        if (dup) {
-                            Toast.makeText(SymbolCleanActivity.this, "提示：已勾选的符号无需重复输入", Toast.LENGTH_SHORT).show();
-                        }
-
+                        String[] customChars = {et1.getText().toString(), et2.getText().toString(), et3.getText().toString(), et4.getText().toString()};
+                        
                         if (cbStar.isChecked()) result = result.replace("*", "");
                         if (cbHash.isChecked()) result = result.replace("#", "");
                         if (cbDash.isChecked()) result = result.replace("-", "");
-
-                        if (!c1.isEmpty()) { result = result.replace(c1, ""); if (c1.equals(">")) result = result.replace("＞", ""); if (c1.equals("<")) result = result.replace("＜", ""); }
-                        if (!c2.isEmpty()) { result = result.replace(c2, ""); if (c2.equals(">")) result = result.replace("＞", ""); if (c2.equals("<")) result = result.replace("＜", ""); }
-                        if (!c3.isEmpty()) { result = result.replace(c3, ""); if (c3.equals(">")) result = result.replace("＞", ""); if (c3.equals("<")) result = result.replace("＜", ""); }
-                        if (!c4.isEmpty()) { result = result.replace(c4, ""); if (c4.equals(">")) result = result.replace("＞", ""); if (c4.equals("<")) result = result.replace("＜", ""); }
-
+                        
+                        for (String c : customChars) {
+                            if (!c.isEmpty()) {
+                                result = result.replace(c, "");
+                                if (c.equals(">")) result = result.replace("＞", "");
+                                if (c.equals("<")) result = result.replace("＜", "");
+                                if (c.equals("(")) result = result.replace("（", "");
+                                if (c.equals(")")) result = result.replace("）", "");
+                            }
+                        }
+                        
                         if (callback != null) callback.onCleaned(result);
                         MainActivity.isCleanDialogOpen = false;
                         d.dismiss();
@@ -3584,6 +3577,7 @@ jobs:
                             "• 自定义的规优先级高于模型。\n\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
+                            "标点清理：当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n", +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                     new AlertDialog.Builder(this).setTitle("使用说明").setMessage(helpText).setPositiveButton("知道了", null).show();
                 });
@@ -3951,11 +3945,15 @@ jobs:
                                         if (ssb != null) {
                                             isManuallyEditedOut = true;
                                             outputText.setText(ssb);
+                                            outputText.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
+                                            outputText.setHighlightColor(android.graphics.Color.TRANSPARENT);
                                             btnCheck.setText("继续纠错");
                                             btnCopy.setEnabled(true);
                                             btnSaveTxt.setEnabled(true);
                                         }
                                     } else if (!blocksToSet.isEmpty()) {
+                                        
+                                    
                                         isManuallyEditedOut = false;
                                         allSentencesBlocks = deserializeBlocks(blocksToSet);
                                         lastTimeMs = 0;
@@ -5218,6 +5216,5 @@ jobs:
       with:
         name: Dededi-App-APK-Pro
         path: app/build/outputs/apk/release/app-release.apk
-                    
                     
                     
