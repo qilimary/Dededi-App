@@ -614,10 +614,10 @@ jobs:
                 LinearLayout customLayout = new LinearLayout(this);
                 customLayout.setOrientation(LinearLayout.HORIZONTAL);
 
-                EditText et1 = new EditText(this); et1.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et2 = new EditText(this); et2.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et3 = new EditText(this); et3.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et4 = new EditText(this); et4.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et1 = new EditText(this); et1.setId(1001); et1.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et2 = new EditText(this); et2.setId(1002); et2.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et3 = new EditText(this); et3.setId(1003); et3.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et4 = new EditText(this); et4.setId(1004); et4.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
 
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
                 lp.setMargins(6, -10, 6, -10);
@@ -670,10 +670,10 @@ jobs:
                         if (cbHash.isChecked()) result = result.replace("#", "");
                         if (cbDash.isChecked()) result = result.replace("-", "");
 
-                        if (!c1.isEmpty()) result = result.replace(c1, "");
-                        if (!c2.isEmpty()) result = result.replace(c2, "");
-                        if (!c3.isEmpty()) result = result.replace(c3, "");
-                        if (!c4.isEmpty()) result = result.replace(c4, "");
+                        if (!c1.isEmpty()) { result = result.replace(c1, ""); if (c1.equals(">")) result = result.replace("＞", ""); if (c1.equals("<")) result = result.replace("＜", ""); }
+                        if (!c2.isEmpty()) { result = result.replace(c2, ""); if (c2.equals(">")) result = result.replace("＞", ""); if (c2.equals("<")) result = result.replace("＜", ""); }
+                        if (!c3.isEmpty()) { result = result.replace(c3, ""); if (c3.equals(">")) result = result.replace("＞", ""); if (c3.equals("<")) result = result.replace("＜", ""); }
+                        if (!c4.isEmpty()) { result = result.replace(c4, ""); if (c4.equals(">")) result = result.replace("＞", ""); if (c4.equals("<")) result = result.replace("＜", ""); }
 
                         if (callback != null) callback.onCleaned(result);
                         MainActivity.isCleanDialogOpen = false;
@@ -2175,6 +2175,14 @@ jobs:
                         } else if (s instanceof android.text.style.RelativeSizeSpan) {
                             sObj.put("type", "RelativeSizeSpan");
                             sObj.put("size", (double)((android.text.style.RelativeSizeSpan)s).getSizeChange());
+                        } else if (s instanceof JumpSpan) {
+                            int target = ((JumpSpan)s).getTargetOffset(sp);
+                            if (target >= 0) {
+                                sObj.put("type", "JumpSpan");
+                                sObj.put("target", target);
+                            } else {
+                                continue;
+                            }
                         } else if (s instanceof IgnoredInCopySpan) {
                             sObj.put("type", "IgnoredInCopySpan");
                         } else {
@@ -2215,6 +2223,47 @@ jobs:
                             span = new StrikethroughSpan();
                         } else if (type.equals("RelativeSizeSpan")) {
                             span = new android.text.style.RelativeSizeSpan((float)sObj.getDouble("size"));
+                        } else if (type.equals("JumpSpan")) {
+                            final int targetOffset = sObj.getInt("target");
+                            span = new JumpSpan() {
+                                @Override public int getTargetOffset(Spanned text) { return targetOffset; }
+                                @Override public void onClick(View w) {
+                                    try {
+                                        TextView tv = (TextView) w;
+                                        Spannable spanText = (Spannable) tv.getText();
+                                        if (targetOffset >= 0 && targetOffset <= spanText.length()) {
+                                            Layout layout = tv.getLayout();
+                                            if (layout != null) {
+                                                int line = layout.getLineForOffset(targetOffset);
+                                                int y = layout.getLineTop(line);
+                                                ScrollView sv = null;
+                                                if (tv.getContext() instanceof android.app.Activity) {
+                                                    sv = ((android.app.Activity) tv.getContext()).findViewById(R.id.scrollView);
+                                                }
+                                                if (sv == null && tv.getParent() != null) {
+                                                    View parent = (View) tv.getParent();
+                                                    while (parent != null) {
+                                                        if (parent instanceof ScrollView) { sv = (ScrollView) parent; break; }
+                                                        if (parent.getParent() instanceof View) parent = (View) parent.getParent();
+                                                        else break;
+                                                    }
+                                                }
+                                                if (sv != null) sv.scrollTo(0, Math.max(0, y - sv.getHeight() / 3));
+                                                
+                                                int lineStart = layout.getLineStart(line);
+                                                int lineEnd = layout.getLineEnd(line);
+                                                BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E);
+                                                spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                                Handler handler = new Handler(Looper.getMainLooper());
+                                                handler.postDelayed(() -> { try { spanText.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 500);
+                                                handler.postDelayed(() -> { try { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); } catch(Exception e){} }, 800);
+                                                handler.postDelayed(() -> { try { spanText.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 1300);
+                                            }
+                                        }
+                                    } catch (Exception e) {}
+                                }
+                                @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
+                            };
                         } else if (type.equals("IgnoredInCopySpan")) {
                             span = new IgnoredInCopySpan();
                         }
@@ -2287,7 +2336,9 @@ jobs:
                 }
             }
             
-            public abstract static class JumpSpan extends ClickableSpan { }
+            public abstract static class JumpSpan extends ClickableSpan { 
+                public int getTargetOffset(Spanned text) { return -1; }
+            }
             public abstract static class EditSpan extends ClickableSpan { }
 
             public static class IgnoredInCopySpan extends android.text.style.CharacterStyle {
@@ -4882,33 +4933,34 @@ jobs:
                                 
                                 final int firstErrIdxInClause = listErrIdx;
                                 JumpSpan jumpSpan = new JumpSpan() {
+                                    @Override public int getTargetOffset(Spanned spanText) {
+                                        for (TextBlock b : clause) {
+                                            if (b.isMutable && (!b.current.equals(b.original))) {
+                                                Integer relOffset = blockToAbsOffset.get(b);
+                                                if (relOffset != null) return baseOffsetObj[0] + relOffset;
+                                            }
+                                        }
+                                        return -1;
+                                    }
                                     @Override public void onClick(View w) {
                                         try {
                                             TextView tv = (TextView) w;
                                             Spannable spanText = (Spannable) tv.getText();
-                                            for (TextBlock b : clause) {
-                                                if (b.isMutable && (!b.current.equals(b.original))) {
-                                                    Integer relOffset = blockToAbsOffset.get(b);
-                                                    if (relOffset != null) {
-                                                        int absOffset = baseOffsetObj[0] + relOffset;
-                                                        if (absOffset >= 0 && absOffset <= spanText.length()) {
-                                                            Layout layout = tv.getLayout();
-                                                            if (layout != null) {
-                                                                int line = layout.getLineForOffset(absOffset);
-                                                                int y = layout.getLineTop(line);
-                                                                scrollView.scrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
-                                                                int lineStart = layout.getLineStart(line);
-                                                                int lineEnd = layout.getLineEnd(line);
-                                                                BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
-                                                                spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                                                Handler handler = new Handler(Looper.getMainLooper());
-                                                                handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 500);
-                                                                handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); }, 800);
-                                                                handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 1300);
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
+                                            int absOffset = getTargetOffset(spanText);
+                                            if (absOffset >= 0 && absOffset <= spanText.length()) {
+                                                Layout layout = tv.getLayout();
+                                                if (layout != null) {
+                                                    int line = layout.getLineForOffset(absOffset);
+                                                    int y = layout.getLineTop(line);
+                                                    scrollView.scrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
+                                                    int lineStart = layout.getLineStart(line);
+                                                    int lineEnd = layout.getLineEnd(line);
+                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
+                                                    spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                                    Handler handler = new Handler(Looper.getMainLooper());
+                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 500);
+                                                    handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); }, 800);
+                                                    handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 1300);
                                                 }
                                             }
                                         } catch (Exception e) {}
@@ -4987,43 +5039,45 @@ jobs:
                                 link.listMarkerSpan = lms;
                                 
                                 JumpSpan edJumpSpan = new JumpSpan() {
+                                    @Override public int getTargetOffset(Spanned spanText) {
+                                        if (!link.isDead && !link.targetSpans.isEmpty()) {
+                                            for (TargetSpan ts : link.targetSpans) {
+                                                int tsStart = spanText.getSpanStart(ts);
+                                                if (tsStart >= 0 && tsStart <= spanText.length()) return tsStart;
+                                            }
+                                        }
+                                        return -1;
+                                    }
                                     @Override public void onClick(View w) {
                                         try {
-                                            if (!link.isDead && !link.targetSpans.isEmpty()) {
-                                                TextView tv = (TextView) w;
-                                                Spanned spanText = (Spanned) tv.getText();
-                                                TargetSpan firstTarget = null;
-                                                for (TargetSpan ts : link.targetSpans) {
-                                                    int tsStart = spanText.getSpanStart(ts);
-                                                    if (tsStart >= 0 && tsStart <= spanText.length()) { firstTarget = ts; break; }
-                                                }
-                                                if (firstTarget != null) {
-                                                    int pos = spanText.getSpanStart(firstTarget);
-                                                    Layout layout = tv.getLayout();
-                                                    if (layout != null && pos >= 0 && pos <= spanText.length()) {
-                                                        int line = layout.getLineForOffset(pos);
-                                                        int y = layout.getLineTop(line);
-                                                        if (tv instanceof EditText) {
-                                                            ((EditText) tv).setSelection(pos);
-                                                            ScrollView editorScroll = ((android.app.Activity) tv.getContext()).findViewById(R.id.editorScrollView);
-                                                            if (editorScroll != null) {
-                                                                editorScroll.post(() -> editorScroll.scrollTo(0, Math.max(0, y - editorScroll.getHeight() / 3)));
-                                                            }
-                                                        } else {
-                                                            scrollView.scrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
+                                            TextView tv = (TextView) w;
+                                            Spanned spanText = (Spanned) tv.getText();
+                                            int pos = getTargetOffset(spanText);
+                                            if (pos >= 0) {
+                                                Layout layout = tv.getLayout();
+                                                if (layout != null && pos <= spanText.length()) {
+                                                    int line = layout.getLineForOffset(pos);
+                                                    int y = layout.getLineTop(line);
+                                                    if (tv instanceof EditText) {
+                                                        ((EditText) tv).setSelection(pos);
+                                                        ScrollView editorScroll = ((android.app.Activity) tv.getContext()).findViewById(R.id.editorScrollView);
+                                                        if (editorScroll != null) {
+                                                            editorScroll.post(() -> editorScroll.scrollTo(0, Math.max(0, y - editorScroll.getHeight() / 3)));
                                                         }
-                                                        
-                                                        int lineStart = layout.getLineStart(line);
-                                                        int lineEnd = layout.getLineEnd(line);
-                                                        BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
-                                                        if (spanText instanceof Spannable) {
-                                                            Spannable editable = (Spannable) spanText;
-                                                            editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                                            Handler handler = new Handler(Looper.getMainLooper());
-                                                            handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 500);
-                                                            handler.postDelayed(() -> { try { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); } catch(Exception e){} }, 800);
-                                                            handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 1300);
-                                                        }
+                                                    } else {
+                                                        scrollView.scrollTo(0, Math.max(0, y - scrollView.getHeight() / 3));
+                                                    }
+                                                    
+                                                    int lineStart = layout.getLineStart(line);
+                                                    int lineEnd = layout.getLineEnd(line);
+                                                    BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
+                                                    if (spanText instanceof Spannable) {
+                                                        Spannable editable = (Spannable) spanText;
+                                                        editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                                        Handler handler = new Handler(Looper.getMainLooper());
+                                                        handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 500);
+                                                        handler.postDelayed(() -> { try { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); } catch(Exception e){} }, 800);
+                                                        handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 1300);
                                                     }
                                                 }
                                             }
