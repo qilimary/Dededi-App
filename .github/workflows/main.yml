@@ -710,10 +710,10 @@ jobs:
                 dialog.show();
                 
                 // 缩小弹窗宽度至屏幕宽度的 70%，使排版更紧凑舒服
-                android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams();
-                lp.copyFrom(dialog.getWindow().getAttributes());
-                lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.70f);
-                dialog.getWindow().setAttributes(lp);
+                android.view.WindowManager.LayoutParams dialogLp = new android.view.WindowManager.LayoutParams();
+                dialogLp.copyFrom(dialog.getWindow().getAttributes());
+                dialogLp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.70f);
+                dialog.getWindow().setAttributes(dialogLp);
             }
             
             @Override
