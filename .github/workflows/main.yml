@@ -1,13 +1,4 @@
-这个功能非常实用。你提到的 “悬浮窗闪一下然后收起”
-的现象，是因为当清理弹窗出现时，底层悬浮窗检测到了“点击外部（ACTION_OUTSIDE）”的事件，从而自动把输入面板收起来了。
 
-为了彻底修复这个体验 Bug，并满足你对 UI **“白纸黑字绿色按钮”、“整体缩小40%”、“去掉了123提示”**等要求，我新增了一个全局拦截标志位
-isCleanDialogOpen，在弹窗期间屏蔽悬浮窗的收起动作，保证体验丝滑无缝。
-
-因为修改涉及到了 SymbolCleanActivity、FloatingService 的触摸监听器、粘贴回调，以及 MainActivity
-等远大于五处的地方，下面直接为你提供完整的 build.yml。
-
-你只需要全选并覆盖你原有的 build.yml 即可：
 
 name: Build Android APK
 
@@ -828,7 +819,7 @@ jobs:
 
                     <RelativeLayout android:layout_width="match_parent" android:layout_height="140dp" android:layout_marginBottom="10dp">
                         <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="match_parent"
-                            android:hint="在此输入或者粘贴需要检查的文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg"
+                            android:hint="输入或粘贴需要检查的文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg"
                             android:padding="12dp" android:paddingBottom="24dp" android:textSize="15sp" android:scrollbars="vertical"/>
                         <TextView android:id="@+id/tvWordCount" android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:layout_alignParentBottom="true" android:layout_alignParentEnd="true" android:layout_marginEnd="8dp" android:layout_marginBottom="6dp"
