@@ -1192,18 +1192,14 @@ jobs:
                         String fileId = java.util.UUID.randomUUID().toString();
                         newRecord.put("file", fileId);
                         
+                        // 同步赋予主界面的静态变量，确保悬浮窗生成的文件与主界面精准匹配
+                        MainActivity.lastSavedHistoryFileId = fileId;
+                        
                         File dir = new File(getFilesDir(), "history");
                         if (!dir.exists()) dir.mkdirs();
                         FileOutputStream fos = new FileOutputStream(new File(dir, fileId + ".txt"));
                         fos.write(text.getBytes("UTF-8"));
                         fos.close();
-                        
-                        if (!MainActivity.allSentencesBlocks.isEmpty()) {
-                            String blocksJson = MainActivity.serializeBlocks(MainActivity.allSentencesBlocks);
-                            FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
-                            fosBlocks.write(blocksJson.getBytes("UTF-8"));
-                            fosBlocks.close();
-                        }
                         
                         org.json.JSONArray newArray = new org.json.JSONArray();
                         newArray.put(newRecord);
@@ -1233,7 +1229,7 @@ jobs:
                     if (editFloatInput != null) {
                         MainActivity.checkAndPromptCleanup(this, text, cleaned -> {
                             editFloatInput.setText(cleaned);
-                            saveHistory(cleaned);
+                            saveHistory(cleaned, false);
                             Toast.makeText(FloatingService.this, "导入成功", Toast.LENGTH_SHORT).show();
                             if (panelInput != null && panelInput.getVisibility() != View.VISIBLE) {
                                 panelInput.setVisibility(View.VISIBLE);
@@ -1873,6 +1869,25 @@ jobs:
                         MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
                         MainActivity.hasNewFloatResult = true;
                         
+                        MainActivity.allSentencesBlocks = syncAllBlocks;
+                            MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
+                            MainActivity.hasNewFloatResult = true;
+                            
+                            // 修复：必须在AI推理【彻底完成】后，再往历史记录写入标记块
+                            if (MainActivity.lastSavedHistoryFileId != null) {
+                                new Thread(() -> {
+                                    try {
+                                        File dir = new File(getFilesDir(), "history");
+                                        String blocksJson = MainActivity.serializeBlocks(syncAllBlocks);
+                                        FileOutputStream fosBlocks = new FileOutputStream(new File(dir, MainActivity.lastSavedHistoryFileId + "_blocks.json"));
+                                        fosBlocks.write(blocksJson.getBytes("UTF-8"));
+                                        fosBlocks.close();
+                                    } catch (Exception e) {}
+                                }).start();
+                            }
+                            
+                            if (errorCount[0] > 0) {
+                        
                         if (errorCount[0] > 0) {
                             try { Thread.sleep(1000); } catch (Exception e) {}
                         }
@@ -2172,7 +2187,7 @@ jobs:
             private String pendingSaveText = "";
             private boolean isTyposExpanded = false;
             private boolean isRestoringHistory = false;
-            private String lastSavedHistoryFileId = null;
+            public static String lastSavedHistoryFileId = null;
             
             private boolean isManuallyEditedOut = false;
             private String originalEditorText = "";
@@ -2775,8 +2790,10 @@ jobs:
                 }
             }
 
-            private void saveHistory(String text) {
+            private void saveHistory(String text, boolean saveBlocks) {
                 if (text == null || text.trim().isEmpty()) return;
+                // 利用快照防止多线程数据被冲刷
+                List<List<TextBlock>> snapshotBlocks = saveBlocks ? new ArrayList<>(allSentencesBlocks) : null;
                 new Thread(() -> {
                     try {
                         String historyStr = sp.getString("history_records", "[]");
@@ -2807,8 +2824,8 @@ jobs:
                         fos.write(text.getBytes("UTF-8"));
                         fos.close();
                         
-                        if (!allSentencesBlocks.isEmpty()) {
-                            String blocksJson = serializeBlocks(allSentencesBlocks);
+                        if (saveBlocks && snapshotBlocks != null && !snapshotBlocks.isEmpty()) {
+                            String blocksJson = serializeBlocks(snapshotBlocks);
                             FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
                             fosBlocks.write(blocksJson.getBytes("UTF-8"));
                             fosBlocks.close();
@@ -3143,11 +3160,15 @@ jobs:
                         return false;
                     }
                 });
-
+                
                 Runnable applyEditorChanges = () -> {
                     if (!expandedEditText.getText().toString().equals(originalEditorText)) {
                         isManuallyEditedOut = true;
                         outputText.setText(expandedEditText.getText());
+                        
+                        // 核心修复：把便签里用户精心修改好的文本，作为纯文本重新存入历史记录，永不丢失
+                        String finalTxt = extractCleanTextFromSpanned((Spanned) outputText.getText());
+                        saveHistory(finalTxt, false); 
                     }
                     expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> {
                         expandedEditorOverlay.setVisibility(View.GONE);
@@ -3155,7 +3176,6 @@ jobs:
                     }).start();
                 };
 
-                btnEditorCollapse.setOnClickListener(v -> applyEditorChanges.run());
                 
                 btnEditorClose.setOnClickListener(v -> {
                     if (!expandedEditText.getText().toString().equals(originalEditorText)) {
@@ -3290,10 +3310,18 @@ jobs:
                         }
                     }
                 });
-
+                
+                
                 btnEditorSave.setOnClickListener(v -> {
-                    isManuallyEditedOut = true;
-                    outputText.setText(expandedEditText.getText());
+                    if (!expandedEditText.getText().toString().equals(originalEditorText)) {
+                        isManuallyEditedOut = true;
+                        outputText.setText(expandedEditText.getText());
+                        
+                        // 核心修复：在便签内直接点击保存按钮时，同样存入历史
+                        String finalTxt = extractCleanTextFromSpanned((Spanned) outputText.getText());
+                        saveHistory(finalTxt, false);
+                        originalEditorText = expandedEditText.getText().toString(); // 防重复触发
+                    }
                     btnSaveTxt.performClick();
                 });
 
@@ -3524,7 +3552,7 @@ jobs:
                             Toast.makeText(MainActivity.this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                         }
 
-                        saveHistory(inputText.getText().toString());
+                        saveHistory(inputText.getText().toString(), false);
                         isCheckingMain = true;
                         btnCheck.setText("取消");
                         doInference(isFastMode);
@@ -3915,7 +3943,7 @@ jobs:
                                     if (text != null && !text.trim().isEmpty()) {
                                         checkAndPromptCleanup(MainActivity.this, text, cleaned -> {
                                             inputText.setText(cleaned);
-                                            saveHistory(cleaned);
+                                            saveHistory(cleaned, false);
                                         });
                                     } else {
                                         Toast.makeText(MainActivity.this, "无法读取图片文字", Toast.LENGTH_SHORT).show();
@@ -4008,7 +4036,7 @@ jobs:
                                 if (!finalText.trim().isEmpty()) {
                                     checkAndPromptCleanup(MainActivity.this, finalText, cleaned -> {
                                         inputText.setText(cleaned);
-                                        saveHistory(cleaned);
+                                        saveHistory(cleaned, false);
                                         Toast.makeText(MainActivity.this, "导入成功", Toast.LENGTH_SHORT).show();
                                     });
                                 } else {
