@@ -4270,15 +4270,17 @@ jobs:
                         boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
                         
                         int start = ssbFull.length(); ssbFull.append(b.current);
+                        int spanStart = start;
+                        int spanEnd = ssbFull.length();
+                        // 游标偏移修正：如果当前块的内容被AI删除（长度为0），将游标向前偏移1位绑定到前一个字符上，确保可点击/可渲染
+                        if (spanStart == spanEnd && spanStart > 0) {
+                            spanStart = spanStart - 1; 
+                        }
+                        int flags = (spanStart == spanEnd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
+
                         if (isError) {
                             TargetSpan mainTs = new TargetSpan(b.current);
                             blockToMainTargetSpan.put(b, mainTs);
-                            int spanStart = start;
-                            int spanEnd = ssbFull.length();
-                            if (spanStart == spanEnd && spanStart > 0) {
-                                spanStart = spanStart - 1; 
-                            }
-                            int flags = (spanStart == spanEnd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
                             ssbFull.setSpan(mainTs, spanStart, spanEnd, flags);
                         }
                         if (b.isMutable) {
@@ -4295,27 +4297,31 @@ jobs:
                                     }
                                 }
                             };
-                            ssbFull.setSpan(span, start, ssbFull.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            // 统一使用修正后的游标偏移
+                            ssbFull.setSpan(span, spanStart, spanEnd, flags);
                         }
                         
                         int startEd = ssbFullEditor.length(); ssbFullEditor.append(b.current);
+                        int spanStartEd = startEd;
+                        int spanEndEd = ssbFullEditor.length();
+                        if (spanStartEd == spanEndEd && spanStartEd > 0) {
+                            spanStartEd = spanStartEd - 1; 
+                        }
+                        int flagsEd = (spanStartEd == spanEndEd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
+
                         if (b.isMutable) {
                             if (isError) {
                                 TargetSpan ts = new TargetSpan(b.current);
                                 blockToTargetSpan.put(b, ts);
-                                int spanStartEd = startEd;
-                                int spanEndEd = ssbFullEditor.length();
-                                if (spanStartEd == spanEndEd && spanStartEd > 0) {
-                                    spanStartEd = spanStartEd - 1; 
-                                }
-                                int flagsEd = (spanStartEd == spanEndEd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
                                 ssbFullEditor.setSpan(ts, spanStartEd, spanEndEd, flagsEd);
                             }
                             
                             if (!b.current.equals(b.original)) { 
-                                ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), startEd, ssbFullEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                // 统一使用修正后的游标偏移
+                                ssbFullEditor.setSpan(new WavyUnderlineSpan(0xFF4CAF50), spanStartEd, spanEndEd, flagsEd);
                             }
                         }
+                        
                         
                         if (b.current.contains("---------------------------------")) {
                             String marker = "［文档" + docIndex + "］\n";
@@ -4462,8 +4468,15 @@ jobs:
                                         }
                                         ssb.append(" ");
                                         
+                                        
                                         int newStart = ssb.length(); 
                                         ssb.append(b.current);
+                                        int newEnd = ssb.length();
+                                        // 游标偏移修正：解决删除类语法规则产生的0长度不可点击问题
+                                        if (newStart == newEnd && newStart > 0) {
+                                            newStart = newStart - 1; // 绑定到拼接时前置的空格上
+                                        }
+                                        int flagsList = (newStart == newEnd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
                                         
                                         EditSpan clickSpan = new EditSpan() {
                                             @Override public void onClick(View w) { showEditDialog(b); }
@@ -4478,7 +4491,9 @@ jobs:
                                                 ds.setUnderlineText(true); 
                                             }
                                         };
-                                        ssb.setSpan(clickSpan, newStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        ssb.setSpan(clickSpan, newStart, newEnd, flagsList);
+                                        
+   
                                         
                                         if (!b.userModified && b.type == 1) {
                                             String confStr = "置信度: " + String.format("%.2f", b.conf);
@@ -4686,9 +4701,10 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           exit 1
         }
-
+        
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: Dededi-App-APK-Pro
         path: app/build/outputs/apk/release/app-release.apk
+        
