@@ -1887,31 +1887,29 @@ jobs:
                             }
                             
                             if (errorCount[0] > 0) {
-                        
-                        if (errorCount[0] > 0) {
-                            try { Thread.sleep(1000); } catch (Exception e) {}
-                        }
-                        
-                        new Handler(Looper.getMainLooper()).post(() -> {
-                            isChecking = false; 
-                            btnFloatSwitch.setEnabled(true);
-                            if (errorCount[0] == 0) {
-                                showStatus("未检测到错误", true);
-                            } else {
-                                showStatus("已完成，共修正 " + errorCount[0] + " 处", true);
+                                try { Thread.sleep(1000); } catch (Exception e) {}
                             }
-                            circleSpin.setVisibility(View.INVISIBLE);
-                            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
-                        });
-                    } catch (Exception e) {
-                        new Handler(Looper.getMainLooper()).post(() -> {
-                            isChecking = false; 
-                            btnFloatSwitch.setEnabled(true);
-                            circleSpin.setVisibility(View.INVISIBLE);
-                            Toast.makeText(FloatingService.this, "纠错中断: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                        });
-                    }
+                            
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                isChecking = false; 
+                                btnFloatSwitch.setEnabled(true);
+                                if (errorCount[0] == 0) {
+                                    showStatus("未检测到错误", true);
+                                } else {
+                                    showStatus("已完成，共修正 " + errorCount[0] + " 处", true);
+                                }
+                                circleSpin.setVisibility(View.INVISIBLE);
+                                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
+                            });
+                        } catch (Exception e) {
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                isChecking = false; 
+                                btnFloatSwitch.setEnabled(true);
+                                circleSpin.setVisibility(View.INVISIBLE);
+                                Toast.makeText(FloatingService.this, "纠错中断: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            });
+                        }
                 }).start();
             }
 
