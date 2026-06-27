@@ -1229,7 +1229,8 @@ jobs:
                     if (editFloatInput != null) {
                         MainActivity.checkAndPromptCleanup(this, text, cleaned -> {
                             editFloatInput.setText(cleaned);
-                            saveHistory(cleaned, false);
+                            
+                            saveHistory(cleaned);
                             Toast.makeText(FloatingService.this, "导入成功", Toast.LENGTH_SHORT).show();
                             if (panelInput != null && panelInput.getVisibility() != View.VISIBLE) {
                                 panelInput.setVisibility(View.VISIBLE);
