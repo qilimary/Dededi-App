@@ -614,10 +614,10 @@ jobs:
                 LinearLayout customLayout = new LinearLayout(this);
                 customLayout.setOrientation(LinearLayout.HORIZONTAL);
 
-                EditText et1 = new EditText(this); et1.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et2 = new EditText(this); et2.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et3 = new EditText(this); et3.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
-                EditText et4 = new EditText(this); et4.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et1 = new EditText(this); et1.setId(1001); et1.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et2 = new EditText(this); et2.setId(1002); et2.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et3 = new EditText(this); et3.setId(1003); et3.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et4 = new EditText(this); et4.setId(1004); et4.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
 
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
                 lp.setMargins(6, -10, 6, -10);
@@ -652,22 +652,29 @@ jobs:
                     .setCancelable(false)
                     .setPositiveButton("是 (清理)", (d, w) -> {
                         String result = finalText;
-                        String[] customChars = {et1.getText().toString(), et2.getText().toString(), et3.getText().toString(), et4.getText().toString()};
-                        
+                        String c1 = et1.getText().toString();
+                        String c2 = et2.getText().toString();
+                        String c3 = et3.getText().toString();
+                        String c4 = et4.getText().toString();
+
+                        boolean dup = false;
+                        if (cbStar.isChecked() && (c1.equals("*") || c2.equals("*") || c3.equals("*") || c4.equals("*"))) dup = true;
+                        if (cbHash.isChecked() && (c1.equals("#") || c2.equals("#") || c3.equals("#") || c4.equals("#"))) dup = true;
+                        if (cbDash.isChecked() && (c1.equals("-") || c2.equals("-") || c3.equals("-") || c4.equals("-"))) dup = true;
+
+                        if (dup) {
+                            Toast.makeText(SymbolCleanActivity.this, "提示：已勾选的符号无需重复输入", Toast.LENGTH_SHORT).show();
+                        }
+
                         if (cbStar.isChecked()) result = result.replace("*", "");
                         if (cbHash.isChecked()) result = result.replace("#", "");
                         if (cbDash.isChecked()) result = result.replace("-", "");
-                        
-                        for (String c : customChars) {
-                            if (!c.isEmpty()) {
-                                result = result.replace(c, "");
-                                if (c.equals(">")) result = result.replace("＞", "");
-                                if (c.equals("<")) result = result.replace("＜", "");
-                                if (c.equals("(")) result = result.replace("（", "");
-                                if (c.equals(")")) result = result.replace("）", "");
-                            }
-                        }
-                        
+
+                        if (!c1.isEmpty()) { result = result.replace(c1, ""); if (c1.equals(">")) result = result.replace("＞", ""); if (c1.equals("<")) result = result.replace("＜", ""); }
+                        if (!c2.isEmpty()) { result = result.replace(c2, ""); if (c2.equals(">")) result = result.replace("＞", ""); if (c2.equals("<")) result = result.replace("＜", ""); }
+                        if (!c3.isEmpty()) { result = result.replace(c3, ""); if (c3.equals(">")) result = result.replace("＞", ""); if (c3.equals("<")) result = result.replace("＜", ""); }
+                        if (!c4.isEmpty()) { result = result.replace(c4, ""); if (c4.equals(">")) result = result.replace("＞", ""); if (c4.equals("<")) result = result.replace("＜", ""); }
+
                         if (callback != null) callback.onCleaned(result);
                         MainActivity.isCleanDialogOpen = false;
                         d.dismiss();
@@ -1209,7 +1216,7 @@ jobs:
                     } catch (Exception e) {}
                 }).start();
             }
-
+            
             @Override
             public int onStartCommand(Intent intent, int flags, int startId) {
                 if (intent != null && intent.hasExtra("IMPORTED_TEXT")) {
@@ -1217,6 +1224,7 @@ jobs:
                     if (editFloatInput != null) {
                         MainActivity.checkAndPromptCleanup(this, text, cleaned -> {
                             editFloatInput.setText(cleaned);
+                            sp.edit().putString("sync_text", cleaned).apply();
                             saveHistory(cleaned, java.util.UUID.randomUUID().toString());
                             Toast.makeText(FloatingService.this, "导入成功", Toast.LENGTH_SHORT).show();
                             if (panelInput != null && panelInput.getVisibility() != View.VISIBLE) {
@@ -1229,6 +1237,7 @@ jobs:
                 return super.onStartCommand(intent, flags, startId);
             }
 
+            
             @SuppressLint("ClickableViewAccessibility")
             @Override
             public void onCreate() {
@@ -1298,6 +1307,7 @@ jobs:
                                                 MainActivity.isCleanDialogOpen = true;
                                                 editFloatInput.setText(cleaned);
                                                 editFloatInput.setSelection(cleaned.length());
+                                                sp.edit().putString("sync_text", cleaned).apply();
                                                 MainActivity.isCleanDialogOpen = false;
                                             }
                                         });
@@ -1347,6 +1357,7 @@ jobs:
                         if (pasteText != null) {
                             MainActivity.checkAndPromptCleanup(FloatingService.this, pasteText.toString(), cleaned -> {
                                 editFloatInput.setText(cleaned);
+                                sp.edit().putString("sync_text", cleaned).apply();
                                 if (panelInput != null && panelInput.getVisibility() != View.VISIBLE) {
                                     panelInput.setVisibility(View.VISIBLE);
                                     setFocusable(true);
@@ -2334,8 +2345,44 @@ jobs:
             }
             public abstract static class EditSpan extends ClickableSpan { }
 
+
             public static class IgnoredInCopySpan extends android.text.style.CharacterStyle {
                 @Override public void updateDrawState(TextPaint tp) {}
+            }
+            
+            // 新增：自定义的轻量级 MovementMethod，彻底解决点击卡顿和长按误触
+            public static class MyLinkMovementMethod extends LinkMovementMethod {
+                private static MyLinkMovementMethod sInstance;
+                public static MyLinkMovementMethod getInstance() {
+                    if (sInstance == null) sInstance = new MyLinkMovementMethod();
+                    return sInstance;
+                }
+                @Override
+                public boolean onTouchEvent(TextView widget, Spannable buffer, MotionEvent event) {
+                    int action = event.getActionMasked();
+                    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_DOWN) {
+                        int x = (int) event.getX();
+                        int y = (int) event.getY();
+                        x -= widget.getTotalPaddingLeft();
+                        y -= widget.getTotalPaddingTop();
+                        x += widget.getScrollX();
+                        y += widget.getScrollY();
+                        Layout layout = widget.getLayout();
+                        if (layout != null) {
+                            int line = layout.getLineForVertical(y);
+                            int off = layout.getOffsetForHorizontal(line, x);
+                            ClickableSpan[] links = buffer.getSpans(off, off, ClickableSpan.class);
+                            if (links.length != 0) {
+                                if (action == MotionEvent.ACTION_UP) {
+                                    links[0].onClick(widget);
+                                }
+                                // 在 DOWN 时直接返回 true 消费事件，但不执行高耗时的 setSelection 操作
+                                return true;
+                            }
+                        }
+                    }
+                    return super.onTouchEvent(widget, buffer, event);
+                }
             }
             
             public static class WavyUnderlineSpan extends android.text.style.ReplacementSpan {
@@ -3462,11 +3509,13 @@ jobs:
                                                 isRestoringHistory = true; 
                                                 inputText.setText(cleaned);
                                                 inputText.setSelection(cleaned.length());
+                                                sp.edit().putString("sync_text", cleaned).apply();
                                                 isRestoringHistory = old;
                                             }
                                         });
                                     });
                                 }
+                                
                             }).start();
                         }
                     }
@@ -3616,6 +3665,7 @@ jobs:
                         if (pasteText != null) {
                             checkAndPromptCleanup(MainActivity.this, pasteText.toString(), cleaned -> {
                                 inputText.setText(cleaned);
+                                sp.edit().putString("sync_text", cleaned).apply();
                             });
                         }
                     }
@@ -3945,15 +3995,11 @@ jobs:
                                         if (ssb != null) {
                                             isManuallyEditedOut = true;
                                             outputText.setText(ssb);
-                                            outputText.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
-                                            outputText.setHighlightColor(android.graphics.Color.TRANSPARENT);
                                             btnCheck.setText("继续纠错");
                                             btnCopy.setEnabled(true);
                                             btnSaveTxt.setEnabled(true);
                                         }
                                     } else if (!blocksToSet.isEmpty()) {
-                                        
-                                    
                                         isManuallyEditedOut = false;
                                         allSentencesBlocks = deserializeBlocks(blocksToSet);
                                         lastTimeMs = 0;
@@ -4054,7 +4100,6 @@ jobs:
                 super.onNewIntent(intent);
                 handleIntent(intent);
             }
-            
             private void handleIntent(Intent intent) {
                 if (intent == null) return;
                 if (Intent.ACTION_SEND.equals(intent.getAction()) && intent.getType() != null) {
@@ -4078,6 +4123,7 @@ jobs:
                                     if (text != null && !text.trim().isEmpty()) {
                                         checkAndPromptCleanup(MainActivity.this, text, cleaned -> {
                                             inputText.setText(cleaned);
+                                            sp.edit().putString("sync_text", cleaned).apply();
                                             saveHistory(cleaned, null);
                                         });
                                     } else {
@@ -4095,7 +4141,7 @@ jobs:
                     }
                 }
             }
-
+            
             private void startFloatingService() {
                 Intent intent = new Intent(this, FloatingService.class);
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) { startForegroundService(intent); } 
@@ -4164,13 +4210,13 @@ jobs:
                                 combined.append(text);
                                 if (i < uris.size() - 1) combined.append("\n\n---------------------------------\n\n");
                             }
-
                             final String finalText = combined.toString();
                             new Handler(Looper.getMainLooper()).post(() -> {
                                 progressBar.setVisibility(View.INVISIBLE);
                                 if (!finalText.trim().isEmpty()) {
                                     checkAndPromptCleanup(MainActivity.this, finalText, cleaned -> {
                                         inputText.setText(cleaned);
+                                        sp.edit().putString("sync_text", cleaned).apply();
                                         saveHistory(cleaned, null);
                                         Toast.makeText(MainActivity.this, "导入成功", Toast.LENGTH_SHORT).show();
                                     });
@@ -4178,6 +4224,8 @@ jobs:
                                     Toast.makeText(MainActivity.this, "无法读取文件内容或未识别到文字", Toast.LENGTH_SHORT).show();
                                 }
                             });
+
+                           
                         }).start();
                     }
                 }
@@ -5171,7 +5219,10 @@ jobs:
                     } catch (Exception e) {}
                 }
                 
-                outputText.setText(ssb); outputText.setMovementMethod(LinkMovementMethod.getInstance()); outputText.setHighlightColor(Color.TRANSPARENT);
+                // 更换为使用刚刚写好的 MyLinkMovementMethod，告别一切假死和超时触发
+                outputText.setText(ssb); 
+                outputText.setMovementMethod(MyLinkMovementMethod.getInstance()); 
+                outputText.setHighlightColor(Color.TRANSPARENT);
             }
                 
         }
