@@ -568,11 +568,11 @@ jobs:
                 boolean hasStar = getIntent().getBooleanExtra("star", false);
                 boolean hasHash = getIntent().getBooleanExtra("hash", false);
                 boolean hasDash = getIntent().getBooleanExtra("dash", false);
-                boolean hasTilde = getIntent().getBooleanExtra("tilde", false);
 
                 LinearLayout layout = new LinearLayout(this);
                 layout.setOrientation(LinearLayout.VERTICAL);
-                layout.setPadding(30, 20, 30, 0); // 弹窗总体缩小10%
+                // 移除了~号，为了防止下方留白过多，微调了整体的上下边距
+                layout.setPadding(35, 25, 35, 10);
 
                 TextView tvTitle = new TextView(this);
                 tvTitle.setText("提示：发现符号残留");
@@ -593,28 +593,23 @@ jobs:
                 LinearLayout.LayoutParams cbParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 cbParams.setMargins(0, -10, 0, -10);
 
-                // 字体变大一点点 (14f)
                 CheckBox cbStar = new CheckBox(this); cbStar.setText("去掉所有 * 号"); cbStar.setChecked(hasStar); cbStar.setTextSize(14f); cbStar.setTextColor(0xFF333333);
                 CheckBox cbHash = new CheckBox(this); cbHash.setText("去掉所有 # 号"); cbHash.setChecked(hasHash); cbHash.setTextSize(14f); cbHash.setTextColor(0xFF333333);
                 CheckBox cbDash = new CheckBox(this); cbDash.setText("去掉所有 - 号"); cbDash.setChecked(hasDash); cbDash.setTextSize(14f); cbDash.setTextColor(0xFF333333);
-                CheckBox cbTilde = new CheckBox(this); cbTilde.setText("去掉所有 ~ 号"); cbTilde.setChecked(hasTilde); cbTilde.setTextSize(14f); cbTilde.setTextColor(0xFF333333);
 
-                // 方框缩小10% (0.85 -> 0.75)
                 cbStar.setScaleX(0.75f); cbStar.setScaleY(0.75f); cbStar.setPivotX(0);
                 cbHash.setScaleX(0.75f); cbHash.setScaleY(0.75f); cbHash.setPivotX(0);
                 cbDash.setScaleX(0.75f); cbDash.setScaleY(0.75f); cbDash.setPivotX(0);
-                cbTilde.setScaleX(0.75f); cbTilde.setScaleY(0.75f); cbTilde.setPivotX(0);
 
                 layout.addView(cbStar, cbParams);
                 layout.addView(cbHash, cbParams);
                 layout.addView(cbDash, cbParams);
-                layout.addView(cbTilde, cbParams);
 
                 TextView tvCustom = new TextView(this);
                 tvCustom.setText("去掉自定义标点 (最多4种)：");
                 tvCustom.setPadding(5, 5, 0, 5);
                 tvCustom.setTextColor(0xFF555555);
-                tvCustom.setTextSize(12f); // 字体变大一点点
+                tvCustom.setTextSize(12f);
                 layout.addView(tvCustom);
 
                 LinearLayout customLayout = new LinearLayout(this);
@@ -629,11 +624,10 @@ jobs:
                 lp.setMargins(6, -10, 6, -10);
                 et1.setLayoutParams(lp); et2.setLayoutParams(lp); et3.setLayoutParams(lp); et4.setLayoutParams(lp);
                 et1.setGravity(Gravity.CENTER); et2.setGravity(Gravity.CENTER); et3.setGravity(Gravity.CENTER); et4.setGravity(Gravity.CENTER);
-                et1.setTextSize(14f); et2.setTextSize(14f); et3.setTextSize(14f); et4.setTextSize(14f); // 里面输入的字体变大
+                et1.setTextSize(14f); et2.setTextSize(14f); et3.setTextSize(14f); et4.setTextSize(14f);
                 et1.setPadding(0, 0, 0, 0); et2.setPadding(0, 0, 0, 0); et3.setPadding(0, 0, 0, 0); et4.setPadding(0, 0, 0, 0);
                 et1.setHint(""); et2.setHint(""); et3.setHint(""); et4.setHint("");
                 
-                // 下方输入框整体缩小30%
                 et1.setScaleX(0.70f); et1.setScaleY(0.70f);
                 et2.setScaleX(0.70f); et2.setScaleY(0.70f);
                 et3.setScaleX(0.70f); et3.setScaleY(0.70f);
@@ -646,9 +640,17 @@ jobs:
                 layout.addView(customLayout);
 
                 final String finalText = rawText;
+                
+                // 解决遮挡Bug: 如果具有悬浮窗权限，必须使用 getApplicationContext() 进行实例化
+                // 这样 Dialog 才是一个纯粹的系统全局弹窗，不会被限制在 Activity 层级下方
+                android.content.Context dialogCtx = this;
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+                    dialogCtx = new android.view.ContextThemeWrapper(getApplicationContext(), android.R.style.Theme_Material_Light_Dialog_Alert);
+                } else {
+                    dialogCtx = new android.view.ContextThemeWrapper(this, android.R.style.Theme_Material_Light_Dialog_Alert);
+                }
 
-                // 强制使用原生标准 Material 质感（白底黑字防灰化）
-                AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+                AlertDialog dialog = new AlertDialog.Builder(dialogCtx)
                     .setView(layout)
                     .setCancelable(false)
                     .setPositiveButton("是 (清理)", (d, w) -> {
@@ -662,7 +664,6 @@ jobs:
                         if (cbStar.isChecked() && (c1.equals("*") || c2.equals("*") || c3.equals("*") || c4.equals("*"))) dup = true;
                         if (cbHash.isChecked() && (c1.equals("#") || c2.equals("#") || c3.equals("#") || c4.equals("#"))) dup = true;
                         if (cbDash.isChecked() && (c1.equals("-") || c2.equals("-") || c3.equals("-") || c4.equals("-"))) dup = true;
-                        if (cbTilde.isChecked() && (c1.equals("~") || c2.equals("~") || c3.equals("~") || c4.equals("~"))) dup = true;
 
                         if (dup) {
                             Toast.makeText(SymbolCleanActivity.this, "提示：已勾选的符号无需重复输入", Toast.LENGTH_SHORT).show();
@@ -671,7 +672,6 @@ jobs:
                         if (cbStar.isChecked()) result = result.replace("*", "");
                         if (cbHash.isChecked()) result = result.replace("#", "");
                         if (cbDash.isChecked()) result = result.replace("-", "");
-                        if (cbTilde.isChecked()) result = result.replace("~", "");
 
                         if (!c1.isEmpty()) result = result.replace(c1, "");
                         if (!c2.isEmpty()) result = result.replace(c2, "");
@@ -689,7 +689,6 @@ jobs:
                     })
                     .create();
                     
-                // 修复崩溃2：增加权限拦截。如果没开启悬浮窗权限（比如在主界面粘贴），就不强行覆盖，使用默认窗口
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
                     if (Settings.canDrawOverlays(this)) {
                         dialog.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
@@ -698,21 +697,19 @@ jobs:
                     dialog.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_PHONE);
                 }
                 
-                // 彻底去除各大手机厂商强加的圆角和灰底，强制覆盖一块无圆角的纯白幕布
                 dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xFFFFFFFF));
                     
                 dialog.setOnShowListener(d -> {
-                    dialog.getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(0xFF4CAF50);
-                    dialog.getButton(DialogInterface.BUTTON_NEGATIVE).setTextColor(0xFF9E9E9E);
+                    dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setTextColor(0xFF4CAF50);
+                    dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).setTextColor(0xFF9E9E9E);
                 });
                 
                 dialog.setOnDismissListener(d -> finish());
                 dialog.show();
                 
-                // 缩小弹窗宽度至屏幕宽度的 70%，使排版更紧凑舒服
                 android.view.WindowManager.LayoutParams dialogLp = new android.view.WindowManager.LayoutParams();
                 dialogLp.copyFrom(dialog.getWindow().getAttributes());
-                dialogLp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.70f);
+                dialogLp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.80f);
                 dialog.getWindow().setAttributes(dialogLp);
             }
             
@@ -1297,7 +1294,7 @@ jobs:
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                         if (count > 2 && !MainActivity.isCleanDialogOpen) {
-                            int sc = 0, hc = 0, dc = 0, tc = 0;
+                            int sc = 0, hc = 0, dc = 0;
                             boolean trigger = false;
                             int end = start + count;
                             for (int i = start; i < end; i++) {
@@ -1305,7 +1302,6 @@ jobs:
                                 if (c == '*') { if (++sc >= 4) { trigger = true; break; } }
                                 else if (c == '#') { if (++hc >= 4) { trigger = true; break; } }
                                 else if (c == '-') { if (++dc >= 4) { trigger = true; break; } }
-                                else if (c == '~') { if (++tc >= 4) { trigger = true; break; } }
                             }
                             if (trigger) {
                                 new Handler(Looper.getMainLooper()).post(() -> {
@@ -2003,33 +1999,37 @@ jobs:
             }
 
             public static void checkAndPromptCleanup(Context context, String text, TextCleanCallback callback) {
-                if (text == null || text.isEmpty()) {
-                    if (callback != null) callback.onCleaned(text);
-                    return;
-                }
-                int starCount = 0, hashCount = 0, dashCount = 0, tildeCount = 0;
-                for (int i = 0; i < text.length(); i++) {
-                    char c = text.charAt(i);
-                    if (c == '*') starCount++;
-                    else if (c == '#') hashCount++;
-                    else if (c == '-') dashCount++;
-                    else if (c == '~') tildeCount++;
-                }
-                if (starCount >= 4 || hashCount >= 4 || dashCount >= 4 || tildeCount >= 4) {
-                    isCleanDialogOpen = true;
-                    SymbolCleanActivity.callback = callback;
-                    Intent intent = new Intent(context, SymbolCleanActivity.class);
-                    intent.putExtra("raw_text", text);
-                    intent.putExtra("star", starCount >= 4);
-                    intent.putExtra("hash", hashCount >= 4);
-                    intent.putExtra("dash", dashCount >= 4);
-                    intent.putExtra("tilde", tildeCount >= 4);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(intent);
-                } else {
-                    if (callback != null) callback.onCleaned(text);
-                }
+            // 修复Bug: 如果已经有弹窗，直接返回，防止二次粘贴弹窗被吞或无限循环
+            if (isCleanDialogOpen) {
+                if (callback != null) callback.onCleaned(text);
+                return;
             }
+            if (text == null || text.isEmpty()) {
+                if (callback != null) callback.onCleaned(text);
+                return;
+            }
+            int starCount = 0, hashCount = 0, dashCount = 0;
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == '*') starCount++;
+                else if (c == '#') hashCount++;
+                else if (c == '-') dashCount++;
+            }
+            if (starCount >= 4 || hashCount >= 4 || dashCount >= 4) {
+                isCleanDialogOpen = true;
+                SymbolCleanActivity.callback = callback;
+                Intent intent = new Intent(context, SymbolCleanActivity.class);
+                intent.putExtra("raw_text", text);
+                intent.putExtra("star", starCount >= 4);
+                intent.putExtra("hash", hashCount >= 4);
+                intent.putExtra("dash", dashCount >= 4);
+                // 修复Bug: 加上 CLEAR_TOP 确保完全销毁旧的弹窗实例，保证每次一定能弹出来
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                context.startActivity(intent);
+            } else {
+                if (callback != null) callback.onCleaned(text);
+            }
+        }
 
             public static class QuantifierRule {
                 public String primaryQuant;
@@ -3291,17 +3291,15 @@ jobs:
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                         if (count > 2 && !isRestoringHistory && !MainActivity.isCleanDialogOpen) {
-                            int sc = 0, hc = 0, dc = 0, tc = 0;
+                            int sc = 0, hc = 0, dc = 0;
                             boolean trigger = false;
                             int end = start + count;
-                            // 性能优化：直接读取底层 CharSequence，避免 toString() 导致大文本复制时内存溢出(OOM)
-                            // 极速匹配：一旦任意符号达到3个，立刻中断循环，避免遍历十万字长文导致主线程卡顿
+                            // 极速匹配：一旦任意符号达到4个，立刻中断循环
                             for (int i = start; i < end; i++) {
                                 char c = s.charAt(i);
                                 if (c == '*') { if (++sc >= 4) { trigger = true; break; } }
                                 else if (c == '#') { if (++hc >= 4) { trigger = true; break; } }
                                 else if (c == '-') { if (++dc >= 4) { trigger = true; break; } }
-                                else if (c == '~') { if (++tc >= 4) { trigger = true; break; } }
                             }
                             if (trigger) {
                                 new Handler(Looper.getMainLooper()).post(() -> {
