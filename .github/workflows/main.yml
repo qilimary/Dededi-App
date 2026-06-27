@@ -176,10 +176,10 @@ jobs:
             strm.next_in = (Bytef *)src;
             strm.avail_in = src_len;
 
-            size_t out_capacity = src_len * 4 + 1025;
+            size_t out_capacity = src_len * 4 + 1024;
             unsigned char *out = (unsigned char *)malloc(out_capacity);
             strm.next_out = out;
-            strm.avail_out = out_capacity - 1;
+            strm.avail_out = out_capacity;
 
             while (true) {
                 int ret = inflate(&strm, Z_NO_FLUSH);
@@ -193,7 +193,7 @@ jobs:
                     out_capacity *= 2;
                     out = (unsigned char *)realloc(out, out_capacity);
                     strm.next_out = out + strm.total_out;
-                    strm.avail_out = out_capacity - strm.total_out - 1;
+                    strm.avail_out = out_capacity - strm.total_out;
                 }
             }
             *dest_len = strm.total_out;
@@ -275,8 +275,11 @@ jobs:
             unsigned char* uncompressed = NULL;
             size_t uncompressed_len = 0;
             if (ungzip_data(buffer, len, &uncompressed, &uncompressed_len)) {
-                uncompressed[uncompressed_len] = '\0';
-                jstring result = env->NewStringUTF((const char*)uncompressed);
+                char* str_buf = (char*)malloc(uncompressed_len + 1);
+                memcpy(str_buf, uncompressed, uncompressed_len);
+                str_buf[uncompressed_len] = '\0';
+                jstring result = env->NewStringUTF(str_buf);
+                free(str_buf);
                 free(uncompressed);
                 free(buffer);
                 return result;
@@ -515,7 +518,7 @@ jobs:
                                 if (i < uris.size() - 1) combined.append("\n\n---------------------------------\n\n");
                             }
                             final String finalText = combined.toString();
-                            runOnUiThread(() -> {
+                            new Handler(Looper.getMainLooper()).post(() -> {
                                 if (!finalText.trim().isEmpty()) {
                                     Intent serviceIntent = new Intent(FilePickerActivity.this, FloatingService.class);
                                     serviceIntent.putExtra("IMPORTED_TEXT", finalText);
@@ -976,8 +979,6 @@ jobs:
             private long lastStatusTime = 0;
             private boolean lastStatusWasTypo = false;
             
-            private Handler mainHandler = new Handler(Looper.getMainLooper());
-            
             private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
 
             private void saveHistory(String text) {
@@ -1189,6 +1190,7 @@ jobs:
                     private float initialTouchX, initialTouchY;
                     private boolean isMoved = false;
                     private boolean isLongPressed = false;
+                    private Handler handler = new Handler(Looper.getMainLooper());
                     private Runnable longPressRunnable = () -> {
                         isLongPressed = true;
                         jumpToApp.run();
@@ -1202,7 +1204,7 @@ jobs:
                                 isMoved = false;
                                 isLongPressed = false;
                                 if (v.getId() == R.id.btnCircle) {
-                                    mainHandler.postDelayed(longPressRunnable, 500); 
+                                    handler.postDelayed(longPressRunnable, 500); 
                                 }
                                 return true; 
                             case MotionEvent.ACTION_MOVE:
@@ -1210,7 +1212,7 @@ jobs:
                                 int dy = (int) (event.getRawY() - initialTouchY);
                                 if (!isMoved && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
                                     isMoved = true;
-                                    mainmainmainHandler.removeCallbacks(longPressRunnable); 
+                                    handler.removeCallbacks(longPressRunnable); 
                                 }
                                 if (isMoved) {
                                     params.x = initialX + dx; params.y = initialY + dy;
@@ -1219,7 +1221,7 @@ jobs:
                                 return true;
                             case MotionEvent.ACTION_UP:
                             case MotionEvent.ACTION_CANCEL:
-                                mainmainmainHandler.removeCallbacks(longPressRunnable); 
+                                handler.removeCallbacks(longPressRunnable); 
                                 if (!isMoved && !isLongPressed && v.getId() == R.id.btnCircle) {
                                     if (!isChecking) {
                                         boolean isVisible = panelInput.getVisibility() == View.VISIBLE;
@@ -1259,7 +1261,7 @@ jobs:
             }
 
             private void showStatus(String msg, boolean autoHide) {
-                mainHandler.post(() -> {
+                new Handler(Looper.getMainLooper()).post(() -> {
                     tvStatus.setText(msg);
                     statusContainer.setVisibility(View.VISIBLE);
                     floatProgressBar.setVisibility(View.GONE);
@@ -1281,7 +1283,7 @@ jobs:
                 lastStatusTime = System.currentTimeMillis();
                 lastStatusWasTypo = isTypo;
                 
-                mainHandler.post(() -> {
+                new Handler(Looper.getMainLooper()).post(() -> {
                     if(!isInterruptRequested) {
                         tvStatus.setText(msg);
                         statusContainer.setVisibility(View.VISIBLE);
@@ -1314,7 +1316,7 @@ jobs:
                 lastStatusWasTypo = false;
                 
                 showStatus("正在纠错……", false);
-                mainHandler.post(() -> {
+                new Handler(Looper.getMainLooper()).post(() -> {
                     floatProgressBar.setVisibility(View.VISIBLE);
                     floatProgressBar.setProgress(0);
                 });
@@ -1370,7 +1372,7 @@ jobs:
 
                         for (int sIdx = 0; sIdx < sentences.length; sIdx++) {
                             if (isInterruptRequested) {
-                                mainHandler.post(() -> {
+                                new Handler(Looper.getMainLooper()).post(() -> {
                                     isChecking = false;
                                     btnFloatSwitch.setEnabled(true);
                                     circleSpin.setVisibility(View.INVISIBLE);
@@ -1383,7 +1385,7 @@ jobs:
                                 lastUIUpdateTime = now;
                                 int currentProgress = sIdx + 1;
                                 int maxProgress = sentences.length;
-                                mainHandler.post(() -> {
+                                new Handler(Looper.getMainLooper()).post(() -> {
                                     if (!isInterruptRequested) {
                                         floatProgressBar.setMax(maxProgress);
                                         floatProgressBar.setProgress(currentProgress);
@@ -1636,7 +1638,7 @@ jobs:
                             try { Thread.sleep(1000); } catch (Exception e) {}
                         }
                         
-                        mainHandler.post(() -> {
+                        new Handler(Looper.getMainLooper()).post(() -> {
                             isChecking = false; 
                             btnFloatSwitch.setEnabled(true);
                             if (errorCount[0] == 0) {
@@ -1649,7 +1651,7 @@ jobs:
                             clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
                         });
                     } catch (Exception e) {
-                        mainHandler.post(() -> {
+                        new Handler(Looper.getMainLooper()).post(() -> {
                             isChecking = false; 
                             btnFloatSwitch.setEnabled(true);
                             circleSpin.setVisibility(View.INVISIBLE);
@@ -1885,8 +1887,6 @@ jobs:
             private boolean isManuallyEditedOut = false;
             private String originalEditorText = "";
             private SpannableStringBuilder lastEditorSpannable;
-            
-            private final Handler mainHandler = new Handler(Looper.getMainLooper());
             
             public boolean isEditorSelfModifying = false;
             public List<ClauseLink> currentClauseLinks = new ArrayList<>();
@@ -2126,7 +2126,7 @@ jobs:
             }
 
             public static void extractTextFromUriAsync(Context context, android.net.Uri uri, TextExtractCallback callback) {
-                mainHandler.post(() -> {
+                new Handler(Looper.getMainLooper()).post(() -> {
                     if (callback != null) callback.onStart();
                 });
                 new Thread(() -> {
@@ -2139,24 +2139,24 @@ jobs:
                             (mimeType != null && mimeType.startsWith("image/"))) {
                             Bitmap bitmap = android.provider.MediaStore.Images.Media.getBitmap(context.getContentResolver(), uri);
                             String result = performOcrOnBitmap(bitmap, context, callback);
-                            mainHandler.post(() -> {
+                            new Handler(Looper.getMainLooper()).post(() -> {
                                 if(callback != null) callback.onExtracted(result);
                             });
                             return;
                         }
                         else if ((name != null && name.endsWith(".pdf")) || "application/pdf".equals(mimeType)) {
                             String result = performOcrOnPdf(uri, context, callback);
-                            mainHandler.post(() -> {
+                            new Handler(Looper.getMainLooper()).post(() -> {
                                 if(callback != null) callback.onExtracted(result);
                             });
                             return;
                         }
                         String text = extractTextFromUri(context, uri);
-                        mainHandler.post(() -> {
+                        new Handler(Looper.getMainLooper()).post(() -> {
                             if(callback != null) callback.onExtracted(text);
                         });
                     } catch (Exception e) {
-                        mainHandler.post(() -> {
+                        new Handler(Looper.getMainLooper()).post(() -> {
                             if(callback != null) callback.onExtracted("");
                         });
                     }
@@ -2245,7 +2245,7 @@ jobs:
                 for (int i = 0; i < totalChunks; i++) {
                     final int progress = i + 1;
                     if(callback != null) {
-                        mainHandler.post(() -> callback.onProgress(progress, totalChunks));
+                        new Handler(Looper.getMainLooper()).post(() -> callback.onProgress(progress, totalChunks));
                     }
                     int startY = splitPoints.get(i);
                     int height = splitPoints.get(i + 1) - startY;
@@ -2270,7 +2270,7 @@ jobs:
                     for(int i = 0; i < pageCount; i++) {
                         final int progress = i + 1;
                         if(callback != null) {
-                            mainHandler.post(() -> callback.onProgress(progress, pageCount));
+                            new Handler(Looper.getMainLooper()).post(() -> callback.onProgress(progress, pageCount));
                         }
                         android.graphics.pdf.PdfRenderer.Page page = renderer.openPage(i);
                         Bitmap bitmap = Bitmap.createBitmap(page.getWidth() * 2, page.getHeight() * 2, Bitmap.Config.ARGB_8888);
@@ -2832,12 +2832,12 @@ jobs:
                                 break;
                             case MotionEvent.ACTION_MOVE:
                                 if (Math.abs(event.getX() - startX[0]) > 20 || Math.abs(event.getY() - startY[0]) > 20) {
-                                    mainmainmainHandler.removeCallbacks(longPressRunnable);
+                                    handler.removeCallbacks(longPressRunnable);
                                 }
                                 break;
                             case MotionEvent.ACTION_UP:
                             case MotionEvent.ACTION_CANCEL:
-                                mainmainmainHandler.removeCallbacks(longPressRunnable);
+                                handler.removeCallbacks(longPressRunnable);
                                 if (isLongPressTriggered[0]) {
                                     MotionEvent cancelEvent = MotionEvent.obtain(event);
                                     cancelEvent.setAction(MotionEvent.ACTION_CANCEL);
@@ -3641,9 +3641,8 @@ jobs:
                                     @Override public void onStart() {}
                                     @Override public void onProgress(int p, int m) {
                                         int overallProgress = (fileIndex * 100 / uris.size()) + (p * 100 / m / uris.size());
-                                        mainHandler.post(() -> progressBar.setProgress(overallProgress));
+                                        new Handler(Looper.getMainLooper()).post(() -> progressBar.setProgress(overallProgress));
                                     }
-                                    
                                     @Override public void onExtracted(String t) {}
                                 });
 
@@ -3653,7 +3652,7 @@ jobs:
                             }
 
                             final String finalText = combined.toString();
-                            mainHandler.post(() -> {
+                            new Handler(Looper.getMainLooper()).post(() -> {
                                 progressBar.setVisibility(View.INVISIBLE);
                                 if (!finalText.trim().isEmpty()) {
                                     inputText.setText(finalText);
@@ -4416,9 +4415,10 @@ jobs:
                                                                 int lineEnd = layout.getLineEnd(line);
                                                                 BackgroundColorSpan flashSpan = new BackgroundColorSpan(0x609E9E9E); 
                                                                 spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                                                mainHandler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 500);
-                                                                mainHandler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); }, 800);
-                                                                mainHandler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 1300);
+                                                                Handler handler = new Handler(Looper.getMainLooper());
+                                                                handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 500);
+                                                                handler.postDelayed(() -> { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); }, 800);
+                                                                handler.postDelayed(() -> { spanText.removeSpan(flashSpan); tv.invalidate(); }, 1300);
                                                                 break;
                                                             }
                                                         }
@@ -4528,9 +4528,10 @@ jobs:
                                                         if (spanText instanceof Spannable) {
                                                             Spannable editable = (Spannable) spanText;
                                                             editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                                            mainHandler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 500);
-                                                            mainHandler.postDelayed(() -> { try { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); } catch(Exception e){} }, 800);
-                                                            mainHandler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 1300);
+                                                            Handler handler = new Handler(Looper.getMainLooper());
+                                                            handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 500);
+                                                            handler.postDelayed(() -> { try { editable.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); } catch(Exception e){} }, 800);
+                                                            handler.postDelayed(() -> { try { editable.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 1300);
                                                         }
                                                     }
                                                 }
