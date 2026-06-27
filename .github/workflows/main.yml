@@ -4546,6 +4546,10 @@ jobs:
             }
 
             private void showEditDialog(TextBlock b) {
+                if (isManuallyEditedOut) {
+                    Toast.makeText(this, "文本已手动编辑，无法使用还原。请长按进入便签模式修改。", Toast.LENGTH_LONG).show();
+                    return;
+                }
                 if (b.type == 1) { 
                     String[] options = {"的", "地", "得", "还原为原字 (" + b.original + ")"};
                     new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + b.current + ")").setItems(options, (dialog, which) -> {
@@ -4568,7 +4572,8 @@ jobs:
             private void renderFinalBlocks() {
                 blockToMainTargetSpan.clear();
                 int currentErrors = 0;
-                for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) currentErrors++; } }
+                // 修复幽灵错误：只有当字和原字不同时，才算作真正的错误
+                for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && (!b.current.equals(b.original))) currentErrors++; } }
                 
                 final int[] baseOffsetObj = {0};
                 
@@ -4601,7 +4606,7 @@ jobs:
                             docIndex++; pendingDocMarker = false;
                         }
                         
-                        boolean isError = b.isMutable && (!b.current.equals(b.original) || b.userModified);
+                        boolean isError = b.isMutable && (!b.current.equals(b.original));
                         
                         int start = ssbFull.length(); ssbFull.append(b.current);
                         int spanStart = start;
@@ -4721,7 +4726,7 @@ jobs:
                         for (List<TextBlock> c : rawClauses) {
                             boolean hasErr = false;
                             for (TextBlock b : c) {
-                                if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                if (b.isMutable && (!b.current.equals(b.original))) {
                                     hasErr = true; break;
                                 }
                             }
@@ -4738,7 +4743,7 @@ jobs:
                         
                         for (List<TextBlock> clause : clauses) {
                             List<TextBlock> errsInClause = new ArrayList<>();
-                            for (TextBlock b : clause) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) errsInClause.add(b); }
+                            for (TextBlock b : clause) { if (b.isMutable && (!b.current.equals(b.original))) errsInClause.add(b); }
                             
                             if (!errsInClause.isEmpty()) {
                                 int stStart = ssb.length();
@@ -4756,7 +4761,7 @@ jobs:
                                             TextView tv = (TextView) w;
                                             Spannable spanText = (Spannable) tv.getText();
                                             for (TextBlock b : clause) {
-                                                if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                                if (b.isMutable && (!b.current.equals(b.original))) {
                                                     TargetSpan mainTs = blockToMainTargetSpan.get(b);
                                                     if (mainTs != null) {
                                                         int pos = spanText.getSpanStart(mainTs);
@@ -4787,7 +4792,7 @@ jobs:
                                 ssb.setSpan(jumpSpan, stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
                                 for (TextBlock b : clause) {
-                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                    if (b.isMutable && (!b.current.equals(b.original))) {
                                         int oldTextStart = ssb.length(); 
                                         ssb.append(b.original); 
                                         if (b.type == 6) {
@@ -4903,7 +4908,7 @@ jobs:
                                 ssbEditor.setSpan(edJumpSpan, edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
                                 for (TextBlock b : clause) {
-                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                    if (b.isMutable && (!b.current.equals(b.original))) {
                                         int edOldStart = ssbEditor.length();
                                         ssbEditor.append(b.original);
                                         if (b.type == 6) {
@@ -4938,7 +4943,7 @@ jobs:
                                 ssbEditor.append("\n");
                                 
                                 for (TextBlock b : clause) {
-                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                    if (b.isMutable && (!b.current.equals(b.original))) {
                                         TargetSpan ts = blockToTargetSpan.get(b);
                                         if (ts != null) link.targetSpans.add(ts);
                                     }
