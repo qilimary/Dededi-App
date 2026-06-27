@@ -521,10 +521,9 @@ jobs:
                             final String finalText = combined.toString();
                             new Handler(Looper.getMainLooper()).post(() -> {
                                 if (!finalText.trim().isEmpty()) {
-                                    MainActivity.pendingImportText = finalText; // 使用内存直传，突破系统限制
                                     Intent serviceIntent = new Intent(FilePickerActivity.this, FloatingService.class);
+                                    serviceIntent.putExtra("IMPORTED_TEXT", finalText);
                                     startService(serviceIntent);
-                                    
                                 } else {
                                     Toast.makeText(FilePickerActivity.this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
                                 }
@@ -564,10 +563,8 @@ jobs:
                 super.onCreate(savedInstanceState);
                 getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
 
-                String rawText = MainActivity.pendingCleanText;
+                String rawText = getIntent().getStringExtra("raw_text");
                 if (rawText == null) rawText = "";
-                MainActivity.pendingCleanText = null; // 读取后立即清空释放内存
-           
                 boolean hasStar = getIntent().getBooleanExtra("star", false);
                 boolean hasHash = getIntent().getBooleanExtra("hash", false);
                 boolean hasDash = getIntent().getBooleanExtra("dash", false);
@@ -1231,9 +1228,7 @@ jobs:
 
             @Override
             public int onStartCommand(Intent intent, int flags, int startId) {
-                if (MainActivity.pendingImportText != null) {
-                String text = MainActivity.pendingImportText;
-                MainActivity.pendingImportText = null; // 读取后清空
+                if (intent != null && intent.hasExtra("IMPORTED_TEXT")) {
                     String text = intent.getStringExtra("IMPORTED_TEXT");
                     if (editFloatInput != null) {
                         MainActivity.checkAndPromptCleanup(this, text, cleaned -> {
@@ -1296,42 +1291,54 @@ jobs:
                 Button btnFloatCloseAll = floatView.findViewById(R.id.btnFloatCloseAll);
                 
                 editFloatInput.addTextChangedListener(new TextWatcher() {
+                    private Handler handler = new Handler(Looper.getMainLooper());
+                    private Runnable debounceRunnable;
+
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                         if (count > 2 && !MainActivity.isCleanDialogOpen) {
-                            int sc = 0, hc = 0, dc = 0;
-                            boolean trigger = false;
-                            int end = start + count;
-                            for (int i = start; i < end; i++) {
-                                char c = s.charAt(i);
-                                if (c == '*') { if (++sc >= 4) { trigger = true; break; } }
-                                else if (c == '#') { if (++hc >= 4) { trigger = true; break; } }
-                                else if (c == '-') { if (++dc >= 4) { trigger = true; break; } }
-                            }
-                            if (trigger) {
-                                new Handler(Looper.getMainLooper()).post(() -> {
-                                    MainActivity.checkAndPromptCleanup(FloatingService.this, editFloatInput.getText().toString(), cleaned -> {
-                                        if (!cleaned.equals(editFloatInput.getText().toString())) {
-                                            MainActivity.isCleanDialogOpen = true;
-                                            editFloatInput.setText(cleaned);
-                                            editFloatInput.setSelection(cleaned.length());
-                                            MainActivity.isCleanDialogOpen = false;
-                                        }
+                            String chunk = s.subSequence(start, start + count).toString();
+                            new Thread(() -> {
+                                int sc = 0, hc = 0, dc = 0;
+                                boolean trigger = false;
+                                for (int i = 0; i < chunk.length(); i++) {
+                                    char c = chunk.charAt(i);
+                                    if (c == '*') { if (++sc >= 4) { trigger = true; break; } }
+                                    else if (c == '#') { if (++hc >= 4) { trigger = true; break; } }
+                                    else if (c == '-') { if (++dc >= 4) { trigger = true; break; } }
+                                }
+                                if (trigger) {
+                                    handler.post(() -> {
+                                        MainActivity.checkAndPromptCleanup(FloatingService.this, editFloatInput.getText().toString(), cleaned -> {
+                                            if (!cleaned.equals(editFloatInput.getText().toString())) {
+                                                MainActivity.isCleanDialogOpen = true;
+                                                editFloatInput.setText(cleaned);
+                                                editFloatInput.setSelection(cleaned.length());
+                                                MainActivity.isCleanDialogOpen = false;
+                                            }
+                                        });
                                     });
-                                });
-                            }
+                                }
+                            }).start();
                         }
                     }
                     @Override public void afterTextChanged(Editable s) {
                         if (!isChecking) {
-                            final String txt = s.toString();
-                            // 放入异步线程执行，防止10万字同步写入导致输入法打字卡顿
-                            new Thread(() -> sp.edit().putString("sync_text", txt).apply()).start();
+                            // 同样加入防抖，避免海量字符阻塞服务
+                            if (debounceRunnable != null) handler.removeCallbacks(debounceRunnable);
+                            debounceRunnable = () -> {
+                                String textStr = s.toString();
+                                new Thread(() -> {
+                                    handler.post(() -> {
+                                        sp.edit().putString("sync_text", textStr).apply();
+                                    });
+                                }).start();
+                            };
+                            handler.postDelayed(debounceRunnable, 400);
                         }
                     }
-                    
                 });
-
+                    
                 floatView.setOnTouchListener((v, event) -> {
                     if (event.getAction() == MotionEvent.ACTION_OUTSIDE) {
                         if (MainActivity.isCleanDialogOpen) return true;
@@ -1398,9 +1405,9 @@ jobs:
                 });
                 
                 Runnable jumpToApp = () -> {
-                    MainActivity.pendingSyncText = editFloatInput.getText().toString();
                     Intent intent = new Intent(FloatingService.this, MainActivity.class);
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    intent.putExtra("SYNC_TEXT", editFloatInput.getText().toString());
                     startActivity(intent);
                     panelInput.setVisibility(View.GONE);
                     setFocusable(false);
@@ -1410,7 +1417,6 @@ jobs:
                             setFocusable(false);
                         }
                     }, 200);
-                
                 };
 
                 btnFloatJump.setOnClickListener(v -> jumpToApp.run());
@@ -2001,10 +2007,6 @@ jobs:
             public static boolean typoMapLoaded = false;
             
             public static volatile boolean isCleanDialogOpen = false;
-            // 新增：用于突破系统1MB的数据传输限制，防止10万字超长文本在组件间传递时闪退
-            public static String pendingImportText = null;
-            public static String pendingSyncText = null;
-            public static String pendingCleanText = null;
             private String editingTypoKey = null;
 
             public interface TextCleanCallback {
@@ -2032,7 +2034,7 @@ jobs:
                 isCleanDialogOpen = true;
                 SymbolCleanActivity.callback = callback;
                 Intent intent = new Intent(context, SymbolCleanActivity.class);
-                MainActivity.pendingCleanText = text; // 使用内存直传
+                intent.putExtra("raw_text", text);
                 intent.putExtra("star", starCount >= 4);
                 intent.putExtra("hash", hashCount >= 4);
                 intent.putExtra("dash", dashCount >= 4);
@@ -3301,56 +3303,41 @@ jobs:
                 loadSettings(currentIsFast);
                 
                 inputText.addTextChangedListener(new TextWatcher() {
+                    private Handler handler = new Handler(Looper.getMainLooper());
+                    private Runnable debounceRunnable;
+
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                         if (count > 2 && !isRestoringHistory && !MainActivity.isCleanDialogOpen) {
-                            int sc = 0, hc = 0, dc = 0;
-                            boolean trigger = false;
-                            int end = start + count;
-                            // 极速匹配：一旦任意符号达到4个，立刻中断循环
-                            for (int i = start; i < end; i++) {
-                                char c = s.charAt(i);
-                                if (c == '*') { if (++sc >= 4) { trigger = true; break; } }
-                                else if (c == '#') { if (++hc >= 4) { trigger = true; break; } }
-                                else if (c == '-') { if (++dc >= 4) { trigger = true; break; } }
-                            }
-                            if (trigger) {
-                                new Handler(Looper.getMainLooper()).post(() -> {
-                                    checkAndPromptCleanup(MainActivity.this, inputText.getText().toString(), cleaned -> {
-                                        if (!cleaned.equals(inputText.getText().toString())) {
-                                            boolean old = isRestoringHistory;
-                                            isRestoringHistory = true; // 临时阻断无限循环
-                                            inputText.setText(cleaned);
-                                            inputText.setSelection(cleaned.length());
-                                            isRestoringHistory = old;
-                                        }
+                            // 将庞大的匹配任务剥离到子线程，并且仅处理刚被粘贴或输入的文本块(chunk)
+                            String chunk = s.subSequence(start, start + count).toString();
+                            new Thread(() -> {
+                                int sc = 0, hc = 0, dc = 0;
+                                boolean trigger = false;
+                                for (int i = 0; i < chunk.length(); i++) {
+                                    char c = chunk.charAt(i);
+                                    if (c == '*') { if (++sc >= 4) { trigger = true; break; } }
+                                    else if (c == '#') { if (++hc >= 4) { trigger = true; break; } }
+                                    else if (c == '-') { if (++dc >= 4) { trigger = true; break; } }
+                                }
+                                if (trigger) {
+                                    handler.post(() -> {
+                                        checkAndPromptCleanup(MainActivity.this, inputText.getText().toString(), cleaned -> {
+                                            if (!cleaned.equals(inputText.getText().toString())) {
+                                                boolean old = isRestoringHistory;
+                                                isRestoringHistory = true; // 临时阻断无限循环
+                                                inputText.setText(cleaned);
+                                                inputText.setSelection(cleaned.length());
+                                                isRestoringHistory = old;
+                                            }
+                                        });
                                     });
-                                });
-                            }
+                                }
+                            }).start();
                         }
                     }
                     @Override public void afterTextChanged(Editable s) { 
-                        final String textStr = s.toString();
-                        final boolean hasContent = textStr.length() > 0;
-                        
-                        // 性能优化核心：剥离正则替换算法，改用异步低耗CPU循环，挽救10万字情况下的界面卡死崩溃
-                        new Thread(() -> {
-                            int count = 0;
-                            for (int i = 0; i < textStr.length(); i++) {
-                                char c = textStr.charAt(i);
-                                // 快速跳过空格和基础标点以计算字数
-                                if (c > ' ' && c != '，' && c != '。' && c != '！' && c != '？' && c != '、' && c != '；' && c != '：' && c != '“' && c != '”' && c != '（' && c != '）' && c != ',' && c != '.' && c != '?' && c != '!') {
-                                    count++;
-                                }
-                            }
-                            final int finalCount = count;
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                tvWordCount.setText(finalCount + " 字");
-                                btnSaveTxt.setEnabled(hasContent);
-                            });
-                            sp.edit().putString("sync_text", textStr).apply();
-                        }).start();
-                        
+                        btnSaveTxt.setEnabled(s.length() > 0);
                         if (!isRestoringHistory && btnCheck.getText().toString().equals("继续纠错")) {
                             btnCheck.setText("开始纠错");
                             allSentencesBlocks.clear();
@@ -3358,9 +3345,30 @@ jobs:
                             btnCopy.setEnabled(false);
                             lastSavedHistoryFileId = null;
                         }
+                        
+                        // 防抖机制：每次文字变化后取消上一次任务，延迟400ms后触发真正的耗时统计与SP存储
+                        if (debounceRunnable != null) handler.removeCallbacks(debounceRunnable);
+                        debounceRunnable = () -> {
+                            String textStr = s.toString(); // 提取主线程文本快照
+                            new Thread(() -> {
+                                int c = 0;
+                                // 抛弃高耗时正则表达式，使用原生字符级甄别（速度提升数百倍且防止OOM）
+                                for (int i = 0; i < textStr.length(); i++) {
+                                    if (Character.isLetterOrDigit(textStr.charAt(i))) {
+                                        c++;
+                                    }
+                                }
+                                final int finalCount = c;
+                                handler.post(() -> {
+                                    tvWordCount.setText(finalCount + " 字"); 
+                                    sp.edit().putString("sync_text", textStr).apply();
+                                });
+                            }).start();
+                        };
+                        handler.postDelayed(debounceRunnable, 400);
                     }
                 });
-                
+
                 btnSaveTxt.setEnabled(inputText.getText().length() > 0);
 
                 handleIntent(getIntent());
@@ -3916,22 +3924,7 @@ jobs:
                             });
                         }
                     }
-                }
-                // 拦截超长文本的传递
-                if (MainActivity.pendingSyncText != null) {
-                    String syncText = MainActivity.pendingSyncText;
-                    MainActivity.pendingSyncText = null;
-                    if (!syncText.isEmpty()) {
-                        inputText.setText(syncText);
-                        sp.edit().putString("sync_text", syncText).apply();
-                    }
-                } else if (intent != null && intent.hasExtra("SYNC_TEXT")) {
-                    String syncText = intent.getStringExtra("SYNC_TEXT");
-                    if (syncText != null && !syncText.isEmpty()) {
-                        inputText.setText(syncText);
-                        sp.edit().putString("sync_text", syncText).apply();
-                    }
-                }
+                } else if (intent.hasExtra("SYNC_TEXT")) {
                     String syncText = intent.getStringExtra("SYNC_TEXT");
                     if (syncText != null && !syncText.isEmpty()) {
                         inputText.setText(syncText);
