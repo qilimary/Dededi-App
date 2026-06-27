@@ -572,7 +572,7 @@ jobs:
 
                 LinearLayout layout = new LinearLayout(this);
                 layout.setOrientation(LinearLayout.VERTICAL);
-                layout.setPadding(40, 30, 40, 0);
+                layout.setPadding(30, 20, 30, 0); // 弹窗总体缩小10%
 
                 TextView tvTitle = new TextView(this);
                 tvTitle.setText("提示：发现符号残留");
@@ -585,23 +585,25 @@ jobs:
                 tvMsg.setText("注意到文本可能存在符号残留，是否清理？");
                 tvMsg.setTextSize(13f);
                 tvMsg.setTextColor(0xFF333333);
-                tvMsg.setPadding(0, 0, 0, 15);
+                tvMsg.setPadding(0, 0, 0, 10);
 
                 layout.addView(tvTitle);
                 layout.addView(tvMsg);
 
                 LinearLayout.LayoutParams cbParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                cbParams.setMargins(0, -8, 0, -8);
+                cbParams.setMargins(0, -10, 0, -10);
 
-                CheckBox cbStar = new CheckBox(this); cbStar.setText("去掉所有 * 号"); cbStar.setChecked(hasStar); cbStar.setTextSize(13f); cbStar.setTextColor(0xFF333333);
-                CheckBox cbHash = new CheckBox(this); cbHash.setText("去掉所有 # 号"); cbHash.setChecked(hasHash); cbHash.setTextSize(13f); cbHash.setTextColor(0xFF333333);
-                CheckBox cbDash = new CheckBox(this); cbDash.setText("去掉所有 - 号"); cbDash.setChecked(hasDash); cbDash.setTextSize(13f); cbDash.setTextColor(0xFF333333);
-                CheckBox cbTilde = new CheckBox(this); cbTilde.setText("去掉所有 ~ 号"); cbTilde.setChecked(hasTilde); cbTilde.setTextSize(13f); cbTilde.setTextColor(0xFF333333);
+                // 字体变大一点点 (14f)
+                CheckBox cbStar = new CheckBox(this); cbStar.setText("去掉所有 * 号"); cbStar.setChecked(hasStar); cbStar.setTextSize(14f); cbStar.setTextColor(0xFF333333);
+                CheckBox cbHash = new CheckBox(this); cbHash.setText("去掉所有 # 号"); cbHash.setChecked(hasHash); cbHash.setTextSize(14f); cbHash.setTextColor(0xFF333333);
+                CheckBox cbDash = new CheckBox(this); cbDash.setText("去掉所有 - 号"); cbDash.setChecked(hasDash); cbDash.setTextSize(14f); cbDash.setTextColor(0xFF333333);
+                CheckBox cbTilde = new CheckBox(this); cbTilde.setText("去掉所有 ~ 号"); cbTilde.setChecked(hasTilde); cbTilde.setTextSize(14f); cbTilde.setTextColor(0xFF333333);
 
-                cbStar.setScaleX(0.85f); cbStar.setScaleY(0.85f); cbStar.setPivotX(0);
-                cbHash.setScaleX(0.85f); cbHash.setScaleY(0.85f); cbHash.setPivotX(0);
-                cbDash.setScaleX(0.85f); cbDash.setScaleY(0.85f); cbDash.setPivotX(0);
-                cbTilde.setScaleX(0.85f); cbTilde.setScaleY(0.85f); cbTilde.setPivotX(0);
+                // 方框缩小10% (0.85 -> 0.75)
+                cbStar.setScaleX(0.75f); cbStar.setScaleY(0.75f); cbStar.setPivotX(0);
+                cbHash.setScaleX(0.75f); cbHash.setScaleY(0.75f); cbHash.setPivotX(0);
+                cbDash.setScaleX(0.75f); cbDash.setScaleY(0.75f); cbDash.setPivotX(0);
+                cbTilde.setScaleX(0.75f); cbTilde.setScaleY(0.75f); cbTilde.setPivotX(0);
 
                 layout.addView(cbStar, cbParams);
                 layout.addView(cbHash, cbParams);
@@ -610,9 +612,9 @@ jobs:
 
                 TextView tvCustom = new TextView(this);
                 tvCustom.setText("去掉自定义标点 (最多4种)：");
-                tvCustom.setPadding(5, 15, 0, 5);
+                tvCustom.setPadding(5, 5, 0, 5);
                 tvCustom.setTextColor(0xFF555555);
-                tvCustom.setTextSize(11f);
+                tvCustom.setTextSize(12f); // 字体变大一点点
                 layout.addView(tvCustom);
 
                 LinearLayout customLayout = new LinearLayout(this);
@@ -624,12 +626,18 @@ jobs:
                 EditText et4 = new EditText(this); et4.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
 
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-                lp.setMargins(6, 0, 6, 0);
+                lp.setMargins(6, -10, 6, -10);
                 et1.setLayoutParams(lp); et2.setLayoutParams(lp); et3.setLayoutParams(lp); et4.setLayoutParams(lp);
                 et1.setGravity(Gravity.CENTER); et2.setGravity(Gravity.CENTER); et3.setGravity(Gravity.CENTER); et4.setGravity(Gravity.CENTER);
-                et1.setTextSize(12f); et2.setTextSize(12f); et3.setTextSize(12f); et4.setTextSize(12f);
-                et1.setPadding(0, 8, 0, 8); et2.setPadding(0, 8, 0, 8); et3.setPadding(0, 8, 0, 8); et4.setPadding(0, 8, 0, 8);
+                et1.setTextSize(14f); et2.setTextSize(14f); et3.setTextSize(14f); et4.setTextSize(14f); // 里面输入的字体变大
+                et1.setPadding(0, 0, 0, 0); et2.setPadding(0, 0, 0, 0); et3.setPadding(0, 0, 0, 0); et4.setPadding(0, 0, 0, 0);
                 et1.setHint(""); et2.setHint(""); et3.setHint(""); et4.setHint("");
+                
+                // 下方输入框整体缩小30%
+                et1.setScaleX(0.70f); et1.setScaleY(0.70f);
+                et2.setScaleX(0.70f); et2.setScaleY(0.70f);
+                et3.setScaleX(0.70f); et3.setScaleY(0.70f);
+                et4.setScaleX(0.70f); et4.setScaleY(0.70f);
 
                 customLayout.addView(et1);
                 customLayout.addView(et2);
@@ -639,8 +647,8 @@ jobs:
 
                 final String finalText = rawText;
 
-                // 修复崩溃1：改为使用原生 Android 对话框，完美适配透明 Activity
-                AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Light_Dialog_Alert)
+                // 强制使用原生标准 Material 质感（白底黑字防灰化）
+                AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
                     .setView(layout)
                     .setCancelable(false)
                     .setPositiveButton("是 (清理)", (d, w) -> {
@@ -689,6 +697,9 @@ jobs:
                 } else {
                     dialog.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_PHONE);
                 }
+                
+                // 彻底去除各大手机厂商强加的圆角和灰底，强制覆盖一块无圆角的纯白幕布
+                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xFFFFFFFF));
                     
                 dialog.setOnShowListener(d -> {
                     dialog.getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(0xFF4CAF50);
@@ -1278,7 +1289,28 @@ jobs:
                 
                 editFloatInput.addTextChangedListener(new TextWatcher() {
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                        if (count > 2 && !MainActivity.isCleanDialogOpen) {
+                            String added = s.subSequence(start, start + count).toString();
+                            int sc = 0, hc = 0, dc = 0, tc = 0;
+                            for (int i = 0; i < added.length(); i++) {
+                                char c = added.charAt(i);
+                                if (c == '*') sc++; else if (c == '#') hc++; else if (c == '-') dc++; else if (c == '~') tc++;
+                            }
+                            if (sc >= 3 || hc >= 3 || dc >= 3 || tc >= 3) {
+                                new Handler(Looper.getMainLooper()).post(() -> {
+                                    MainActivity.checkAndPromptCleanup(FloatingService.this, editFloatInput.getText().toString(), cleaned -> {
+                                        if (!cleaned.equals(editFloatInput.getText().toString())) {
+                                            MainActivity.isCleanDialogOpen = true;
+                                            editFloatInput.setText(cleaned);
+                                            editFloatInput.setSelection(cleaned.length());
+                                            MainActivity.isCleanDialogOpen = false;
+                                        }
+                                    });
+                                });
+                            }
+                        }
+                    }
                     @Override public void afterTextChanged(Editable s) {
                         if (!isChecking) {
                             sp.edit().putString("sync_text", s.toString()).apply();
@@ -1413,7 +1445,9 @@ jobs:
                                         if (!isVisible) {
                                             String sync = sp.getString("sync_text", "");
                                             if (!sync.isEmpty() && !sync.equals(editFloatInput.getText().toString())) {
+                                                MainActivity.isCleanDialogOpen = true; // 阻断自动恢复时弹窗
                                                 editFloatInput.setText(sync);
+                                                MainActivity.isCleanDialogOpen = false;
                                             }
                                         }
                                         panelInput.setVisibility(isVisible ? View.GONE : View.VISIBLE);
@@ -1971,15 +2005,15 @@ jobs:
                     else if (c == '-') dashCount++;
                     else if (c == '~') tildeCount++;
                 }
-                if (starCount >= 3 || hashCount >= 3 || dashCount >= 3 || tildeCount >= 3) {
+                if (starCount >= 4 || hashCount >= 4 || dashCount >= 4 || tildeCount >= 4) {
                     isCleanDialogOpen = true;
                     SymbolCleanActivity.callback = callback;
                     Intent intent = new Intent(context, SymbolCleanActivity.class);
                     intent.putExtra("raw_text", text);
-                    intent.putExtra("star", starCount >= 3);
-                    intent.putExtra("hash", hashCount >= 3);
-                    intent.putExtra("dash", dashCount >= 3);
-                    intent.putExtra("tilde", tildeCount >= 3);
+                    intent.putExtra("star", starCount >= 4);
+                    intent.putExtra("hash", hashCount >= 4);
+                    intent.putExtra("dash", dashCount >= 4);
+                    intent.putExtra("tilde", tildeCount >= 4);
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     context.startActivity(intent);
                 } else {
@@ -3245,7 +3279,30 @@ jobs:
                 
                 inputText.addTextChangedListener(new TextWatcher() {
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                        // 核心：如果瞬间增加超过2个字符（代表是粘贴而不是打字），且当前没有在恢复历史记录和弹窗
+                        if (count > 2 && !isRestoringHistory && !MainActivity.isCleanDialogOpen) {
+                            String added = s.subSequence(start, start + count).toString();
+                            int sc = 0, hc = 0, dc = 0, tc = 0;
+                            for (int i = 0; i < added.length(); i++) {
+                                char c = added.charAt(i);
+                                if (c == '*') sc++; else if (c == '#') hc++; else if (c == '-') dc++; else if (c == '~') tc++;
+                            }
+                            if (sc >= 3 || hc >= 3 || dc >= 3 || tc >= 3) {
+                                new Handler(Looper.getMainLooper()).post(() -> {
+                                    checkAndPromptCleanup(MainActivity.this, inputText.getText().toString(), cleaned -> {
+                                        if (!cleaned.equals(inputText.getText().toString())) {
+                                            boolean old = isRestoringHistory;
+                                            isRestoringHistory = true; // 临时阻断无限循环
+                                            inputText.setText(cleaned);
+                                            inputText.setSelection(cleaned.length());
+                                            isRestoringHistory = old;
+                                        }
+                                    });
+                                });
+                            }
+                        }
+                    }
                     @Override public void afterTextChanged(Editable s) { 
                         int count = s.toString().replaceAll("[\\p{P}\\p{S}\\s]", "").length();
                         tvWordCount.setText(count + " 字"); 
@@ -3756,7 +3813,9 @@ jobs:
                 super.onResume();
                 String sync = sp.getString("sync_text", "");
                 if (!sync.isEmpty() && !sync.equals(inputText.getText().toString())) {
+                    isRestoringHistory = true; // 阻断自动恢复时触发清理弹窗
                     inputText.setText(sync);
+                    isRestoringHistory = false;
                 }
                 
                 boolean spFast = sp.getBoolean("is_fast_mode", false);
