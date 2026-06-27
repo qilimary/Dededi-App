@@ -1,5 +1,4 @@
 
-
 name: Build Android APK
 
 on:
@@ -558,6 +557,7 @@ jobs:
 
             @Override
             protected void onCreate(Bundle savedInstanceState) {
+                overridePendingTransition(0, 0);
                 super.onCreate(savedInstanceState);
                 getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
 
@@ -570,31 +570,36 @@ jobs:
 
                 LinearLayout layout = new LinearLayout(this);
                 layout.setOrientation(LinearLayout.VERTICAL);
-                layout.setPadding(50, 40, 50, 10);
+                layout.setPadding(40, 30, 40, 0);
 
                 TextView tvTitle = new TextView(this);
                 tvTitle.setText("提示：发现符号残留");
-                tvTitle.setTextSize(16f);
+                tvTitle.setTextSize(15f);
                 tvTitle.setTextColor(0xFF000000);
                 tvTitle.getPaint().setFakeBoldText(true);
-                tvTitle.setPadding(0, 0, 0, 10);
+                tvTitle.setPadding(0, 0, 0, 8);
                 
                 TextView tvMsg = new TextView(this);
                 tvMsg.setText("注意到文本可能存在符号残留，是否清理？");
-                tvMsg.setTextSize(14f);
+                tvMsg.setTextSize(13f);
                 tvMsg.setTextColor(0xFF333333);
-                tvMsg.setPadding(0, 0, 0, 20);
+                tvMsg.setPadding(0, 0, 0, 15);
 
                 layout.addView(tvTitle);
                 layout.addView(tvMsg);
 
                 LinearLayout.LayoutParams cbParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                cbParams.setMargins(0, 0, 0, -10);
+                cbParams.setMargins(0, -8, 0, -8);
 
                 CheckBox cbStar = new CheckBox(this); cbStar.setText("去掉所有 * 号"); cbStar.setChecked(hasStar); cbStar.setTextSize(13f); cbStar.setTextColor(0xFF333333);
                 CheckBox cbHash = new CheckBox(this); cbHash.setText("去掉所有 # 号"); cbHash.setChecked(hasHash); cbHash.setTextSize(13f); cbHash.setTextColor(0xFF333333);
                 CheckBox cbDash = new CheckBox(this); cbDash.setText("去掉所有 - 号"); cbDash.setChecked(hasDash); cbDash.setTextSize(13f); cbDash.setTextColor(0xFF333333);
                 CheckBox cbTilde = new CheckBox(this); cbTilde.setText("去掉所有 ~ 号"); cbTilde.setChecked(hasTilde); cbTilde.setTextSize(13f); cbTilde.setTextColor(0xFF333333);
+
+                cbStar.setScaleX(0.85f); cbStar.setScaleY(0.85f); cbStar.setPivotX(0);
+                cbHash.setScaleX(0.85f); cbHash.setScaleY(0.85f); cbHash.setPivotX(0);
+                cbDash.setScaleX(0.85f); cbDash.setScaleY(0.85f); cbDash.setPivotX(0);
+                cbTilde.setScaleX(0.85f); cbTilde.setScaleY(0.85f); cbTilde.setPivotX(0);
 
                 layout.addView(cbStar, cbParams);
                 layout.addView(cbHash, cbParams);
@@ -602,10 +607,10 @@ jobs:
                 layout.addView(cbTilde, cbParams);
 
                 TextView tvCustom = new TextView(this);
-                tvCustom.setText("去掉自定义标点 (最多3种)：");
-                tvCustom.setPadding(5, 25, 0, 10);
+                tvCustom.setText("去掉自定义标点 (最多4种)：");
+                tvCustom.setPadding(5, 15, 0, 5);
                 tvCustom.setTextColor(0xFF555555);
-                tvCustom.setTextSize(12f);
+                tvCustom.setTextSize(11f);
                 layout.addView(tvCustom);
 
                 LinearLayout customLayout = new LinearLayout(this);
@@ -614,18 +619,20 @@ jobs:
                 EditText et1 = new EditText(this); et1.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
                 EditText et2 = new EditText(this); et2.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
                 EditText et3 = new EditText(this); et3.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
+                EditText et4 = new EditText(this); et4.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1)});
 
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-                lp.setMargins(10, 0, 10, 0);
-                et1.setLayoutParams(lp); et2.setLayoutParams(lp); et3.setLayoutParams(lp);
-                et1.setGravity(Gravity.CENTER); et2.setGravity(Gravity.CENTER); et3.setGravity(Gravity.CENTER);
-                et1.setTextSize(13f); et2.setTextSize(13f); et3.setTextSize(13f);
-                et1.setPadding(0, 10, 0, 10); et2.setPadding(0, 10, 0, 10); et3.setPadding(0, 10, 0, 10);
-                et1.setHint(""); et2.setHint(""); et3.setHint("");
+                lp.setMargins(6, 0, 6, 0);
+                et1.setLayoutParams(lp); et2.setLayoutParams(lp); et3.setLayoutParams(lp); et4.setLayoutParams(lp);
+                et1.setGravity(Gravity.CENTER); et2.setGravity(Gravity.CENTER); et3.setGravity(Gravity.CENTER); et4.setGravity(Gravity.CENTER);
+                et1.setTextSize(12f); et2.setTextSize(12f); et3.setTextSize(12f); et4.setTextSize(12f);
+                et1.setPadding(0, 8, 0, 8); et2.setPadding(0, 8, 0, 8); et3.setPadding(0, 8, 0, 8); et4.setPadding(0, 8, 0, 8);
+                et1.setHint(""); et2.setHint(""); et3.setHint(""); et4.setHint("");
 
                 customLayout.addView(et1);
                 customLayout.addView(et2);
                 customLayout.addView(et3);
+                customLayout.addView(et4);
                 layout.addView(customLayout);
 
                 final String finalText = rawText;
@@ -638,12 +645,13 @@ jobs:
                         String c1 = et1.getText().toString();
                         String c2 = et2.getText().toString();
                         String c3 = et3.getText().toString();
+                        String c4 = et4.getText().toString();
 
                         boolean dup = false;
-                        if (cbStar.isChecked() && (c1.equals("*") || c2.equals("*") || c3.equals("*"))) dup = true;
-                        if (cbHash.isChecked() && (c1.equals("#") || c2.equals("#") || c3.equals("#"))) dup = true;
-                        if (cbDash.isChecked() && (c1.equals("-") || c2.equals("-") || c3.equals("-"))) dup = true;
-                        if (cbTilde.isChecked() && (c1.equals("~") || c2.equals("~") || c3.equals("~"))) dup = true;
+                        if (cbStar.isChecked() && (c1.equals("*") || c2.equals("*") || c3.equals("*") || c4.equals("*"))) dup = true;
+                        if (cbHash.isChecked() && (c1.equals("#") || c2.equals("#") || c3.equals("#") || c4.equals("#"))) dup = true;
+                        if (cbDash.isChecked() && (c1.equals("-") || c2.equals("-") || c3.equals("-") || c4.equals("-"))) dup = true;
+                        if (cbTilde.isChecked() && (c1.equals("~") || c2.equals("~") || c3.equals("~") || c4.equals("~"))) dup = true;
 
                         if (dup) {
                             Toast.makeText(SymbolCleanActivity.this, "提示：已勾选的符号无需重复输入", Toast.LENGTH_SHORT).show();
@@ -657,29 +665,38 @@ jobs:
                         if (!c1.isEmpty()) result = result.replace(c1, "");
                         if (!c2.isEmpty()) result = result.replace(c2, "");
                         if (!c3.isEmpty()) result = result.replace(c3, "");
+                        if (!c4.isEmpty()) result = result.replace(c4, "");
 
                         if (callback != null) callback.onCleaned(result);
                         MainActivity.isCleanDialogOpen = false;
-                        finish();
+                        d.dismiss();
                     })
                     .setNegativeButton("否 (不清理)", (d, w) -> {
                         if (callback != null) callback.onCleaned(finalText);
                         MainActivity.isCleanDialogOpen = false;
-                        finish();
+                        d.dismiss();
                     })
                     .create();
+                    
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    dialog.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+                } else {
+                    dialog.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_PHONE);
+                }
                     
                 dialog.setOnShowListener(d -> {
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(0xFF4CAF50);
                     dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(0xFF9E9E9E);
                 });
                 
+                dialog.setOnDismissListener(d -> finish());
                 dialog.show();
             }
             
             @Override
-            public void onDestroy() {
-                super.onDestroy();
+            public void finish() {
+                super.finish();
+                overridePendingTransition(0, 0);
                 MainActivity.isCleanDialogOpen = false;
             }
         }
@@ -819,7 +836,7 @@ jobs:
 
                     <RelativeLayout android:layout_width="match_parent" android:layout_height="140dp" android:layout_marginBottom="10dp">
                         <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="match_parent"
-                            android:hint="输入或粘贴需要检查的文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg"
+                            android:hint="在此输入或者粘贴需要检查的文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg"
                             android:padding="12dp" android:paddingBottom="24dp" android:textSize="15sp" android:scrollbars="vertical"/>
                         <TextView android:id="@+id/tvWordCount" android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:layout_alignParentBottom="true" android:layout_alignParentEnd="true" android:layout_marginEnd="8dp" android:layout_marginBottom="6dp"
