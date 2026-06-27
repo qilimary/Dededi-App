@@ -521,9 +521,10 @@ jobs:
                             final String finalText = combined.toString();
                             new Handler(Looper.getMainLooper()).post(() -> {
                                 if (!finalText.trim().isEmpty()) {
+                                    MainActivity.pendingImportText = finalText; // 使用内存直传，突破系统限制
                                     Intent serviceIntent = new Intent(FilePickerActivity.this, FloatingService.class);
-                                    serviceIntent.putExtra("IMPORTED_TEXT", finalText);
                                     startService(serviceIntent);
+                                    
                                 } else {
                                     Toast.makeText(FilePickerActivity.this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
                                 }
@@ -563,8 +564,10 @@ jobs:
                 super.onCreate(savedInstanceState);
                 getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
 
-                String rawText = getIntent().getStringExtra("raw_text");
+                String rawText = MainActivity.pendingCleanText;
                 if (rawText == null) rawText = "";
+                MainActivity.pendingCleanText = null; // 读取后立即清空释放内存
+           
                 boolean hasStar = getIntent().getBooleanExtra("star", false);
                 boolean hasHash = getIntent().getBooleanExtra("hash", false);
                 boolean hasDash = getIntent().getBooleanExtra("dash", false);
@@ -1228,7 +1231,9 @@ jobs:
 
             @Override
             public int onStartCommand(Intent intent, int flags, int startId) {
-                if (intent != null && intent.hasExtra("IMPORTED_TEXT")) {
+                if (MainActivity.pendingImportText != null) {
+                String text = MainActivity.pendingImportText;
+                MainActivity.pendingImportText = null; // 读取后清空
                     String text = intent.getStringExtra("IMPORTED_TEXT");
                     if (editFloatInput != null) {
                         MainActivity.checkAndPromptCleanup(this, text, cleaned -> {
@@ -1319,9 +1324,12 @@ jobs:
                     }
                     @Override public void afterTextChanged(Editable s) {
                         if (!isChecking) {
-                            sp.edit().putString("sync_text", s.toString()).apply();
+                            final String txt = s.toString();
+                            // 放入异步线程执行，防止10万字同步写入导致输入法打字卡顿
+                            new Thread(() -> sp.edit().putString("sync_text", txt).apply()).start();
                         }
                     }
+                    
                 });
 
                 floatView.setOnTouchListener((v, event) -> {
@@ -1390,9 +1398,9 @@ jobs:
                 });
                 
                 Runnable jumpToApp = () -> {
+                    MainActivity.pendingSyncText = editFloatInput.getText().toString();
                     Intent intent = new Intent(FloatingService.this, MainActivity.class);
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    intent.putExtra("SYNC_TEXT", editFloatInput.getText().toString());
                     startActivity(intent);
                     panelInput.setVisibility(View.GONE);
                     setFocusable(false);
@@ -1402,6 +1410,7 @@ jobs:
                             setFocusable(false);
                         }
                     }, 200);
+                
                 };
 
                 btnFloatJump.setOnClickListener(v -> jumpToApp.run());
@@ -1992,6 +2001,10 @@ jobs:
             public static boolean typoMapLoaded = false;
             
             public static volatile boolean isCleanDialogOpen = false;
+            // 新增：用于突破系统1MB的数据传输限制，防止10万字超长文本在组件间传递时闪退
+            public static String pendingImportText = null;
+            public static String pendingSyncText = null;
+            public static String pendingCleanText = null;
             private String editingTypoKey = null;
 
             public interface TextCleanCallback {
@@ -2019,7 +2032,7 @@ jobs:
                 isCleanDialogOpen = true;
                 SymbolCleanActivity.callback = callback;
                 Intent intent = new Intent(context, SymbolCleanActivity.class);
-                intent.putExtra("raw_text", text);
+                MainActivity.pendingCleanText = text; // 使用内存直传
                 intent.putExtra("star", starCount >= 4);
                 intent.putExtra("hash", hashCount >= 4);
                 intent.putExtra("dash", dashCount >= 4);
@@ -3317,10 +3330,26 @@ jobs:
                         }
                     }
                     @Override public void afterTextChanged(Editable s) { 
-                        int count = s.toString().replaceAll("[\\p{P}\\p{S}\\s]", "").length();
-                        tvWordCount.setText(count + " 字"); 
-                        sp.edit().putString("sync_text", s.toString()).apply();
-                        btnSaveTxt.setEnabled(s.length() > 0);
+                        final String textStr = s.toString();
+                        final boolean hasContent = textStr.length() > 0;
+                        
+                        // 性能优化核心：剥离正则替换算法，改用异步低耗CPU循环，挽救10万字情况下的界面卡死崩溃
+                        new Thread(() -> {
+                            int count = 0;
+                            for (int i = 0; i < textStr.length(); i++) {
+                                char c = textStr.charAt(i);
+                                // 快速跳过空格和基础标点以计算字数
+                                if (c > ' ' && c != '，' && c != '。' && c != '！' && c != '？' && c != '、' && c != '；' && c != '：' && c != '“' && c != '”' && c != '（' && c != '）' && c != ',' && c != '.' && c != '?' && c != '!') {
+                                    count++;
+                                }
+                            }
+                            final int finalCount = count;
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                tvWordCount.setText(finalCount + " 字");
+                                btnSaveTxt.setEnabled(hasContent);
+                            });
+                            sp.edit().putString("sync_text", textStr).apply();
+                        }).start();
                         
                         if (!isRestoringHistory && btnCheck.getText().toString().equals("继续纠错")) {
                             btnCheck.setText("开始纠错");
@@ -3887,7 +3916,22 @@ jobs:
                             });
                         }
                     }
-                } else if (intent.hasExtra("SYNC_TEXT")) {
+                }
+                // 拦截超长文本的传递
+                if (MainActivity.pendingSyncText != null) {
+                    String syncText = MainActivity.pendingSyncText;
+                    MainActivity.pendingSyncText = null;
+                    if (!syncText.isEmpty()) {
+                        inputText.setText(syncText);
+                        sp.edit().putString("sync_text", syncText).apply();
+                    }
+                } else if (intent != null && intent.hasExtra("SYNC_TEXT")) {
+                    String syncText = intent.getStringExtra("SYNC_TEXT");
+                    if (syncText != null && !syncText.isEmpty()) {
+                        inputText.setText(syncText);
+                        sp.edit().putString("sync_text", syncText).apply();
+                    }
+                }
                     String syncText = intent.getStringExtra("SYNC_TEXT");
                     if (syncText != null && !syncText.isEmpty()) {
                         inputText.setText(syncText);
