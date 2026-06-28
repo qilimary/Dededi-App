@@ -2989,6 +2989,18 @@ jobs:
                             finalArray.put(newArray.getJSONObject(i));
                         }
                         
+                        // 清理被丢弃的旧记录的文件，防止残留占用内存
+                        if (newArray.length() > 49) {
+                            for (int i = 49; i < newArray.length(); i++) {
+                                String oldFileId = newArray.getJSONObject(i).optString("file", "");
+                                if (!oldFileId.isEmpty()) {
+                                    new File(dir, oldFileId + ".txt").delete();
+                                    new File(dir, oldFileId + "_blocks.json").delete();
+                                    new File(dir, oldFileId + "_manual.json").delete();
+                                }
+                            }
+                        }
+                        
                         sp.edit().putString("history_records", finalArray.toString()).apply();
                         runOnUiThread(() -> renderHistoryUI());
                     } catch (Exception e) {}
@@ -3822,15 +3834,13 @@ jobs:
                         .setMessage("是否清空全部历史记录？")
                         .setPositiveButton("是", (d, w) -> {
                             try {
-                                String historyStr = sp.getString("history_records", "[]");
-                                JSONArray arr = new JSONArray(historyStr);
                                 File dir = new File(getFilesDir(), "history");
-                                for(int i=0; i<arr.length(); i++) {
-                                    String fileId = arr.getJSONObject(i).optString("file", "");
-                                    if(!fileId.isEmpty()) {
-                                        new File(dir, fileId + ".txt").delete();
-                                        new File(dir, fileId + "_blocks.json").delete();
-                                        new File(dir, fileId + "_manual.json").delete();
+                                if (dir.exists() && dir.isDirectory()) {
+                                    File[] files = dir.listFiles();
+                                    if (files != null) {
+                                        for (File f : files) {
+                                            f.delete();
+                                        }
                                     }
                                 }
                             } catch(Exception e) {}
@@ -3995,10 +4005,13 @@ jobs:
                                         if (ssb != null) {
                                             isManuallyEditedOut = true;
                                             outputText.setText(ssb);
+                                            outputText.setMovementMethod(MyLinkMovementMethod.getInstance());
+                                            outputText.setHighlightColor(Color.TRANSPARENT);
                                             btnCheck.setText("继续纠错");
                                             btnCopy.setEnabled(true);
                                             btnSaveTxt.setEnabled(true);
                                         }
+                                    
                                     } else if (!blocksToSet.isEmpty()) {
                                         isManuallyEditedOut = false;
                                         allSentencesBlocks = deserializeBlocks(blocksToSet);
