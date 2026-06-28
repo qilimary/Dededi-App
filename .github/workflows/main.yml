@@ -1157,6 +1157,7 @@ jobs:
             private Button btnFloatSwitch;
             private boolean isChecking = false;
             private volatile boolean isInterruptRequested = false;
+            private String lastFloatCleanText = "";
             
             private long lastStatusTime = 0;
             private boolean lastStatusWasTypo = false;
@@ -1384,7 +1385,7 @@ jobs:
                 });
 
                 btnFloatCopy.setOnClickListener(v -> {
-                    String fullCleanText = MainActivity.getCleanTextStatic();
+                    String fullCleanText = lastFloatCleanText;
                     if (fullCleanText.isEmpty()) fullCleanText = editFloatInput.getText().toString();
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                     if (clipboard != null) {
@@ -1865,19 +1866,19 @@ jobs:
                             syncAllBlocks.add(finalSentenceBlocks);
                         }
                         
-                        MainActivity.allSentencesBlocks = syncAllBlocks;
-                        MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
                         MainActivity.hasNewFloatResult = true;
 
                         if (fileId != null) {
                             try {
                                 File dir = new File(getFilesDir(), "history");
-                                String blocksJson = MainActivity.serializeBlocks(MainActivity.allSentencesBlocks);
+                                String blocksJson = MainActivity.serializeBlocks(syncAllBlocks);
                                 FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
                                 fosBlocks.write(blocksJson.getBytes("UTF-8"));
                                 fosBlocks.close();
                             } catch (Exception e) {}
                         }
+                        
+                        lastFloatCleanText = fullCleanText.toString();
                         
                         if (errorCount[0] > 0) {
                             try { Thread.sleep(1000); } catch (Exception e) {}
@@ -1893,7 +1894,7 @@ jobs:
                             }
                             circleSpin.setVisibility(View.INVISIBLE);
                             ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", fullCleanText.toString()));
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", lastFloatCleanText));
                         });
                     } catch (Exception e) {
                         new Handler(Looper.getMainLooper()).post(() -> {
@@ -4044,6 +4045,19 @@ jobs:
                                             new File(dir, delFileId + ".txt").delete();
                                             new File(dir, delFileId + "_blocks.json").delete();
                                             new File(dir, delFileId + "_manual.json").delete();
+                                            
+                                            // 【新增】如果删除的恰好是当前显示在主界面的记录，清空主界面状态防止“复活”Bug
+                                            if (delFileId.equals(lastSavedHistoryFileId)) {
+                                                lastSavedHistoryFileId = null;
+                                                isManuallyEditedOut = false;
+                                                inputText.setText("");
+                                                allSentencesBlocks.clear();
+                                                outputText.setText("");
+                                                btnCheck.setText("开始纠错");
+                                                btnCopy.setEnabled(false);
+                                                btnSaveTxt.setEnabled(false);
+                                                Toast.makeText(this, "当前显示的历史记录已被删除", Toast.LENGTH_SHORT).show();
+                                            }
                                         }
                                     } catch(Exception e) {}
                                     
@@ -4099,12 +4113,23 @@ jobs:
                 
                 if (hasNewFloatResult) {
                     hasNewFloatResult = false;
-                    isManuallyEditedOut = false;
-                    renderFinalBlocks();
-                    btnCopy.setEnabled(true);
-                    btnCheck.setEnabled(true);
-                    btnSaveTxt.setEnabled(true);
-                    scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP));
+                    
+                    // 智能判断：只有当主界面完全空闲（没有输入文本、没有输出结果、不在编辑模式）时，才自动加载结果
+                    boolean isMainIdle = (inputText.getText().length() == 0 && outputText.getText().length() == 0 && !isManuallyEditedOut);
+                    
+                    if (isMainIdle) {
+                        // 空闲状态：直接显示悬浮窗的纠错结果
+                        isManuallyEditedOut = false;
+                        renderFinalBlocks();
+                        btnCopy.setEnabled(true);
+                        btnCheck.setEnabled(true);
+                        btnSaveTxt.setEnabled(true);
+                        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP));
+                    } else {
+                        // 忙碌状态：不打断用户当前的编辑或输入，只存入历史记录并提示
+                        renderHistoryUI();
+                        Toast.makeText(this, "悬浮窗完成纠错，已存入历史记录", Toast.LENGTH_SHORT).show();
+                    }
                 }
             }
 
