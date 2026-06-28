@@ -1165,9 +1165,11 @@ jobs:
             private String currentHistoryFileId = null;
             
             private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
-
+            
             private void saveHistory(String text, String existingFileId) {
                 if (text == null || text.trim().isEmpty()) return;
+                // 使用数组容器绕过 lambda 中变量必须为 effectively final 的限制
+                final String[] fileIdHolder = {existingFileId};
                 new Thread(() -> {
                     try {
                         String historyStr = sp.getString("history_records", "[]");
@@ -1175,14 +1177,14 @@ jobs:
                         
                         int currentHash = text.hashCode();
                         
-                        if (existingFileId == null && historyArray.length() > 0) {
+                        if (fileIdHolder[0] == null && historyArray.length() > 0) {
                             org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
                             if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
-                                existingFileId = lastRecord.optString("file", null);
+                                fileIdHolder[0] = lastRecord.optString("file", null);
                             }
                         }
                         
-                        String fileId = existingFileId != null ? existingFileId : java.util.UUID.randomUUID().toString();
+                        String fileId = fileIdHolder[0] != null ? fileIdHolder[0] : java.util.UUID.randomUUID().toString();
                         currentHistoryFileId = fileId;
                         
                         org.json.JSONArray newArray = new org.json.JSONArray();
@@ -2970,10 +2972,11 @@ jobs:
                     return "";
                 }
             }
-
-            // 替换原有的 saveHistory 方法，增加 existingFileId 参数支持置顶和更新
+            
             private void saveHistory(String text, String existingFileId) {
                 if (text == null || text.trim().isEmpty()) return;
+                // 使用数组容器绕过 lambda 中变量必须为 effectively final 的限制
+                final String[] fileIdHolder = {existingFileId};
                 new Thread(() -> {
                     try {
                         String historyStr = sp.getString("history_records", "[]");
@@ -2981,15 +2984,15 @@ jobs:
                         
                         int currentHash = text.hashCode();
                         
-                        if (existingFileId == null && historyArray.length() > 0) {
+                        if (fileIdHolder[0] == null && historyArray.length() > 0) {
                             org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
                             if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
-                                existingFileId = lastRecord.optString("file", null);
+                                fileIdHolder[0] = lastRecord.optString("file", null);
                             }
                         }
                         
                         // 如果传入了旧的ID，说明是修改历史；否则生成新ID
-                        String fileId = existingFileId != null ? existingFileId : java.util.UUID.randomUUID().toString();
+                        String fileId = fileIdHolder[0] != null ? fileIdHolder[0] : java.util.UUID.randomUUID().toString();
                         lastSavedHistoryFileId = fileId;
                         
                         // 过滤掉旧的同名记录，顺便准备新数组
