@@ -1166,7 +1166,7 @@ jobs:
             
             private Runnable hideStatusRunnable = () -> statusContainer.setVisibility(View.INVISIBLE);
 
-            private void saveHistory(String text, String fileId) {
+            private void saveHistory(String text, String existingFileId) {
                 if (text == null || text.trim().isEmpty()) return;
                 new Thread(() -> {
                     try {
@@ -1174,19 +1174,30 @@ jobs:
                         org.json.JSONArray historyArray = new org.json.JSONArray(historyStr);
                         
                         int currentHash = text.hashCode();
-                        if (historyArray.length() > 0) {
+                        
+                        if (existingFileId == null && historyArray.length() > 0) {
                             org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
-                            if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) return;
-                            if (lastRecord.has("text") && lastRecord.getString("text").equals(text)) return;
+                            if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
+                                existingFileId = lastRecord.optString("file", null);
+                            }
+                        }
+                        
+                        String fileId = existingFileId != null ? existingFileId : java.util.UUID.randomUUID().toString();
+                        currentHistoryFileId = fileId;
+                        
+                        org.json.JSONArray newArray = new org.json.JSONArray();
+                        for (int i = 0; i < historyArray.length(); i++) {
+                            org.json.JSONObject obj = historyArray.getJSONObject(i);
+                            if (!obj.optString("file", "").equals(fileId)) {
+                                newArray.put(obj);
+                            }
                         }
                         
                         org.json.JSONObject newRecord = new org.json.JSONObject();
                         newRecord.put("time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
                         newRecord.put("textHash", currentHash);
-                        
                         String preview = text.length() > 16 ? text.substring(0, 16).replace("\n", " ") + "..." : text.replace("\n", " ");
                         newRecord.put("preview", preview);
-                        
                         newRecord.put("file", fileId);
                         
                         File dir = new File(getFilesDir(), "history");
@@ -1195,16 +1206,16 @@ jobs:
                         fos.write(text.getBytes("UTF-8"));
                         fos.close();
                         
-                        org.json.JSONArray newArray = new org.json.JSONArray();
-                        newArray.put(newRecord);
-                        int limit = Math.min(historyArray.length(), 49);
+                        org.json.JSONArray finalArray = new org.json.JSONArray();
+                        finalArray.put(newRecord);
+                        int limit = Math.min(newArray.length(), 49);
                         for (int i = 0; i < limit; i++) {
-                            newArray.put(historyArray.getJSONObject(i));
+                            finalArray.put(newArray.getJSONObject(i));
                         }
                         
-                        if (historyArray.length() >= 50) {
-                            for (int i = 49; i < historyArray.length(); i++) {
-                                String oldFileId = historyArray.getJSONObject(i).optString("file", "");
+                        if (newArray.length() > 49) {
+                            for (int i = 49; i < newArray.length(); i++) {
+                                String oldFileId = newArray.getJSONObject(i).optString("file", "");
                                 if (!oldFileId.isEmpty()) {
                                     new File(dir, oldFileId + ".txt").delete();
                                     new File(dir, oldFileId + "_blocks.json").delete();
@@ -1212,7 +1223,7 @@ jobs:
                                 }
                             }
                         }
-                        sp.edit().putString("history_records", newArray.toString()).apply();
+                        sp.edit().putString("history_records", finalArray.toString()).apply();
                     } catch (Exception e) {}
                 }).start();
             }
@@ -1318,6 +1329,7 @@ jobs:
                     }
                     @Override public void afterTextChanged(Editable s) {
                         if (!isChecking) {
+                            currentHistoryFileId = null;
                             if (debounceRunnable != null) handler.removeCallbacks(debounceRunnable);
                             debounceRunnable = () -> {
                                 String textStr = s.toString();
@@ -1356,6 +1368,7 @@ jobs:
                         CharSequence pasteText = clipboard.getPrimaryClip().getItemAt(0).getText();
                         if (pasteText != null) {
                             MainActivity.checkAndPromptCleanup(FloatingService.this, pasteText.toString(), cleaned -> {
+                                currentHistoryFileId = null;
                                 editFloatInput.setText(cleaned);
                                 sp.edit().putString("sync_text", cleaned).apply();
                                 if (panelInput != null && panelInput.getVisibility() != View.VISIBLE) {
@@ -1367,13 +1380,18 @@ jobs:
                     }
                 });
                 
-                btnFloatClear.setOnClickListener(v -> editFloatInput.setText(""));
+                btnFloatClear.setOnClickListener(v -> {
+                    currentHistoryFileId = null;
+                    editFloatInput.setText("");
+                });
 
                 btnFloatCheck.setOnClickListener(v -> {
                     String text = editFloatInput.getText().toString();
                     if (!text.isEmpty()) {
-                        String fileId = java.util.UUID.randomUUID().toString();
-                        currentHistoryFileId = fileId;
+                        if (currentHistoryFileId == null) {
+                            currentHistoryFileId = java.util.UUID.randomUUID().toString();
+                        }
+                        String fileId = currentHistoryFileId;
                         saveHistory(text, fileId);
                         setFocusable(false);
                         panelInput.setVisibility(View.GONE);
@@ -2961,10 +2979,18 @@ jobs:
                         String historyStr = sp.getString("history_records", "[]");
                         org.json.JSONArray historyArray = new org.json.JSONArray(historyStr);
                         
+                        int currentHash = text.hashCode();
+                        
+                        if (existingFileId == null && historyArray.length() > 0) {
+                            org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
+                            if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
+                                existingFileId = lastRecord.optString("file", null);
+                            }
+                        }
+                        
                         // 如果传入了旧的ID，说明是修改历史；否则生成新ID
                         String fileId = existingFileId != null ? existingFileId : java.util.UUID.randomUUID().toString();
                         lastSavedHistoryFileId = fileId;
-                        int currentHash = text.hashCode();
                         
                         // 过滤掉旧的同名记录，顺便准备新数组
                         org.json.JSONArray newArray = new org.json.JSONArray();
@@ -3687,6 +3713,7 @@ jobs:
                         CharSequence pasteText = clipboard.getPrimaryClip().getItemAt(0).getText();
                         if (pasteText != null) {
                             checkAndPromptCleanup(MainActivity.this, pasteText.toString(), cleaned -> {
+                                lastSavedHistoryFileId = null;
                                 inputText.setText(cleaned);
                                 sp.edit().putString("sync_text", cleaned).apply();
                             });
@@ -3695,6 +3722,7 @@ jobs:
                 });
                 
                 btnClear.setOnClickListener(v -> {
+                    lastSavedHistoryFileId = null;
                     inputText.setText("");
                     allSentencesBlocks.clear();
                     outputText.setText("");
@@ -3730,7 +3758,7 @@ jobs:
                             Toast.makeText(MainActivity.this, "已关闭“的地得”纠错，仅开启错别字纠错。", Toast.LENGTH_LONG).show();
                         }
 
-                        saveHistory(inputText.getText().toString(), null);
+                        saveHistory(inputText.getText().toString(), lastSavedHistoryFileId);
                         isCheckingMain = true;
                         btnCheck.setText("取消");
                         doInference(isFastMode);
@@ -4165,6 +4193,7 @@ jobs:
                         String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
                         if (sharedText != null) {
                             checkAndPromptCleanup(this, sharedText, cleaned -> {
+                                lastSavedHistoryFileId = null;
                                 inputText.setText(cleaned);
                                 sp.edit().putString("sync_text", cleaned).apply();
                             });
@@ -4180,6 +4209,7 @@ jobs:
                                     progressBar.setVisibility(View.INVISIBLE);
                                     if (text != null && !text.trim().isEmpty()) {
                                         checkAndPromptCleanup(MainActivity.this, text, cleaned -> {
+                                            lastSavedHistoryFileId = null;
                                             inputText.setText(cleaned);
                                             sp.edit().putString("sync_text", cleaned).apply();
                                             saveHistory(cleaned, null);
@@ -4279,6 +4309,7 @@ jobs:
                                         inputText.setText(cleaned);
                                         sp.edit().putString("sync_text", cleaned).apply();
                                         saveHistory(cleaned, null);
+                                        lastSavedHistoryFileId = null;
                                         Toast.makeText(MainActivity.this, "导入成功", Toast.LENGTH_SHORT).show();
                                     });
                                 } else {
