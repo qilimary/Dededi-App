@@ -1867,6 +1867,7 @@ jobs:
                         
                         MainActivity.allSentencesBlocks = syncAllBlocks;
                         MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
+                        MainActivity.pendingFloatFileId = fileId;
                         MainActivity.hasNewFloatResult = true;
 
                         if (fileId != null) {
@@ -1878,6 +1879,12 @@ jobs:
                                 fosBlocks.close();
                             } catch (Exception e) {}
                         }
+                        
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            if (MainActivity.instance != null && !MainActivity.instance.isFinishing()) {
+                                MainActivity.instance.onFloatResultReady();
+                            }
+                        });
                         
                         if (errorCount[0] > 0) {
                             try { Thread.sleep(1000); } catch (Exception e) {}
@@ -1998,6 +2005,9 @@ jobs:
             static { System.loadLibrary("dededi"); }
             public static native boolean decryptFileNative(android.content.res.AssetManager mgr, String assetName, String outPath);
             public static native String getEncryptedStringNative(android.content.res.AssetManager mgr, String assetName);
+
+            public static MainActivity instance = null;
+            public static String pendingFloatFileId = null;
 
             public static Module fastModule = null;
             public static Map<String, Long> fastVocab = new HashMap<>();
@@ -3013,6 +3023,7 @@ jobs:
                 super.onCreate(savedInstanceState);
                 setContentView(R.layout.activity_main);
                 
+                instance = this;
                 sp = getSharedPreferences("DedediConfig", Context.MODE_PRIVATE);
                 
                 drawerLayout = findViewById(R.id.drawerLayout);
@@ -4049,13 +4060,16 @@ jobs:
                                             if (delFileId.equals(lastSavedHistoryFileId)) {
                                                 lastSavedHistoryFileId = null;
                                                 isManuallyEditedOut = false;
+                                                boolean oldRest = isRestoringHistory;
+                                                isRestoringHistory = true;
                                                 inputText.setText("");
+                                                isRestoringHistory = oldRest;
                                                 allSentencesBlocks.clear();
                                                 outputText.setText("");
                                                 btnCheck.setText("开始纠错");
                                                 btnCopy.setEnabled(false);
                                                 btnSaveTxt.setEnabled(false);
-                                                Toast.makeText(this, "当前显示的历史记录已被删除", Toast.LENGTH_SHORT).show();
+                                                Toast.makeText(MainActivity.this, "当前显示的历史记录已被删除", Toast.LENGTH_SHORT).show();
                                             }
                                         }
                                     } catch(Exception e) {}
@@ -4094,6 +4108,30 @@ jobs:
             }
             
             @Override
+            protected void onDestroy() {
+                super.onDestroy();
+                if (instance == this) {
+                    instance = null;
+                }
+            }
+            
+            public void onFloatResultReady() {
+                if (hasNewFloatResult) {
+                    hasNewFloatResult = false;
+                    isManuallyEditedOut = false;
+                    if (pendingFloatFileId != null) {
+                        lastSavedHistoryFileId = pendingFloatFileId;
+                    }
+                    renderFinalBlocks();
+                    btnCopy.setEnabled(true);
+                    btnCheck.setEnabled(true);
+                    btnCheck.setText("继续纠错");
+                    btnSaveTxt.setEnabled(true);
+                    scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP));
+                }
+            }
+
+            @Override
             protected void onResume() {
                 super.onResume();
                 String sync = sp.getString("sync_text", "");
@@ -4111,13 +4149,7 @@ jobs:
                 }
                 
                 if (hasNewFloatResult) {
-                    hasNewFloatResult = false;
-                    isManuallyEditedOut = false;
-                    renderFinalBlocks();
-                    btnCopy.setEnabled(true);
-                    btnCheck.setEnabled(true);
-                    btnSaveTxt.setEnabled(true);
-                    scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP));
+                    onFloatResultReady();
                 }
             }
 
@@ -4162,7 +4194,10 @@ jobs:
                 } else if (intent.hasExtra("SYNC_TEXT")) {
                     String syncText = intent.getStringExtra("SYNC_TEXT");
                     if (syncText != null && !syncText.isEmpty()) {
+                        boolean old = isRestoringHistory;
+                        isRestoringHistory = true;
                         inputText.setText(syncText);
+                        isRestoringHistory = old;
                         sp.edit().putString("sync_text", syncText).apply();
                     }
                 }
