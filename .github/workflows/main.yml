@@ -1905,15 +1905,16 @@ jobs:
                             syncAllBlocks.add(finalSentenceBlocks);
                         }
                         
-                        MainActivity.allSentencesBlocks = syncAllBlocks;
-                        MainActivity.lastTimeMs = System.currentTimeMillis() - startTime;
+                        // 使用 pending 变量，绝不直接污染主界面的数据
+                        MainActivity.pendingFloatBlocks = syncAllBlocks;
+                        MainActivity.pendingFloatTimeMs = System.currentTimeMillis() - startTime;
                         MainActivity.pendingFloatFileId = fileId;
                         MainActivity.hasNewFloatResult = true;
 
                         if (fileId != null) {
                             try {
                                 File dir = new File(getFilesDir(), "history");
-                                String blocksJson = MainActivity.serializeBlocks(MainActivity.allSentencesBlocks);
+                                String blocksJson = MainActivity.serializeBlocks(MainActivity.pendingFloatBlocks);
                                 FileOutputStream fosBlocks = new FileOutputStream(new File(dir, fileId + "_blocks.json"));
                                 fosBlocks.write(blocksJson.getBytes("UTF-8"));
                                 fosBlocks.close();
@@ -2635,6 +2636,9 @@ jobs:
             public static List<List<TextBlock>> allSentencesBlocks = new ArrayList<>();
             public static long lastTimeMs = 0;
             public static boolean hasNewFloatResult = false;
+            
+            public static List<List<TextBlock>> pendingFloatBlocks = new ArrayList<>();
+            public static long pendingFloatTimeMs = 0;
 
             public interface TextExtractCallback {
                 void onStart();
@@ -3786,7 +3790,8 @@ jobs:
                         runOnUiThread(() -> {
                             if (proModule == null && fastModule == null) {
                                 outputText.setText("AI加载失败，请检查环境异常或重新安装。");
-                            } else if (!hasStartedChecking) {
+                            } else if (!hasStartedChecking && !isManuallyEditedOut && allSentencesBlocks.isEmpty()) {
+                                // 增加防御：如果用户已经打开了历史记录（列表不为空或处于编辑状态），就不再提示“AI已加载”去刷掉文字
                                 outputText.setText("AI已加载。");
                             }
                         });
@@ -4314,9 +4319,14 @@ jobs:
                     hasNewFloatResult = false;
                     isWaitingForFloatResult = false;
                     isManuallyEditedOut = false;
+                    
                     if (pendingFloatFileId != null) {
                         lastSavedHistoryFileId = pendingFloatFileId;
                     }
+                    
+                    // 正式接管悬浮窗的挂起数据
+                    allSentencesBlocks = new ArrayList<>(pendingFloatBlocks);
+                    lastTimeMs = pendingFloatTimeMs;
                     
                     String sync = sp.getString("sync_text", "");
                     if (!sync.isEmpty() && !sync.equals(inputText.getText().toString())) {
