@@ -2225,6 +2225,7 @@ jobs:
             public static final String NUMS = "一二两三四五六七八九十百千万这那几某";
             public static final String KNOWN_QUANTS = "个只条头匹辆部台口尾座把本名位";
             
+            // ===== 数字转中文核心算法 开始 =====
             public static String numberToChinese(String numStr) {
                 if (numStr == null || numStr.isEmpty() || numStr.length() > 12) return numStr;
                 try {
@@ -2251,9 +2252,8 @@ jobs:
                     int firstPos = 11 - firstNonZeroIdx;   
                     char firstDigit = padded.charAt(firstNonZeroIdx);
                     
-                    // 【已修正】：移除了 firstPos % 4 == 2，确保 200 输出“二百”而非“两百”
-                    boolean useLiang = (firstDigit == '2') &&
-                                       (firstPos % 4 == 3 || firstPos == 4 || firstPos == 8);
+                    // 确保 200 输出“二百”而非“两百”
+                    boolean useLiang = (firstDigit == '2') && (firstPos % 4 == 3 || firstPos == 4 || firstPos == 8);
                     int liangPos = useLiang ? firstPos : -1;   
         
                     StringBuilder result = new StringBuilder();
@@ -2301,8 +2301,7 @@ jobs:
                 }
             }
         
-            private static String convertSection(String sec, boolean isHighest, int sectionStartPos,
-                                                  int liangPos, boolean skipLeadingZero) {
+            private static String convertSection(String sec, boolean isHighest, int sectionStartPos, int liangPos, boolean skipLeadingZero) {
                 String[] innerUnits = {"千", "百", "十", ""};
                 String[] digits = {"零", "一", "二", "三", "四", "五", "六", "七", "八", "九"};
         
@@ -2343,54 +2342,6 @@ jobs:
                     }
                 }
         
-                if (sb.length() > 0 && sb.charAt(sb.length() - 1) == '零') {
-                    sb.deleteCharAt(sb.length() - 1);
-                }
-                return sb.toString();
-            }
-
-            private static String convertSection(String sec, boolean isHighest, int sectionStartPos,
-                                                  int liangPos, boolean skipLeadingZero) {
-                String[] innerUnits = {"千", "百", "十", ""};
-                String[] digits = {"零", "一", "二", "三", "四", "五", "六", "七", "八", "九"};
-            
-                StringBuilder sb = new StringBuilder();
-                boolean needZero = false;
-            
-                int firstNonZeroInSec = -1;
-                for (int i = 0; i < 4; i++) {
-                    if (sec.charAt(i) != '0') {
-                        firstNonZeroInSec = i;
-                        break;
-                    }
-                }
-            
-                for (int i = 0; i < 4; i++) {
-                    int digit = sec.charAt(i) - '0';
-                    int globalPos = sectionStartPos + (3 - i);   
-            
-                    if (digit == 0) {
-                        if ((isHighest || skipLeadingZero) && sb.length() == 0) {
-                            continue;
-                        }
-                        needZero = true;
-                    } else {
-                        if (needZero) {
-                            sb.append("零");
-                            needZero = false;
-                        }
-                        if (isHighest && i == firstNonZeroInSec && i == 2 && digit == 1) {
-                            sb.append("十");
-                        }
-                        else if (isHighest && i == firstNonZeroInSec && globalPos == liangPos) {
-                            sb.append("两").append(innerUnits[i]);
-                        }
-                        else {
-                            sb.append(digits[digit]).append(innerUnits[i]);
-                        }
-                    }
-                }
-            
                 if (sb.length() > 0 && sb.charAt(sb.length() - 1) == '零') {
                     sb.deleteCharAt(sb.length() - 1);
                 }
