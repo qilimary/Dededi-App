@@ -2099,7 +2099,7 @@ jobs:
                 gramRules.add(new GramRule("(大概|大约)(.{1,15}?)(左右|上下)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(超过|高达|多达)(.{1,15}?)(以上)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(低于|少于|不足)(.{1,15}?)(以下)", new String[][]{ {null, ""}, {"", null} }));
-                gramRules.add(new GramRule("(原因是)(.{1,15}?)(造成的)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(原因是)(.{1,15}?)(造成的|导致的|造成|导致)(?=[，。；！？、\\n]|$)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(由于)(.{1,15}?)(的结果)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(截至|截止到)(.{1,15}?)(为止)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(是因为)(.{1,15}?)(的原因)", new String[][]{ {null, ""}, {"", null} }));
@@ -2111,7 +2111,8 @@ jobs:
                 gramRules.add(new GramRule("(旨在)(.{1,15}?)(为目的)", new String[][]{ {"以", null}, {null, ""} }));
                 gramRules.add(new GramRule("(本着)(.{1,15}?)(为原则)", new String[][]{ {"以", null}, {null, "原则"} }));
                 gramRules.add(new GramRule("(对于)(.{1,15}?)(问题上)", new String[][]{ {"在", null}, {null, "问题"} }));
-                gramRules.add(new GramRule("(经过)(.{1,15}?)(下)", new String[][]{ {"在", null}, {null, "后"} }));
+                gramRules.add(new GramRule("(经过)(.{1,15}?)(下)(?=[，。；！？、\\n了在的与和]|$)", new String[][]{ {"在", null}, {null, "后"} }));
+                
                 gramRules.add(new GramRule("(目的是)( *)(为了)", new String[][]{ {"是", null}, {null, ""} }));
                 gramRules.add(new GramRule("(关键在于|关键是)(.{1,15}?)(是十分重要的|是很重要的|起到重要作用|决定性的)", new String[][]{ {"", null}, {null, ""} }));
                 gramRules.add(new GramRule("(成分是|主要成分是)(.{1,15}?)(配制而成的)", new String[][]{ {null, ""} }));
@@ -2136,6 +2137,34 @@ jobs:
                 gramRules.add(new GramRule("(加快|加速)(.{0,8}?)(效率)", new String[][]{ {"提高", null} }));
                 gramRules.add(new GramRule("(缓解|减缓)(.{0,8}?)(态度|立场)", new String[][]{ {"缓和", null} }));
                 gramRules.add(new GramRule("(悬殊)( *)(很大|极大|特别大|非常大)", new String[][]{ {null, ""}, {"差距", null} }));
+                gramRules.add(new GramRule("(通过)(.{1,15}?)(使)", new String[][]{ {"", null}, {null, ""} }));
+                gramRules.add(new GramRule("(大多|主要|大都|基本|基本上)(以)(.{1,15}?)(为主)", new String[][]{ {"", "", null, null} })); 
+                
+                gramRules.add(new GramRule("(深受)(.{0,10}?)(所)(喜爱|欢迎|爱戴|好评)", new String[][]{ {null, null, "", null} }));
+             
+                gramRules.add(new GramRule("([0-9一二三四五六七八九十两零〇]+月[0-9一二三四五六七八九十两零〇]+(日|号)?)前(去|往|来|报到|汇报|报名|登记|申请|找)", new String[][]{ {null, "之前"} }));
+                
+                // 9. 几个...校长 -> 几位...校长 (增强：中间加入 [^的] 排除"几个学校的校长"这种错改)
+                gramRules.add(new GramRule("(几个)([^的]{0,8}?)(校长|老师|学生|领导|朋友|兄弟|同事|同学|教授|医生|警察|党员|干部)", new String[][]{ {"几位/几所", null} }));
+                
+                // 11. 出于...决定的 -> 出于...决定 (优化：原规则删掉"决定的"会导致句子残缺，改为去掉"的")
+                gramRules.add(new GramRule("(出于)(.{1,15}?)(的决定)", new String[][]{ {"", "决定"} }));
+          
+                gramRules.add(new GramRule("(借口)(.{1,15}?)(为名)", new String[][]{ {"以", null} }));              // "借口……为名"→"以……为名"
+                gramRules.add(new GramRule("(有)(.{1,15}?)(组成)", new String[][]{ {"由", null} }));                // "有……组成"→"由……组成"
+                gramRules.add(new GramRule("(靠的是)(.{1,15}?)(取得的)", new String[][]{ {null, ""} }));            // "靠的是……取得的"→"靠的是……"
+                
+                gramRules.add(new GramRule("(由于)(.{1,15}?)(下)(?=[，。；！？、\\n了在的与和]|$)", new String[][]{ {"在", null}, {null, "之下"} })); // "由于……下"→"在……下" 或 "由于……之下"
+                // "减少1.2倍"是不可能的，强制将"倍"改为"成"（如1.2成）
+                gramRules.add(new GramRule("(减少|降低|缩短|下降|减小|缩小)(.{0,15}?)([0-9.]+)倍", new String[][]{ {null, "成"} }));
+                // "几万"已是约数，后接"左右/上下"冗余，强制删除
+                gramRules.add(new GramRule("(几|十[一二三四五六七八九]?|成百上千|数万|数十万|数百万|数千万|数亿|上万|上百万)(.{0,10}?)(左右|上下)", new String[][]{ {null, ""} }));
+
+                gramRules.add(new GramRule("(数万名|几万名|数十万名|上万名|数百万名)(.{0,8}?)(人群)", new String[][]{ {"数万人的", null, null} }));
+                
+            }
+                
+            
             }
             static {
                 quantRules.put('牛', new QuantifierRule("头", "头"));
@@ -2429,14 +2458,16 @@ jobs:
                     wavePaint.setStrokeWidth(3.5f);
                     wavePath = new android.graphics.Path();
                 }
+                private float textWidth = -1f;
                 @Override
                 public int getSize(android.graphics.Paint paint, CharSequence text, int start, int end, android.graphics.Paint.FontMetricsInt fm) {
-                    return (int) paint.measureText(text, start, end);
+                    textWidth = paint.measureText(text, start, end);
+                    return (int) textWidth;
                 }
                 @Override
                 public void draw(android.graphics.Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, android.graphics.Paint paint) {
                     canvas.drawText(text, start, end, x, y, paint);
-                    float width = paint.measureText(text, start, end);
+                    float width = textWidth > 0 ? textWidth : paint.measureText(text, start, end);
                     
                     if (cachedWidth != width) {
                         cachedWidth = width;
@@ -2462,13 +2493,15 @@ jobs:
             public static class ColoredStrikethroughSpan extends android.text.style.ReplacementSpan {
                 public int textColor;
                 public int lineColor;
+                private float cachedWidth = -1f;
                 public ColoredStrikethroughSpan(int textColor, int lineColor) {
                     this.textColor = textColor;
                     this.lineColor = lineColor;
                 }
                 @Override
                 public int getSize(android.graphics.Paint paint, CharSequence text, int start, int end, android.graphics.Paint.FontMetricsInt fm) {
-                    return (int) paint.measureText(text, start, end);
+                    cachedWidth = paint.measureText(text, start, end);
+                    return (int) cachedWidth;
                 }
                 @Override
                 public void draw(android.graphics.Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, android.graphics.Paint paint) {
@@ -2479,7 +2512,8 @@ jobs:
                     float strokeWidth = paint.getTextSize() / 14f;
                     paint.setStrokeWidth(strokeWidth);
                     float lineY = y - paint.getTextSize() * 0.3f;
-                    canvas.drawLine(x, lineY, x + paint.measureText(text, start, end), lineY, paint);
+                    float width = cachedWidth > 0 ? cachedWidth : paint.measureText(text, start, end);
+                    canvas.drawLine(x, lineY, x + width, lineY, paint);
                     paint.setColor(oldColor);
                 }
             }
@@ -2675,8 +2709,10 @@ jobs:
                 int w = b.getWidth();
                 int step = Math.max(1, w / 30);
                 int count = 0;
+                int[] pixels = new int[w];
+                b.getPixels(pixels, 0, w, 0, y, w, 1);
                 for(int x = 0; x < w; x += step) {
-                    int color = b.getPixel(x, y);
+                    int color = pixels[x];
                     int r = Color.red(color), g = Color.green(color), bl = Color.blue(color);
                     if (r < 220 && g < 220 && bl < 220) {
                         count++;
@@ -2885,8 +2921,13 @@ jobs:
                         }
             
                         String raw = textBuilder.toString();
-                        raw = raw.replaceAll("<[^>]+>", "");
-                        raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
+                        // 优化：利用极低开销的 indexOf 探针，避免创建海量临时 String
+                        if (raw.indexOf('&') != -1) {
+                            raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
+                        }
+                        if (raw.indexOf('<') != -1 && raw.indexOf('>') != -1) {
+                            raw = raw.replaceAll("<[^>]+>", "");
+                        }
                         return raw;
                     } else if ((name != null && name.toLowerCase().endsWith(".pptx")) || 
                         "application/vnd.openxmlformats-officedocument.presentationml.presentation".equals(mimeType)) {
