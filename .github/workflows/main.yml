@@ -2929,11 +2929,11 @@ jobs:
                         }
             
                         String raw = textBuilder.toString();
-                        // 优化：利用极低开销的 indexOf 探针，避免创建海量临时 String
+                        // 必须保留实体字符替换，以防正则降级触发时出现 &lt; 乱码
+                        // 极低开销的探针，避免不必要的 String 拷贝
                         if (raw.indexOf('&') != -1) {
-                            raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'");
+                            raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&");
                         }
-                        
                         return raw;
                     } else if ((name != null && name.toLowerCase().endsWith(".pptx")) || 
                         "application/vnd.openxmlformats-officedocument.presentationml.presentation".equals(mimeType)) {
@@ -2954,7 +2954,11 @@ jobs:
                         }
                         zis.close();
                         String raw = textBuilder.toString();
-                        return raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'").trim();
+                        // 给 PPTX 也加上探针优化，防止大文件替换时内存暴增
+                        if (raw.indexOf('&') != -1) {
+                            raw = raw.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&");
+                        }
+                        return raw.trim();
                     } else {
                         java.io.InputStream is = context.getContentResolver().openInputStream(uri);
                         java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(is, StandardCharsets.UTF_8));
