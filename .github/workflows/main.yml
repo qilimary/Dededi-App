@@ -1746,6 +1746,47 @@ jobs:
                                     }
                                 }
                                 if (matchedQuant) continue;
+                                
+                                // ===== 新增：对话中的数字转大写中文逻辑 =====
+                                char cNum = sentence.charAt(i);
+                                if (cNum >= '0' && cNum <= '9') {
+                                    int endIdx = i;
+                                    while (endIdx < sentence.length() && sentence.charAt(endIdx) >= '0' && sentence.charAt(endIdx) <= '9') {
+                                        endIdx++;
+                                    }
+                                    if (endIdx < sentence.length()) {
+                                        char nextC = sentence.charAt(endIdx);
+                                        if ("个次名件只条人岁元块毛斤吨米".indexOf(nextC) >= 0) {
+                                            boolean inQuote = false;
+                                            for (int k = i - 1; k >= Math.max(0, i - 25); k--) {
+                                                char qc = sentence.charAt(k);
+                                                if (qc == '“' || qc == '‘') { inQuote = true; break; }
+                                                if (qc == '”' || qc == '’' || qc == '。' || qc == '！' || qc == '？') { break; } 
+                                            }
+                                            if (inQuote) {
+                                                boolean hasRightQuote = false;
+                                                for (int k = endIdx; k < Math.min(sentence.length(), endIdx + 25); k++) {
+                                                    char qc = sentence.charAt(k);
+                                                    if (qc == '”' || qc == '’') { hasRightQuote = true; break; }
+                                                    if (qc == '“' || qc == '‘' || qc == '。' || qc == '！' || qc == '？') { break; }
+                                                }
+                                                if (hasRightQuote) {
+                                                    String numStr = sentence.substring(i, endIdx);
+                                                    // 注意：这里调用的是 MainActivity 中的静态方法
+                                                    String zhNum = MainActivity.numberToChinese(numStr);
+                                                    if (!zhNum.equals(numStr) && !zhNum.isEmpty()) {
+                                                        intermediateBlocks.add(new MainActivity.TextBlock(numStr, zhNum, true, 1.0f, 5));
+                                                        errorCount[0]++;
+                                                        final String errLog = "发现错误：" + numStr + " → " + zhNum + " | 共 " + errorCount[0] + " 处";
+                                                        syncShowStatus(errLog, true);
+                                                        i = endIdx;
+                                                        continue;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
 
                                 intermediateBlocks.add(new MainActivity.TextBlock(String.valueOf(sentence.charAt(i)), String.valueOf(sentence.charAt(i)), false, 0f, 0));
                                 i++;
@@ -2096,75 +2137,68 @@ jobs:
             }
             public static final List<GramRule> gramRules = new ArrayList<>();
             static {
+                // 1. 冗余词语清理
                 gramRules.add(new GramRule("(大概|大约)(.{1,15}?)(左右|上下)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(超过|高达|多达)(.{1,15}?)(以上)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(低于|少于|不足)(.{1,15}?)(以下)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(截至|截止到)(.{1,15}?)(为止)", new String[][]{ {null, ""}, {"", null} }));
+                gramRules.add(new GramRule("(涉及|波及)( *)(到)", new String[][]{ {null, ""} }));
+                gramRules.add(new GramRule("(付诸|诉诸|见诸)( *)(于)", new String[][]{ {null, ""} }));
+                gramRules.add(new GramRule("(互相|相互)( *)(厮打|角逐|探讨|商榷)", new String[][]{ {"", null} }));
+                gramRules.add(new GramRule("(第一|最佳|首要)( *)(首选)", new String[][]{ {"", null} }));
+                gramRules.add(new GramRule("(并非)( *)(是)", new String[][]{ {null, ""}, {"并不", null} }));
+                gramRules.add(new GramRule("(无时无刻)( *)(都)", new String[][]{ {null, "不"} }));
+                gramRules.add(new GramRule("(靠的是)(.{1,15}?)(取得的)", new String[][]{ {null, ""} }));
+                gramRules.add(new GramRule("(成分是|主要成分是)(.{1,15}?)(配制而成的)", new String[][]{ {null, ""} }));
+                gramRules.add(new GramRule("(大约|大概|约|近|将近|差不多|超|超过|超出|达|高达|达到)( *)([0-9一二两三四五六七八九十百千万亿]+ *左右|[0-9一二两三四五六七八九十百千万亿]+ *上下)", new String[][]{ {"有", null}, {"", null} }));
+                gramRules.add(new GramRule("(几|十[一二三四五六七八九]?|成百上千|数万|数十万|数百万|数千万|数亿|上万|上百万)(.{0,10}?)(左右|上下)", new String[][]{ {null, ""} }));
+
+                // 2. 句式杂糅纠正
                 gramRules.add(new GramRule("(原因是)(.{1,15}?)(造成的|导致的|造成|导致)(?=[，。；！？、\\n]|$)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(由于)(.{1,15}?)(的结果)", new String[][]{ {null, ""}, {"", null} }));
-                gramRules.add(new GramRule("(截至|截止到)(.{1,15}?)(为止)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(是因为)(.{1,15}?)(的原因)", new String[][]{ {null, ""}, {"", null} }));
                 gramRules.add(new GramRule("(围绕)(.{1,15}?)(为中心)", new String[][]{ {"以", null} }));
                 gramRules.add(new GramRule("(从)(.{1,15}?)(为出发点)", new String[][]{ {"以", null} }));
                 gramRules.add(new GramRule("(打着)(.{1,15}?)(为幌子)", new String[][]{ {"以", null} }));
                 gramRules.add(new GramRule("(借着)(.{1,15}?)(为名义)", new String[][]{ {"以", null} }));
+                gramRules.add(new GramRule("(借口)(.{1,15}?)(为名)", new String[][]{ {"以", null} }));
                 gramRules.add(new GramRule("(为了)(.{1,15}?)(为目的)", new String[][]{ {"以", null}, {null, ""} }));
                 gramRules.add(new GramRule("(旨在)(.{1,15}?)(为目的)", new String[][]{ {"以", null}, {null, ""} }));
                 gramRules.add(new GramRule("(本着)(.{1,15}?)(为原则)", new String[][]{ {"以", null}, {null, "原则"} }));
                 gramRules.add(new GramRule("(对于)(.{1,15}?)(问题上)", new String[][]{ {"在", null}, {null, "问题"} }));
                 gramRules.add(new GramRule("(经过)(.{1,15}?)(下)(?=[，。；！？、\\n了在的与和]|$)", new String[][]{ {"在", null}, {null, "后"} }));
-                
+                gramRules.add(new GramRule("(由于)(.{1,15}?)(下)(?=[，。；！？、\\n了在的与和]|$)", new String[][]{ {"在", null}, {null, "之下"} }));
                 gramRules.add(new GramRule("(目的是)( *)(为了)", new String[][]{ {"是", null}, {null, ""} }));
+                gramRules.add(new GramRule("((?:大多|主要|大都|基本|基本上)以)(.{1,15}?)(为主)", new String[][]{ {"以", null} }));
+                gramRules.add(new GramRule("(有)(.{1,15}?)(组成)", new String[][]{ {"由", null} }));
+                gramRules.add(new GramRule("(深受)(.{0,10}?)(所)(?=喜爱|欢迎|爱戴|好评|青睐|瞩目)", new String[][]{ {null, ""} }));
+
+                // 3. 逻辑与搭配不当
                 gramRules.add(new GramRule("(关键在于|关键是)(.{1,15}?)(是十分重要的|是很重要的|起到重要作用|决定性的)", new String[][]{ {"", null}, {null, ""} }));
-                gramRules.add(new GramRule("(成分是|主要成分是)(.{1,15}?)(配制而成的)", new String[][]{ {null, ""} }));
-                gramRules.add(new GramRule("(切忌)(.{1,15}?)(不要)", new String[][]{ {"千万", null}, {null, ""} }));
-                gramRules.add(new GramRule("(切忌)(.{1,15}?)(不可)", new String[][]{ {"千万", null}, {null, ""} }));
-                gramRules.add(new GramRule("(避免)(.{1,15}?)(不要)", new String[][]{ {null, ""} }));
-                gramRules.add(new GramRule("(防止)(.{1,15}?)(不要)", new String[][]{ {null, ""} }));
+                gramRules.add(new GramRule("(切忌)(.{1,15}?)(不要|不可)", new String[][]{ {"千万", null}, {null, ""} }));
+                gramRules.add(new GramRule("(避免|防止|严防)(.{1,15}?)(不要)(?!脸|命|紧)", new String[][]{ {null, ""} }));
                 gramRules.add(new GramRule("(防止)(.{1,15}?)(不再)", new String[][]{ {null, "再次"} }));
                 gramRules.add(new GramRule("(防止)(.{1,15}?)(不被)", new String[][]{ {null, "被"} }));
-                gramRules.add(new GramRule("(无时无刻)( *)(都)", new String[][]{ {null, "不"} }));
-                gramRules.add(new GramRule("(达|多达|高达|达到)( *)(十几|几十|二三十|三四十|四五十|五六十|六七十|七八十|八九十|一二百|两三百|三四百|四五百|五六百|七八百|八九百|[0-9]+多|[0-9]+余|[0-9]+几|[一二两三四五六七八九十百千万亿]+多|[一二两三四五六七八九十百千万亿]+余|[一二两三四五六七八九十百千万亿]+几)", new String[][]{ {"有", null}, {"约有", null} }));
-                gramRules.add(new GramRule("(达|多达|高达|达到)( *)(大约|大概|将近|差不多|近|不下|不下于)", new String[][]{ {"有", null}, {"约有", null} }));
-                gramRules.add(new GramRule("(大约|大概|约|近|将近|差不多|超|超过|超出|达|高达|达到)( *)([0-9一二两三四五六七八九十百千万亿]+ *左右|[0-9一二两三四五六七八九十百千万亿]+ *上下)", new String[][]{ {"有", null}, {"", null} }));
-                gramRules.add(new GramRule("(互相|相互)( *)(厮打|角逐|探讨|商榷)", new String[][]{ {"", null} }));
-                gramRules.add(new GramRule("(第一|最佳)( *)(首选)", new String[][]{ {"", null} })); 
-                gramRules.add(new GramRule("(并非)( *)(是)", new String[][]{ {null, ""}, {"并不", null} }));
-                gramRules.add(new GramRule("(涉及|波及)( *)(到)", new String[][]{ {null, ""} }));
-                gramRules.add(new GramRule("(付诸|诉诸|见诸)( *)(于)", new String[][]{ {null, ""} }));
                 gramRules.add(new GramRule("(令人|让人|叫人)( *)(堪忧)", new String[][]{ {"", null}, {null, "担忧"} }));
                 gramRules.add(new GramRule("(首当其冲)(的? *)(问题|任务|事情|要务|条件)", new String[][]{ {"首要", null}, {"最重要", null} }));
                 gramRules.add(new GramRule("(改善|改变|加强)(.{0,8}?)(水平|素养)", new String[][]{ {"提高", null} }));
                 gramRules.add(new GramRule("(加快|加速)(.{0,8}?)(效率)", new String[][]{ {"提高", null} }));
                 gramRules.add(new GramRule("(缓解|减缓)(.{0,8}?)(态度|立场)", new String[][]{ {"缓和", null} }));
                 gramRules.add(new GramRule("(悬殊)( *)(很大|极大|特别大|非常大)", new String[][]{ {null, ""}, {"差距", null} }));
-                gramRules.add(new GramRule("(通过)(.{1,15}?)(使)", new String[][]{ {"", null}, {null, ""} }));
-                gramRules.add(new GramRule("(大多|主要|大都|基本|基本上)(以)(.{1,15}?)(为主)", new String[][]{ {"", "", null, null} })); 
+                gramRules.add(new GramRule("(通过)(.{1,15}?)(使)(?!用|得)", new String[][]{ {"", null}, {null, ""} }));
                 
-                gramRules.add(new GramRule("(深受)(.{0,10}?)(所)(喜爱|欢迎|爱戴|好评)", new String[][]{ {null, null, "", null} }));
-             
-                gramRules.add(new GramRule("([0-9一二三四五六七八九十两零〇]+月[0-9一二三四五六七八九十两零〇]+(日|号)?)前(去|往|来|报到|汇报|报名|登记|申请|找)", new String[][]{ {null, "之前"} }));
-                
-                // 9. 几个...校长 -> 几位...校长 (增强：中间加入 [^的] 排除"几个学校的校长"这种错改)
-                gramRules.add(new GramRule("(几个)([^的]{0,8}?)(校长|老师|学生|领导|朋友|兄弟|同事|同学|教授|医生|警察|党员|干部)", new String[][]{ {"几位/几所", null} }));
-                
-                // 11. 出于...决定的 -> 出于...决定 (优化：原规则删掉"决定的"会导致句子残缺，改为去掉"的")
+                // 4. 数字与量词专项
+                gramRules.add(new GramRule("(达|多达|高达|达到)( *)(十几|几十|二三十|三四十|四五十|五六十|六七十|七八十|八九十|一二百|两三百|三四百|四五百|五六百|七八百|八九百|[0-9]+多|[0-9]+余|[0-9]+几|[一二两三四五六七八九十百千万亿]+多|[一二两三四五六七八九十百千万亿]+余|[一二两三四五六七八九十百千万亿]+几)", new String[][]{ {"有", null}, {"约有", null} }));
+                gramRules.add(new GramRule("(达|多达|高达|达到)( *)(大约|大概|将近|差不多|近|不下|不下于)", new String[][]{ {"有", null}, {"约有", null} }));
+                gramRules.add(new GramRule("(?<=数万|几万|数十万|上万|数百万)(名)(.{0,8}?)(人群)", new String[][]{ {"人的", ""} }));
+                gramRules.add(new GramRule("(减少|降低|缩短|下降|减小|缩小)(.{0,15}?[0-9.]+)(倍)", new String[][]{ {null, "成"} }));
+                gramRules.add(new GramRule("(?<!一张|打出|胡了|李|王|张|赵|刘|陈|杨|黄)(二)()(万|千|亿)(?!五|两|响|五千里长征)", new String[][]{ {"两", null} }));
+                gramRules.add(new GramRule("(?<=[0-9一二三四五六七八九十两零〇]+月[0-9一二三四五六七八九十两零〇]+(?:日|号)?)(前)()(去|往|来|报到|汇报|报名|登记|申请|找)", new String[][]{ {"之前", null} }));
+                gramRules.add(new GramRule("(几个)([^的]{0,8}?)(校长|老师|学生|领导|朋友|兄弟|同事|同学|教授|医生|警察|党员|干部)", new String[][]{ {"几位", null} }));
                 gramRules.add(new GramRule("(出于)(.{1,15}?)(的决定)", new String[][]{ {"", "决定"} }));
-          
-                gramRules.add(new GramRule("(借口)(.{1,15}?)(为名)", new String[][]{ {"以", null} }));              // "借口……为名"→"以……为名"
-                gramRules.add(new GramRule("(有)(.{1,15}?)(组成)", new String[][]{ {"由", null} }));                // "有……组成"→"由……组成"
-                gramRules.add(new GramRule("(靠的是)(.{1,15}?)(取得的)", new String[][]{ {null, ""} }));            // "靠的是……取得的"→"靠的是……"
                 
-                gramRules.add(new GramRule("(由于)(.{1,15}?)(下)(?=[，。；！？、\\n了在的与和]|$)", new String[][]{ {"在", null}, {null, "之下"} })); // "由于……下"→"在……下" 或 "由于……之下"
-                // "减少1.2倍"是不可能的，强制将"倍"改为"成"（如1.2成）
-                gramRules.add(new GramRule("(减少|降低|缩短|下降|减小|缩小)(.{0,15}?)([0-9.]+)倍", new String[][]{ {null, "成"} }));
-                // "几万"已是约数，后接"左右/上下"冗余，强制删除
-                gramRules.add(new GramRule("(几|十[一二三四五六七八九]?|成百上千|数万|数十万|数百万|数千万|数亿|上万|上百万)(.{0,10}?)(左右|上下)", new String[][]{ {null, ""} }));
-
-                gramRules.add(new GramRule("(数万名|几万名|数十万名|上万名|数百万名)(.{0,8}?)(人群)", new String[][]{ {"数万人的", null, null} }));
-                
-                
-            
             }
+
             static {
                 quantRules.put('牛', new QuantifierRule("头", "头"));
                 quantRules.put('马', new QuantifierRule("匹", "匹"));
@@ -2179,13 +2213,136 @@ jobs:
             public static final String NUMS = "一二两三四五六七八九十百千万这那几某";
             public static final String KNOWN_QUANTS = "个只条头匹辆部台口尾座把本名位";
             
+            public static String numberToChinese(String numStr) {
+                if (numStr == null || numStr.isEmpty() || numStr.length() > 12) return numStr;
+                try {
+                    long num = Long.parseLong(numStr);
+                    String pureNum = String.valueOf(num); 
+                    if (num == 0) return "零";
+            
+                    String padded = String.format("%12s", pureNum).replace(' ', '0');
+                    String[] sections = {
+                        padded.substring(0, 4),   
+                        padded.substring(4, 8),   
+                        padded.substring(8, 12)   
+                    };
+                    String[] sectionUnits = {"亿", "万", ""};
+            
+                    int firstNonZeroIdx = -1;
+                    for (int i = 0; i < 12; i++) {
+                        if (padded.charAt(i) != '0') {
+                            firstNonZeroIdx = i;
+                            break;
+                        }
+                    }
+                    int firstPos = 11 - firstNonZeroIdx;   
+                    char firstDigit = padded.charAt(firstNonZeroIdx);
+                    // 修正：移除了 firstPos % 4 == 2，确保 200 输出“二百”而非“两百”
+                    boolean useLiang = (firstDigit == '2') &&
+                                       (firstPos % 4 == 3 || firstPos == 4 || firstPos == 8);
+                    int liangPos = useLiang ? firstPos : -1;   
+            
+                    StringBuilder result = new StringBuilder();
+                    int lastNonEmptySec = -1;  
+            
+                    for (int secIdx = 0; secIdx < 3; secIdx++) {
+                        String sec = sections[secIdx];
+                        if (sec.equals("0000")) continue;   
+            
+                        boolean needLeadingZero = false;
+                        if (lastNonEmptySec != -1) {
+                            if (secIdx > lastNonEmptySec + 1) {
+                                needLeadingZero = true;
+                            } else if (secIdx == lastNonEmptySec + 1) {
+                                String lastSec = sections[lastNonEmptySec];
+                                if (lastSec.charAt(3) == '0' && sec.charAt(0) != '0') {
+                                    needLeadingZero = true;
+                                }
+                            }
+                        }
+            
+                        if (needLeadingZero) {
+                            result.append("零");
+                        }
+            
+                        boolean isHighest = (lastNonEmptySec == -1);
+                        int sectionStartPos = (2 - secIdx) * 4;
+            
+                        result.append(convertSection(sec, isHighest, sectionStartPos, liangPos, needLeadingZero));
+            
+                        if (secIdx < 2) {
+                            result.append(sectionUnits[secIdx]);
+                        }
+            
+                        lastNonEmptySec = secIdx;
+                    }
+            
+                    String res = result.toString();
+                    if (res.endsWith("零") && res.length() > 1) {
+                        res = res.substring(0, res.length() - 1);
+                    }
+                    return res;
+                } catch (NumberFormatException e) {
+                    return numStr;
+                }
+            }
+
+            private static String convertSection(String sec, boolean isHighest, int sectionStartPos,
+                                                  int liangPos, boolean skipLeadingZero) {
+                String[] innerUnits = {"千", "百", "十", ""};
+                String[] digits = {"零", "一", "二", "三", "四", "五", "六", "七", "八", "九"};
+            
+                StringBuilder sb = new StringBuilder();
+                boolean needZero = false;
+            
+                int firstNonZeroInSec = -1;
+                for (int i = 0; i < 4; i++) {
+                    if (sec.charAt(i) != '0') {
+                        firstNonZeroInSec = i;
+                        break;
+                    }
+                }
+            
+                for (int i = 0; i < 4; i++) {
+                    int digit = sec.charAt(i) - '0';
+                    int globalPos = sectionStartPos + (3 - i);   
+            
+                    if (digit == 0) {
+                        if ((isHighest || skipLeadingZero) && sb.length() == 0) {
+                            continue;
+                        }
+                        needZero = true;
+                    } else {
+                        if (needZero) {
+                            sb.append("零");
+                            needZero = false;
+                        }
+                        if (isHighest && i == firstNonZeroInSec && i == 2 && digit == 1) {
+                            sb.append("十");
+                        }
+                        else if (isHighest && i == firstNonZeroInSec && globalPos == liangPos) {
+                            sb.append("两").append(innerUnits[i]);
+                        }
+                        else {
+                            sb.append(digits[digit]).append(innerUnits[i]);
+                        }
+                    }
+                }
+            
+                if (sb.length() > 0 && sb.charAt(sb.length() - 1) == '零') {
+                    sb.deleteCharAt(sb.length() - 1);
+                }
+                return sb.toString();
+            }
+            
             public static boolean isSafeCharAfterNoun(char c) {
                 if (c == '\0') return true;
                 if (c < '\u4E00' || c > '\u9FFF') return true;
                 String safeChars = "的了着过是在被把让给对和与同或就也都还很太真会能可要想走跑跳吃喝咬叫哭笑我看你他她它们这那\n";
                 return safeChars.indexOf(c) >= 0;
             }
-
+            
+            
             public static final String[] IGNORE_WORDS = {
                 "地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地",
                 "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面",
@@ -4626,6 +4783,47 @@ jobs:
                                     }
                                 }
                                 if (matchedQuant) continue;
+                                
+                                // ===== 新增：对话中的数字转大写中文逻辑 =====
+                                char cNum = sentence.charAt(i);
+                                if (cNum >= '0' && cNum <= '9') {
+                                    int endIdx = i;
+                                    while (endIdx < sentence.length() && sentence.charAt(endIdx) >= '0' && sentence.charAt(endIdx) <= '9') {
+                                        endIdx++;
+                                    }
+                                    if (endIdx < sentence.length()) {
+                                        char nextC = sentence.charAt(endIdx);
+                                        // 只转换带有明确计量特征的纯整数，自动滤除带有小数点的数字及手机号
+                                        if ("个次名件只条人岁元块毛斤吨米".indexOf(nextC) >= 0) {
+                                            // 探测左侧 25 字符内是否有对话引号
+                                            boolean inQuote = false;
+                                            for (int k = i - 1; k >= Math.max(0, i - 25); k--) {
+                                                char qc = sentence.charAt(k);
+                                                if (qc == '“' || qc == '‘') { inQuote = true; break; }
+                                                if (qc == '”' || qc == '’' || qc == '。' || qc == '！' || qc == '？') { break; } // 被句号阻断则放弃
+                                            }
+                                            if (inQuote) {
+                                                // 探测右侧是否有闭合引号
+                                                boolean hasRightQuote = false;
+                                                for (int k = endIdx; k < Math.min(sentence.length(), endIdx + 25); k++) {
+                                                    char qc = sentence.charAt(k);
+                                                    if (qc == '”' || qc == '’') { hasRightQuote = true; break; }
+                                                    if (qc == '“' || qc == '‘' || qc == '。' || qc == '！' || qc == '？') { break; }
+                                                }
+                                                if (hasRightQuote) {
+                                                    String numStr = sentence.substring(i, endIdx);
+                                                    String zhNum = numberToChinese(numStr);
+                                                    if (!zhNum.equals(numStr) && !zhNum.isEmpty()) {
+                                                        intermediateBlocks.add(new TextBlock(numStr, zhNum, true, 1.0f, 5)); // type=5 表示基础纠错
+                                                        i = endIdx;
+                                                        continue;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            
 
                                 intermediateBlocks.add(new TextBlock(String.valueOf(sentence.charAt(i)), String.valueOf(sentence.charAt(i)), false, 0f, 0));
                                 i++;
