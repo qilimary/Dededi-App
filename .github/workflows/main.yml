@@ -2162,7 +2162,6 @@ jobs:
 
                 gramRules.add(new GramRule("(数万名|几万名|数十万名|上万名|数百万名)(.{0,8}?)(人群)", new String[][]{ {"数万人的", null, null} }));
                 
-            }
                 
             
             }
@@ -2319,7 +2318,16 @@ jobs:
                                                 spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                                 Handler handler = new Handler(Looper.getMainLooper());
                                                 handler.postDelayed(() -> { try { spanText.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 500);
-                                                handler.postDelayed(() -> { try { spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); tv.invalidate(); } catch(Exception e){} }, 800);
+                                                
+                                                handler.postDelayed(() -> { 
+                                            try { 
+                                                // 修复：异步操作必须在执行时重新校验边界，防止文本在这 800ms 内被修改变短而引发越界崩溃
+                                                if (lineStart >= 0 && lineEnd <= spanText.length()) {
+                                                    spanText.setSpan(flashSpan, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                                    tv.invalidate(); 
+                                                }
+                                            } catch(Exception e){} 
+                                        }, 800);
                                                 handler.postDelayed(() -> { try { spanText.removeSpan(flashSpan); tv.invalidate(); } catch(Exception e){} }, 1300);
                                             }
                                         }
@@ -3719,7 +3727,8 @@ jobs:
                             "• 自定义的规优先级高于模型。\n\n" +
                             "【悬浮窗】\n" +
                             "开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n" +
-                            "标点清理：当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n" +
+                            "【标点清理：】\n" +
+                            "  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                     new AlertDialog.Builder(this).setTitle("使用说明").setMessage(helpText).setPositiveButton("知道了", null).show();
                 });
