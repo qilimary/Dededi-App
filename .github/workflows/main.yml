@@ -1179,14 +1179,19 @@ jobs:
                         
                         int currentHash = text.hashCode();
                         
-                        if (fileIdHolder[0] == null && historyArray.length() > 0) {
+                        if (historyArray.length() > 0) {
                             org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
                             if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
-                                fileIdHolder[0] = lastRecord.optString("file", null);
+                                // [性能优化] 文本与最新一次记录完全一致，直接复用其ID并终止后续冗余的磁盘读写！
+                                fileIdHolder[0] = lastRecord.optString("file", fileIdHolder[0]);
+                                if (this instanceof MainActivity) {
+                                    ((MainActivity)this).runOnUiThread(() -> renderHistoryUI());
+                                }
+                                return; 
                             }
                         }
                         
-                        String fileId = fileIdHolder[0] != null ? fileIdHolder[0] : java.util.UUID.randomUUID().toString();
+                        // 如果传入了旧的ID，说明是修改历史；否则生成新ID     String fileId = fileIdHolder[0] != null ? fileIdHolder[0] : java.util.UUID.randomUUID().toString();
                         currentHistoryFileId = fileId;
                         
                         org.json.JSONArray newArray = new org.json.JSONArray();
@@ -2166,7 +2171,7 @@ jobs:
                     gramRules.add(new GramRule("(凯旋)( *)(而归)", new String[][]{ {null, ""} })); // 凯旋 即胜利归来
                     gramRules.add(new GramRule("(可以|能够)( *)(堪称)", new String[][]{ {"", null} })); // 堪称 即可以称作
                     gramRules.add(new GramRule("(突然|顿时|一下子)( *)(恍然大悟|豁然开朗)", new String[][]{ {"", null} }));
-                    gramRules.add(new GramRule("(忍俊不禁)(地? *)(笑|笑了起来|笑了|笑出声)", new String[][]{ {null, ""} }));
+                    gramRules.add(new GramRule("(忍俊不禁)(地? *)(笑|笑了起来|笑了|笑出声)", new String[][]{ {null, "", "忍俊不禁已包含“笑”的意思"} }));
                     gramRules.add(new GramRule("(难言之隐)(的? *)(苦衷|事情|原因)", new String[][]{ {null, ""} }));
                     gramRules.add(new GramRule("(责无旁贷)(的? *)(责任|义务)", new String[][]{ {null, ""} }));
                     gramRules.add(new GramRule("(真知灼见)(的? *)(意见|看法|见解)", new String[][]{ {null, ""} }));
@@ -2227,7 +2232,7 @@ jobs:
                     gramRules.add(new GramRule("(?:(?<=数万|几万|上万)|(?<=数十万|数百万))(名)([^，。；！？、\\n]{0,8}?)(人群)", new String[][]{ {"人的", ""} }));
                     
                     // 【精妙策略】：彻底放弃自动计算。利用独立说明字段标识语病，保证正文纯净
-                    gramRules.add(new GramRule("(减少|降低|缩短|下降|减小|缩小)([^，。；！？、\\n]{0,15}?[0-9十百千万亿两半])(倍)", new String[][]{ {null, "倍", "下降/减小等不能用倍数表示。"} }));
+                    gramRules.add(new GramRule("(减少|降低|缩短|下降|减小|缩小)([^，。；！？、\\n]{0,15}?[0-9十百千万亿两半])(倍)", new String[][]{ {null, "倍", "下降/减小等不能用倍数表示"} }));
                     gramRules.add(new GramRule("(随便|随意)( *)(苟同)", new String[][]{ {"", null} }));
                     gramRules.add(new GramRule("(非常|十分|极其|特别|尤其)( *)(酷爱|惨重|硕大|嗜好|痛恨|严禁)", new String[][]{ {"", null} }));
                     gramRules.add(new GramRule("(发自内心的?|从内心里的?|打心眼里的?)( *)(由衷)", new String[][]{ {"", null} }));
@@ -3113,10 +3118,15 @@ jobs:
                         
                         int currentHash = text.hashCode();
                         
-                        if (fileIdHolder[0] == null && historyArray.length() > 0) {
+                        if (historyArray.length() > 0) {
                             org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
                             if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
-                                fileIdHolder[0] = lastRecord.optString("file", null);
+                                // [性能优化] 文本与最新一次记录完全一致，直接复用其ID并终止后续冗余的磁盘读写！
+                                fileIdHolder[0] = lastRecord.optString("file", fileIdHolder[0]);
+                                if (this instanceof MainActivity) {
+                                    ((MainActivity)this).runOnUiThread(() -> renderHistoryUI());
+                                }
+                                return; 
                             }
                         }
                         
@@ -4018,6 +4028,20 @@ jobs:
                             } catch(Exception e) {}
                             sp.edit().putString("history_records", "[]").apply();
                             renderHistoryUI();
+                            
+                            // [逻辑修复]：清空全部历史时，同步清理主界面状态，防止“幽灵”记录
+                            lastSavedHistoryFileId = null;
+                            isManuallyEditedOut = false;
+                            boolean oldRest = isRestoringHistory;
+                            isRestoringHistory = true;
+                            inputText.setText("");
+                            isRestoringHistory = oldRest;
+                            allSentencesBlocks.clear();
+                            outputText.setText("");
+                            btnCheck.setText("开始纠错");
+                            btnCopy.setEnabled(false);
+                            btnSaveTxt.setEnabled(false);
+                            Toast.makeText(MainActivity.this, "历史记录已全部清空", Toast.LENGTH_SHORT).show();
                         })
                         .setNegativeButton("否", null)
                         .show();
@@ -5435,6 +5459,7 @@ jobs:
                                         if (ts != null) link.targetSpans.add(ts);
                                     }
                                 }
+                                currentClauseLinks.add(link); // [修复]：必须加回，否则便签编辑器无法同步修改
                             }
                         }
                     }
