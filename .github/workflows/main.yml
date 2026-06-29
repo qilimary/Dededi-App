@@ -2953,7 +2953,7 @@ jobs:
                             }
                         }
                         zis.close();
-                        String raw = textBuilder.toString().replaceAll("<[^>]+>", "");
+                        String raw = textBuilder.toString();
                         return raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", "\"").replace("&apos;", "'").trim();
                     } else {
                         java.io.InputStream is = context.getContentResolver().openInputStream(uri);
