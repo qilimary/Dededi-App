@@ -1183,16 +1183,14 @@ jobs:
                             org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
                             if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
                                 // [性能优化] 文本与最新一次记录完全一致，直接复用其ID并终止后续冗余的磁盘读写！
-                                fileIdHolder[0] = lastRecord.optString("file", fileIdHolder[0]);
-                                if (this instanceof MainActivity) {
-                                    ((MainActivity)this).runOnUiThread(() -> renderHistoryUI());
-                                }
-                                return; 
-                            }
+                            fileIdHolder[0] = lastRecord.optString("file", fileIdHolder[0]);
+                            return; 
                         }
-                        
-                        // 如果传入了旧的ID，说明是修改历史；否则生成新ID     String fileId = fileIdHolder[0] != null ? fileIdHolder[0] : java.util.UUID.randomUUID().toString();
-                        currentHistoryFileId = fileId;
+                    }
+                    
+                    // 如果传入了旧的ID，说明是修改历史；否则生成新ID
+                    String fileId = fileIdHolder[0] != null ? fileIdHolder[0] : java.util.UUID.randomUUID().toString();
+                    currentHistoryFileId = fileId;
                         
                         org.json.JSONArray newArray = new org.json.JSONArray();
                         for (int i = 0; i < historyArray.length(); i++) {
@@ -3123,9 +3121,7 @@ jobs:
                             if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
                                 // [性能优化] 文本与最新一次记录完全一致，直接复用其ID并终止后续冗余的磁盘读写！
                                 fileIdHolder[0] = lastRecord.optString("file", fileIdHolder[0]);
-                                if (this instanceof MainActivity) {
-                                    ((MainActivity)this).runOnUiThread(() -> renderHistoryUI());
-                                }
+                                runOnUiThread(() -> renderHistoryUI());
                                 return; 
                             }
                         }
