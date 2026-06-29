@@ -1684,15 +1684,22 @@ jobs:
                                 for (MainActivity.GramRule rule : MainActivity.gramRules) {
                                     java.util.regex.Matcher m = rule.pattern.matcher(sentence.substring(i));
                                     if (m.lookingAt()) {
+                                    
                                         String g1 = m.group(1);
                                         String g2 = m.group(2);
                                         String g3 = m.group(3);
                                         String[] selectedOption = rule.options[(int)(Math.random() * rule.options.length)];
                                         String rep1 = selectedOption[0] != null ? selectedOption[0] : g1;
-                                        String rep3 = selectedOption[1] != null ? selectedOption[1] : g3;
+                                        String rep3 = selectedOption.length > 1 && selectedOption[1] != null ? selectedOption[1] : g3;
+                                        String exp = selectedOption.length > 2 && selectedOption[2] != null ? selectedOption[2] : "";
 
-                                        if (!g1.equals(rep1)) {
-                                            intermediateBlocks.add(new MainActivity.TextBlock(g1, rep1, true, 1.0f, 6));
+                                        boolean isG1Error = !g1.equals(rep1) || (!exp.isEmpty() && selectedOption[0] != null);
+                                        boolean isG3Error = !g3.equals(rep3) || (!exp.isEmpty() && selectedOption.length > 1 && selectedOption[1] != null);
+
+                                        if (isG1Error) {
+                                            MainActivity.TextBlock tb1 = new MainActivity.TextBlock(g1, rep1, true, 1.0f, 6);
+                                            tb1.exp = exp;
+                                            intermediateBlocks.add(tb1);
                                             errorCount[0]++;
                                             String logRep = rep1.isEmpty() ? "(删除)" : rep1;
                                             final String errLog = "发现错误：" + g1 + " → " + logRep + " | 共 " + errorCount[0] + " 处";
@@ -1707,8 +1714,10 @@ jobs:
                                             intermediateBlocks.add(new MainActivity.TextBlock(String.valueOf(g2.charAt(k)), String.valueOf(g2.charAt(k)), false, 0f, 0));
                                         }
 
-                                        if (!g3.equals(rep3)) {
-                                            intermediateBlocks.add(new MainActivity.TextBlock(g3, rep3, true, 1.0f, 6));
+                                        if (isG3Error) {
+                                            MainActivity.TextBlock tb3 = new MainActivity.TextBlock(g3, rep3, true, 1.0f, 6);
+                                            tb3.exp = exp;
+                                            intermediateBlocks.add(tb3);
                                             errorCount[0]++;
                                             String logRep = rep3.isEmpty() ? "(删除)" : rep3;
                                             final String errLog = "发现错误：" + g3 + " → " + logRep + " | 共 " + errorCount[0] + " 处";
@@ -1718,7 +1727,6 @@ jobs:
                                                 intermediateBlocks.add(new MainActivity.TextBlock(String.valueOf(g3.charAt(k)), String.valueOf(g3.charAt(k)), false, 0f, 0));
                                             }
                                         }
-
                                         i += m.group(0).length();
                                         matchedGram = true;
                                         break;
@@ -2218,8 +2226,8 @@ jobs:
                     gramRules.add(new GramRule("(达|多达|高达|达到)( *)(大约|大概|将近|差不多|近|不下|不下于)", new String[][]{ {"有", null}, {"约有", null} }));
                     gramRules.add(new GramRule("(?:(?<=数万|几万|上万)|(?<=数十万|数百万))(名)([^，。；！？、\\n]{0,8}?)(人群)", new String[][]{ {"人的", ""} }));
                     
-                    // 【精妙策略】：彻底放弃自动计算。利用引擎直接附加“(语病)”后缀，交由用户通过长按进入编辑器手动重写
-                    gramRules.add(new GramRule("(减少|降低|缩短|下降|减小|缩小)([^，。；！？、\\n]{0,15}?[0-9十百千万亿两半])(倍)", new String[][]{ {null, "倍(语病，下降/减小等不能用倍数表示。)"} }));
+                    // 【精妙策略】：彻底放弃自动计算。利用独立说明字段标识语病，保证正文纯净
+                    gramRules.add(new GramRule("(减少|降低|缩短|下降|减小|缩小)([^，。；！？、\\n]{0,15}?[0-9十百千万亿两半])(倍)", new String[][]{ {null, "倍", "下降/减小等不能用倍数表示。"} }));
                     gramRules.add(new GramRule("(随便|随意)( *)(苟同)", new String[][]{ {"", null} }));
                     gramRules.add(new GramRule("(非常|十分|极其|特别|尤其)( *)(酷爱|惨重|硕大|嗜好|痛恨|严禁)", new String[][]{ {"", null} }));
                     gramRules.add(new GramRule("(发自内心的?|从内心里的?|打心眼里的?)( *)(由衷)", new String[][]{ {"", null} }));
@@ -2465,6 +2473,7 @@ jobs:
                 boolean isMutable; float conf;
                 int type; 
                 boolean userModified = false;
+                String exp = ""; // 新增说明字段
                 public TextBlock(String o, String c, boolean m, float f, int t) {
                     this.original = o; 
                     this.current = (o != null && o.equals(c)) ? o : c; 
@@ -2643,6 +2652,7 @@ jobs:
                             obj.put("f", b.conf);
                             obj.put("t", b.type);
                             obj.put("u", b.userModified);
+                            if (b.exp != null && !b.exp.isEmpty()) obj.put("exp", b.exp);
                             sentArr.put(obj);
                         }
                         arr.put(sentArr);
@@ -2669,6 +2679,7 @@ jobs:
                             );
                             b.modelCorrected = obj.getString("mc");
                             b.userModified = obj.getBoolean("u");
+                            b.exp = obj.optString("exp", "");
                             sentence.add(b);
                         }
                         blocks.add(sentence);
@@ -4645,10 +4656,16 @@ jobs:
                                         String g3 = m.group(3);
                                         String[] selectedOption = rule.options[(int)(Math.random() * rule.options.length)];
                                         String rep1 = selectedOption[0] != null ? selectedOption[0] : g1;
-                                        String rep3 = selectedOption[1] != null ? selectedOption[1] : g3;
+                                        String rep3 = selectedOption.length > 1 && selectedOption[1] != null ? selectedOption[1] : g3;
+                                        String exp = selectedOption.length > 2 && selectedOption[2] != null ? selectedOption[2] : "";
 
-                                        if (!g1.equals(rep1)) {
-                                            intermediateBlocks.add(new TextBlock(g1, rep1, true, 1.0f, 6));
+                                        boolean isG1Error = !g1.equals(rep1) || (!exp.isEmpty() && selectedOption[0] != null);
+                                        boolean isG3Error = !g3.equals(rep3) || (!exp.isEmpty() && selectedOption.length > 1 && selectedOption[1] != null);
+
+                                        if (isG1Error) {
+                                            TextBlock tb1 = new TextBlock(g1, rep1, true, 1.0f, 6);
+                                            tb1.exp = exp;
+                                            intermediateBlocks.add(tb1);
                                         } else {
                                             for (int k = 0; k < g1.length(); k++) {
                                                 intermediateBlocks.add(new TextBlock(String.valueOf(g1.charAt(k)), String.valueOf(g1.charAt(k)), false, 0f, 0));
@@ -4659,8 +4676,10 @@ jobs:
                                             intermediateBlocks.add(new TextBlock(String.valueOf(g2.charAt(k)), String.valueOf(g2.charAt(k)), false, 0f, 0));
                                         }
 
-                                        if (!g3.equals(rep3)) {
-                                            intermediateBlocks.add(new TextBlock(g3, rep3, true, 1.0f, 6));
+                                        if (isG3Error) {
+                                            TextBlock tb3 = new TextBlock(g3, rep3, true, 1.0f, 6);
+                                            tb3.exp = exp;
+                                            intermediateBlocks.add(tb3);
                                         } else {
                                             for (int k = 0; k < g3.length(); k++) {
                                                 intermediateBlocks.add(new TextBlock(String.valueOf(g3.charAt(k)), String.valueOf(g3.charAt(k)), false, 0f, 0));
@@ -4854,7 +4873,7 @@ jobs:
                             for (List<TextBlock> c : rawClauses) {
                                 boolean hasErr = false;
                                 for (TextBlock b : c) {
-                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified || !b.exp.isEmpty())) {
                                         hasErr = true; break;
                                     }
                                 }
@@ -4873,7 +4892,7 @@ jobs:
                             for (List<TextBlock> group : errorGroups) {
                                 sentenceHasError = true;
                                 List<TextBlock> errsInGroup = new ArrayList<>();
-                                for (TextBlock b : group) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) errsInGroup.add(b); }
+                                for (TextBlock b : group) { if (b.isMutable && (!b.current.equals(b.original) || b.userModified || !b.exp.isEmpty())) errsInGroup.add(b); }
                                 
                                 sentenceErrorHtml.append("<font color='#2196F3'><b>[");
                                 for (int errIdx = 0; errIdx < errsInGroup.size(); errIdx++) {
@@ -4885,11 +4904,17 @@ jobs:
                                 for (TextBlock b : group) {
                                     String safeOrig = MainActivity.escapeHtmlQuick(b.original);
                                     String safeCurr = MainActivity.escapeHtmlQuick(b.current);
-                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified)) {
+                                    if (b.isMutable && (!b.current.equals(b.original) || b.userModified || !b.exp.isEmpty())) {
                                         liveErrorCount++;
                                         String confStr = (b.type == 1) ? String.format(" (置信度:%.2f)", b.conf) : ((b.type == 4) ? " (自定义)" : "");
+                                        if (b.exp != null && !b.exp.isEmpty()) confStr += " (" + b.exp + ")";
                                         String origColor = (b.type == 6) ? "#E53935" : "#9E9E9E";
-                                        sentenceErrorHtml.append("<font color='").append(origColor).append("'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
+                                        
+                                        if (b.current.equals(b.original)) {
+                                            sentenceErrorHtml.append("<font color='#E53935'><b>").append(safeOrig).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
+                                        } else {
+                                            sentenceErrorHtml.append("<font color='").append(origColor).append("'><s>").append(safeOrig).append("</s></font> <font color='#E53935'><b>").append(safeCurr).append("</b></font><font color='#9E9E9E'><small>").append(confStr).append("</small></font>");
+                                        }
                                     } else { sentenceErrorHtml.append(safeOrig); }
                                 }
                                 sentenceErrorHtml.append("<br>");
@@ -5009,7 +5034,7 @@ jobs:
                 blockToMainTargetSpan.clear();
                 java.util.Map<TextBlock, Integer> blockToAbsOffset = new java.util.HashMap<>();
                 int currentErrors = 0;
-                for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && (!b.current.equals(b.original))) currentErrors++; } }
+                for (List<TextBlock> sentence : allSentencesBlocks) { for (TextBlock b : sentence) { if (b.isMutable && (!b.current.equals(b.original) || !b.exp.isEmpty())) currentErrors++; } }
                 
                 final int[] baseOffsetObj = {0};
                 
@@ -5042,7 +5067,7 @@ jobs:
                             docIndex++; pendingDocMarker = false;
                         }
                         
-                        boolean isError = b.isMutable && (!b.current.equals(b.original));
+                        boolean isError = b.isMutable && (!b.current.equals(b.original) || !b.exp.isEmpty());
                         
                         int start = ssbFull.length(); ssbFull.append(b.current);
                         int spanStart = start;
@@ -5063,8 +5088,8 @@ jobs:
                                 @Override public void onClick(View widget) { showEditDialog(b); }
                                 @Override public void updateDrawState(TextPaint ds) {
                                     ds.setUnderlineText(true);
-                                    if (!b.current.equals(b.original)) { 
-                                        if (b.userModified) ds.setColor(0xFF4CAF50); 
+                                    if (!b.current.equals(b.original) || !b.exp.isEmpty()) { 
+                                        if (b.userModified && !b.current.equals(b.original)) ds.setColor(0xFF4CAF50); 
                                         else ds.setColor(0xFFE53935); 
                                         ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); 
                                     } else { 
@@ -5163,7 +5188,7 @@ jobs:
                         for (List<TextBlock> c : rawClauses) {
                             boolean hasErr = false;
                             for (TextBlock b : c) {
-                                if (b.isMutable && (!b.current.equals(b.original))) {
+                                if (b.isMutable && (!b.current.equals(b.original) || !b.exp.isEmpty())) {
                                     hasErr = true; break;
                                 }
                             }
@@ -5180,7 +5205,7 @@ jobs:
                         
                         for (List<TextBlock> clause : clauses) {
                             List<TextBlock> errsInClause = new ArrayList<>();
-                            for (TextBlock b : clause) { if (b.isMutable && (!b.current.equals(b.original))) errsInClause.add(b); }
+                            for (TextBlock b : clause) { if (b.isMutable && (!b.current.equals(b.original) || !b.exp.isEmpty())) errsInClause.add(b); }
                             
                             if (!errsInClause.isEmpty()) {
                                 int stStart = ssb.length();
@@ -5195,7 +5220,7 @@ jobs:
                                 JumpSpan jumpSpan = new JumpSpan() {
                                     @Override public int getTargetOffset(Spanned spanText) {
                                         for (TextBlock b : clause) {
-                                            if (b.isMutable && (!b.current.equals(b.original))) {
+                                            if (b.isMutable && (!b.current.equals(b.original) || !b.exp.isEmpty())) {
                                                 Integer relOffset = blockToAbsOffset.get(b);
                                                 if (relOffset != null) return baseOffsetObj[0] + relOffset;
                                             }
@@ -5230,30 +5255,35 @@ jobs:
                                 ssb.setSpan(jumpSpan, stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
                                 for (TextBlock b : clause) {
-                                    if (b.isMutable && (!b.current.equals(b.original))) {
-                                        int oldTextStart = ssb.length(); 
-                                        ssb.append(b.original); 
-                                        if (b.type == 6) {
-                                            ssb.setSpan(new ColoredStrikethroughSpan(0xFF9E9E9E, 0xFFE53935), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                    if (b.isMutable && (!b.current.equals(b.original) || !b.exp.isEmpty())) {
+                                        int newStart = -1, newEnd = -1;
+                                        if (b.current.equals(b.original)) {
+                                            newStart = ssb.length();
+                                            ssb.append(b.original);
+                                            newEnd = ssb.length();
                                         } else {
-                                            ssb.setSpan(new StrikethroughSpan(), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                                            ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            int oldTextStart = ssb.length(); 
+                                            ssb.append(b.original); 
+                                            if (b.type == 6) {
+                                                ssb.setSpan(new ColoredStrikethroughSpan(0xFF9E9E9E, 0xFFE53935), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            } else {
+                                                ssb.setSpan(new StrikethroughSpan(), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                                ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), oldTextStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            }
+                                            ssb.append(" ");
+                                            
+                                            newStart = ssb.length(); 
+                                            ssb.append(b.current);
+                                            newEnd = ssb.length();
                                         }
-                                        ssb.append(" ");
-                                        
-                                        int newStart = ssb.length(); 
-                                        ssb.append(b.current);
-                                        int newEnd = ssb.length();
-                                        if (newStart == newEnd && newStart > 0) {
-                                            newStart = newStart - 1; 
-                                        }
+                                        if (newStart == newEnd && newStart > 0) newStart = newStart - 1; 
                                         int flagsList = (newStart == newEnd) ? Spanned.SPAN_POINT_MARK : Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
                                         
                                         EditSpan clickSpan = new EditSpan() {
                                             @Override public void onClick(View w) { showEditDialog(b); }
                                             @Override public void updateDrawState(TextPaint ds) { 
-                                                if (!b.current.equals(b.original)) { 
-                                                    if (b.userModified) ds.setColor(0xFF4CAF50); 
+                                                if (!b.current.equals(b.original) || !b.exp.isEmpty()) { 
+                                                    if (b.userModified && !b.current.equals(b.original)) ds.setColor(0xFF4CAF50); 
                                                     else ds.setColor(0xFFE53935); 
                                                     ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); 
                                                 } else { 
@@ -5273,6 +5303,11 @@ jobs:
                                             int confStart = ssb.length(); ssb.append("(自定义)");
                                             ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                             ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        }
+                                        if (!b.userModified && b.exp != null && !b.exp.isEmpty()) {
+                                            int expStart = ssb.length(); ssb.append("(").append(b.exp).append(")");
+                                            ssb.setSpan(new ForegroundColorSpan(0xFF9E9E9E), expStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            ssb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), expStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                         }
                                         
                                         listErrIdx++;
@@ -5348,19 +5383,26 @@ jobs:
                                 ssbEditor.setSpan(edJumpSpan, edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
                                 for (TextBlock b : clause) {
-                                    if (b.isMutable && (!b.current.equals(b.original))) {
-                                        int edOldStart = ssbEditor.length();
-                                        ssbEditor.append(b.original);
-                                        if (b.type == 6) {
-                                            ssbEditor.setSpan(new ColoredStrikethroughSpan(0xFF9E9E9E, 0xFFE53935), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                    if (b.isMutable && (!b.current.equals(b.original) || !b.exp.isEmpty())) {
+                                        int edNewStart = -1;
+                                        if (b.current.equals(b.original)) {
+                                            edNewStart = ssbEditor.length();
+                                            ssbEditor.append(b.original);
                                         } else {
-                                            ssbEditor.setSpan(new StrikethroughSpan(), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            int edOldStart = ssbEditor.length();
+                                            ssbEditor.append(b.original);
+                                            if (b.type == 6) {
+                                                ssbEditor.setSpan(new ColoredStrikethroughSpan(0xFF9E9E9E, 0xFFE53935), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            } else {
+                                                ssbEditor.setSpan(new StrikethroughSpan(), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                                ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), edOldStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            }
+                                            ssbEditor.append(" ");
+                                            edNewStart = ssbEditor.length();
+                                            ssbEditor.append(b.current);
                                         }
-                                        ssbEditor.append(" ");
-                                        int edNewStart = ssbEditor.length();
-                                        ssbEditor.append(b.current);
-                                        if (b.userModified) {
+                                        
+                                        if (b.userModified && !b.current.equals(b.original)) {
                                             ssbEditor.setSpan(new ForegroundColorSpan(0xFF4CAF50), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                         } else {
                                             ssbEditor.setSpan(new ForegroundColorSpan(0xFFE53935), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -5376,6 +5418,11 @@ jobs:
                                             ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), confStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                                             ssbEditor.setSpan(new android.text.style.RelativeSizeSpan(0.85f), confStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                         }
+                                        if (!b.userModified && b.exp != null && !b.exp.isEmpty()) {
+                                            int expStart = ssbEditor.length(); ssbEditor.append("(").append(b.exp).append(")");
+                                            ssbEditor.setSpan(new ForegroundColorSpan(0xFF9E9E9E), expStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                                            ssbEditor.setSpan(new android.text.style.RelativeSizeSpan(0.85f), expStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        }
                                     } else { 
                                         ssbEditor.append(b.current); 
                                     }
@@ -5383,13 +5430,11 @@ jobs:
                                 ssbEditor.append("\n");
                                 
                                 for (TextBlock b : clause) {
-                                    if (b.isMutable && (!b.current.equals(b.original))) {
+                                    if (b.isMutable && (!b.current.equals(b.original) || !b.exp.isEmpty())) {
                                         TargetSpan ts = blockToTargetSpan.get(b);
                                         if (ts != null) link.targetSpans.add(ts);
                                     }
                                 }
-                                
-                                currentClauseLinks.add(link);
                             }
                         }
                     }
