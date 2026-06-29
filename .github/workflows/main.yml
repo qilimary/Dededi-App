@@ -1182,7 +1182,7 @@ jobs:
                         if (historyArray.length() > 0) {
                             org.json.JSONObject lastRecord = historyArray.getJSONObject(0);
                             if (lastRecord.has("textHash") && lastRecord.getInt("textHash") == currentHash) {
-                                // [性能优化] 文本与最新一次记录完全一致，直接复用其ID并终止后续冗余的磁盘读写！
+                            // [性能优化] 文本与最新一次记录完全一致，直接复用其ID并终止后续冗余的磁盘读写！
                             fileIdHolder[0] = lastRecord.optString("file", fileIdHolder[0]);
                             return; 
                         }
@@ -1426,9 +1426,16 @@ jobs:
                 });
                 
                 Runnable jumpToApp = () -> {
+                    if (MainActivity.isEditorOpen) {
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            Toast.makeText(FloatingService.this, "编辑模式中无法跳转，请先保存或退出。", Toast.LENGTH_SHORT).show();
+                        });
+                        return;
+                    }
                     Intent intent = new Intent(FloatingService.this, MainActivity.class);
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     intent.putExtra("SYNC_TEXT", editFloatInput.getText().toString());
+                    intent.putExtra("FROM_FLOAT_JUMP", true);
                     startActivity(intent);
                     panelInput.setVisibility(View.GONE);
                     setFocusable(false);
@@ -2055,6 +2062,8 @@ jobs:
             public static boolean typoMapLoaded = false;
             
             public static volatile boolean isCleanDialogOpen = false;
+            public static volatile boolean isEditorOpen = false;
+            public static volatile boolean isWaitingForFloatResult = false;
             private String editingTypoKey = null;
 
             public interface TextCleanCallback {
@@ -3454,6 +3463,7 @@ jobs:
                                 expandedEditorOverlay.setVisibility(View.VISIBLE);
                                 expandedEditorOverlay.animate().alpha(1f).translationY(0f).setDuration(250).start();
                                 Toast.makeText(MainActivity.this, "进入编辑模式：波浪线为系统或你修改过的文字。", Toast.LENGTH_SHORT).show();
+                                isEditorOpen = true;
                             }
                         });
                     };
@@ -3519,6 +3529,7 @@ jobs:
                     expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> {
                         expandedEditorOverlay.setVisibility(View.GONE);
                         drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED);
+                        isEditorOpen = false;
                     }).start();
                 };
 
@@ -3533,6 +3544,7 @@ jobs:
                                 expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> {
                                     expandedEditorOverlay.setVisibility(View.GONE);
                                     drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED);
+                                    isEditorOpen = false;
                                 }).start();
                             })
                             .show();
@@ -3540,6 +3552,7 @@ jobs:
                         expandedEditorOverlay.animate().alpha(0f).translationY(150f).setDuration(250).withEndAction(() -> {
                             expandedEditorOverlay.setVisibility(View.GONE);
                             drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED);
+                            isEditorOpen = false;
                         }).start();
                     }
                 });
@@ -4297,12 +4310,22 @@ jobs:
             }
             
             public void onFloatResultReady() {
-                if (hasNewFloatResult) {
+                if (hasNewFloatResult && isWaitingForFloatResult) {
                     hasNewFloatResult = false;
+                    isWaitingForFloatResult = false;
                     isManuallyEditedOut = false;
                     if (pendingFloatFileId != null) {
                         lastSavedHistoryFileId = pendingFloatFileId;
                     }
+                    
+                    String sync = sp.getString("sync_text", "");
+                    if (!sync.isEmpty() && !sync.equals(inputText.getText().toString())) {
+                        boolean old = isRestoringHistory;
+                        isRestoringHistory = true; 
+                        inputText.setText(sync);
+                        isRestoringHistory = old;
+                    }
+                    
                     renderFinalBlocks();
                     btnCopy.setEnabled(true);
                     btnCheck.setEnabled(true);
@@ -4329,7 +4352,7 @@ jobs:
                     loadSettings(currentIsFast);
                 }
                 
-                if (hasNewFloatResult) {
+                if (hasNewFloatResult && isWaitingForFloatResult) {
                     onFloatResultReady();
                 }
             }
@@ -4341,6 +4364,14 @@ jobs:
             }
             private void handleIntent(Intent intent) {
                 if (intent == null) return;
+                
+                if (intent.getBooleanExtra("FROM_FLOAT_JUMP", false)) {
+                    isWaitingForFloatResult = true;
+                    if (hasNewFloatResult) {
+                        onFloatResultReady();
+                    }
+                }
+                
                 if (Intent.ACTION_SEND.equals(intent.getAction()) && intent.getType() != null) {
                     if ("text/plain".equals(intent.getType())) {
                         String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
