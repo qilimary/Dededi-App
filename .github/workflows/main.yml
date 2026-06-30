@@ -1674,6 +1674,11 @@ jobs:
                                     for (int len = Math.min(MainActivity.maxTypoLen, sentence.length() - i); len >= MainActivity.minTypoLen; len--) {
                                         String sub = sentence.substring(i, i + len);
                                         if (MainActivity.typoMap.containsKey(sub)) {
+                                            // ===== 新增防误判拦截 =====
+                                            if (MainActivity.isFalsePositiveTypo(sentence, i, sub)) {
+                                                continue; 
+                                            }
+                                            // =======================
                                             String correct = MainActivity.typoMap.get(sub);
                                             boolean isRealTypo = !sub.equals(correct);
                                             int blockType = MainActivity.customTypoKeys.contains(sub) ? 4 : 2;
@@ -2184,6 +2189,36 @@ jobs:
                     gramRules.add(new GramRule("(责无旁贷)(的? *)(责任|义务)", new String[][]{ {null, ""} }));
                     gramRules.add(new GramRule("(真知灼见)(的? *)(意见|看法|见解)", new String[][]{ {null, ""} }));
                     
+                    // ================= 7. 在/再 专项防呆纠错 =================
+                    // 场景：处理语音输入法极易混淆的“再”错用为“在”的情况（针对固定场所/方位名词）
+                    String locs = "家|家里|家中|家外|卧室|卧房|厨房|客厅|卫生间|洗手间|厕所|茅房|阳台|书房|餐厅|饭厅|浴室|走廊|走道|院子|庭院|地|车|"
+                        + "超市|商场|商店|菜市场|农贸市场|便利店|小卖部|饭店|酒店|旅馆|宾馆|招待所|餐馆|食堂|咖啡厅|咖啡馆|酒吧|网吧|"
+                        + "电影院|戏院|剧院|银行|邮局|理发店|药店|诊所|门|商铺|店|"
+                        + "医院|学校|幼儿园|小学|中学|初中|高中|大学|教室|图书馆|操场|宿舍|办公楼|公司|办公室|工厂|厂里|车间|会议室|"
+                        + "派出所|警察局|公安局|消防队|法院|政府|监狱|看守所|基地|营地|阵地|"
+                        + "车站|火车站|高铁站|地铁站|公交站|客运站|飞机场|机场|码头|港口|停车场|加油站|收费站|"
+                        + "高速上|马路上|街上|路上|十字路口|桥上|桥下|隧道里|铁轨上|"
+                        + "公园|动物园|植物园|游乐场|游乐园|广场|体育馆|体育场|游泳池|健身房|博物馆|展览馆|美术馆|"
+                        + "海|沙滩|海岸|山上|山下|山顶|树林|森林|湖边|河边|江边|水里|田里|农田|地里|"
+                        + "村|乡|农村|城里|城市|市区|郊区|景区|野外|"
+                        + "这|那|哪|里|外|上|下|左边|右边|前面|后面|旁边|附近|远处|高处|低处|深处|内部|外部|中心|中间|顶上|底下|背后|面前";
+                    
+                    // 规则1：如果“再”后面紧跟着这些表示地点的词，100%是错别字，直接改为“在” (例如：再超市 -> 在超市)
+                    gramRules.add(new GramRule("(再)( *)(" + locs + ")", new String[][]{ {"在", null} }));
+                
+                    // 规则2：补充处理反向错误，把“再”错写成“在”
+                    // 在次->再次，在度->再度，在见->再见 （通过负向预测 (?![0-9]) 防止把“在三楼”的“在”误杀）
+                    gramRules.add(new GramRule("(在)( *)(次|度)(?![0-9一二两三四五六七八九十])", new String[][]{ {"再", null} }));
+                    
+                    // 在三->再三 (必须搭配特定动词，防止“他在三楼”被误杀)
+                    gramRules.add(new GramRule("(在)( *)(三)(?=考虑|叮嘱|强调|犹豫|确认|要求|请求|推辞|声明|警告|追问|申明)", new String[][]{ {"再", null} }));
+                    
+                    // ================= 8. 其他拼音/语音输入法 100% 易错词兜底 =================
+                    
+                            
+                    // “截止”和“截至”的强效规范（极易写错）
+                    gramRules.add(new GramRule("(截止)( *)(目前|今日|今天|现在|年底|月底)", new String[][]{ {"截至", null} }));
+                    
                     // ================= 连词口语化赘余清理（基于用户约束逻辑） =================
                     
                     // 逻辑：(转折词) + (2到15个字的正常内容 + 逗号) + (转折词)
@@ -2281,6 +2316,45 @@ jobs:
                 "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地",
                 "如鱼得水", "留得", "留的", "拍立得", "坏的", "使得","余地","厕所的","睡觉的",
             };
+            
+            // 新增：防错词误杀后处理逻辑
+            public static boolean isFalsePositiveTypo(String sentence, int i, String sub) {
+                if (sub.length() == 0) return false;
+                
+                // 规则1：处理“做/作”开头的词组，加入双重预测（向前看+向后看）
+                if (sub.charAt(0) == '做' || sub.charAt(0) == '作') {
+                    boolean isFalsePositive = false;
+                    
+                    // 【第一重】向前看一个字：判断是否跟着动词前置虚词/助词
+                    if (i > 0) {
+                        char prev = sentence.charAt(i - 1);
+                        String actionPrefixes = "去要在该想会能可来把给多没不曾刚才将正就爱肯敢配帮替让叫使令";
+                        if (actionPrefixes.indexOf(prev) >= 0) {
+                            isFalsePositive = true;
+                        }
+                    }
+                    
+                    // 【第二重】向后看一个字：判断是否是具体事物的名词（容易构成动宾结构）
+                    // 例如“做风 -> 作风”，遇到“做风扇”、“做风筝”，下一个字是“扇/筝”，直接拦截
+                    if (!isFalsePositive && (i + sub.length() < sentence.length())) {
+                        char next = sentence.charAt(i + sub.length());
+                        // 常见容易误杀的具体事物屏蔽字（可根据需要继续补充）
+                        String actionSuffixes = "扇筝联山发牙眼肢手脚衣裤帽鞋饭菜汤";
+                        if (actionSuffixes.indexOf(next) >= 0) {
+                            isFalsePositive = true;
+                        }
+                    }
+                    
+                    if (isFalsePositive) {
+                        return true; // 命中双重判断之一，判定为误杀，跳过本次替换
+                    }
+                }
+     
+
+                return false;
+            }
+            
+            
 
             public static String escapeHtmlQuick(String s) {
                 if (s == null) return "";
@@ -4697,6 +4771,11 @@ jobs:
                                     for (int len = Math.min(maxTypoLen, sentence.length() - i); len >= minTypoLen; len--) {
                                         String sub = sentence.substring(i, i + len);
                                         if (typoMap.containsKey(sub)) {
+                                            // ===== 新增防误判拦截 =====
+                                            if (isFalsePositiveTypo(sentence, i, sub)) {
+                                                continue; 
+                                            }
+                                            // =======================
                                             String correct = typoMap.get(sub);
                                             boolean isRealTypo = !sub.equals(correct);
                                             int blockType = customTypoKeys.contains(sub) ? 4 : 2;
