@@ -2328,7 +2328,7 @@ jobs:
                     // 【第一重】向前看一个字：判断是否跟着动词前置虚词/助词
                     if (i > 0) {
                         char prev = sentence.charAt(i - 1);
-                        String actionPrefixes = "去要在该想会能可来把给多没不曾刚才将正就爱肯敢配帮替让叫使令";
+                        String actionPrefixes = "创去要在该想会能可来把给多没不曾刚才将正就爱肯敢配帮替让叫使令";
                         if (actionPrefixes.indexOf(prev) >= 0) {
                             isFalsePositive = true;
                         }
@@ -2339,7 +2339,7 @@ jobs:
                     if (!isFalsePositive && (i + sub.length() < sentence.length())) {
                         char next = sentence.charAt(i + sub.length());
                         // 常见容易误杀的具体事物屏蔽字（可根据需要继续补充）
-                        String actionSuffixes = "扇筝联山发牙眼肢手脚衣裤帽鞋饭菜汤";
+                        String actionSuffixes = "扇筝联山发牙眼肢手脚衣裤帽鞋饭菜汤了";
                         if (actionSuffixes.indexOf(next) >= 0) {
                             isFalsePositive = true;
                         }
