@@ -1674,12 +1674,15 @@ jobs:
                                     for (int len = Math.min(MainActivity.maxTypoLen, sentence.length() - i); len >= MainActivity.minTypoLen; len--) {
                                         String sub = sentence.substring(i, i + len);
                                         if (MainActivity.typoMap.containsKey(sub)) {
-                                            // ===== 新增防误判拦截 =====
+                                            // ===== 新增防误判与防冲突双重拦截 =====
                                             if (MainActivity.isFalsePositiveTypo(sentence, i, sub)) {
                                                 continue; 
                                             }
-                                            // =======================
                                             String correct = MainActivity.typoMap.get(sub);
+                                            if (!sub.equals(correct) && MainActivity.isConflictingCorrection(sentence, i, sub, correct)) {
+                                                continue;
+                                            }
+                                            // =======================
                                             boolean isRealTypo = !sub.equals(correct);
                                             int blockType = MainActivity.customTypoKeys.contains(sub) ? 4 : 2;
                                             intermediateBlocks.add(new MainActivity.TextBlock(sub, correct, isRealTypo, 1.0f, blockType));
@@ -1692,6 +1695,7 @@ jobs:
                                             matchedTypo = true;
                                             break;
                                         }
+                                       
                                     }
                                 }
                                 if (matchedTypo) continue;
@@ -2317,15 +2321,15 @@ jobs:
                 "如鱼得水", "留得", "留的", "拍立得", "坏的", "使得","余地","厕所的","睡觉的",
             };
             
-            // 新增：防错词误杀后处理逻辑
+            // 新增：防错词误杀双重后处理（向前看+向后看）
             public static boolean isFalsePositiveTypo(String sentence, int i, String sub) {
                 if (sub.length() == 0) return false;
                 
-                // 规则1：处理“做/作”开头的词组，加入双重预测（向前看+向后看）
+                // 规则1：处理“做/作”开头的词组，双重预测
                 if (sub.charAt(0) == '做' || sub.charAt(0) == '作') {
                     boolean isFalsePositive = false;
                     
-                    // 【第一重】向前看一个字：判断是否跟着动词前置虚词/助词
+                    // 【第一重】向前看一个字：动词前置虚词/助词
                     if (i > 0) {
                         char prev = sentence.charAt(i - 1);
                         String actionPrefixes = "创去要在该想会能可来把给多没不曾刚才将正就爱肯敢配帮替让叫使令";
@@ -2334,27 +2338,58 @@ jobs:
                         }
                     }
                     
-                    // 【第二重】向后看一个字：判断是否是具体事物的名词（容易构成动宾结构）
-                    // 例如“做风 -> 作风”，遇到“做风扇”、“做风筝”，下一个字是“扇/筝”，直接拦截
+                    // 【第二重】向后看一个字：具体事物的名词（容易跟做/作构成动宾结构）
                     if (!isFalsePositive && (i + sub.length() < sentence.length())) {
                         char next = sentence.charAt(i + sub.length());
-                        // 常见容易误杀的具体事物屏蔽字（可根据需要继续补充）
                         String actionSuffixes = "扇筝联山发牙眼肢手脚衣裤帽鞋饭菜汤了";
                         if (actionSuffixes.indexOf(next) >= 0) {
                             isFalsePositive = true;
                         }
                     }
                     
-                    if (isFalsePositive) {
-                        return true; // 命中双重判断之一，判定为误杀，跳过本次替换
-                    }
+                    if (isFalsePositive) return true; // 命中其一，判定为合法词组，跳过替换
                 }
-     
+                
 
                 return false;
             }
+
+            // 新增：防振荡与逻辑冲突预测拦截器
+            public static boolean isConflictingCorrection(String sentence, int i, String sub, String correct) {
+                if (sub.equals(correct)) return false;
+
+                // 模拟出如果替换成功后，局部的字符串会变成什么样
+                String sim = sentence.substring(0, i) + correct + sentence.substring(i + sub.length());
+                int startIdx = i;
+                int endIdx = i + correct.length();
+
+                int searchStart = Math.max(0, startIdx - maxTypoLen + 1);
+                
+                // 扫描替换后新生成的词周边，是否触发了字典里的其他规则，并且存在“边界跨越”
+                for (int k = searchStart; k < endIdx; k++) {
+                    for (int len = minTypoLen; len <= maxTypoLen; len++) {
+                        if (k + len <= sim.length()) {
+                            boolean crossesLeft = (k < startIdx && k + len > startIdx);
+                            boolean crossesRight = (k < endIdx && k + len > endIdx);
+                            
+                            if (crossesLeft || crossesRight) {
+                                String simSub = sim.substring(k, k + len);
+                                if (typoMap.containsKey(simSub)) {
+                                    String simCorrect = typoMap.get(simSub);
+                                    if (!simSub.equals(simCorrect)) {
+                                        // 发现修改后会意外触发另一条错词替换（构成冲突叠加）
+                                        // 说明原本的词跟新词都有存在的合理性，直接拦截放弃修改！
+                                        return true; 
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
             
-            
+
 
             public static String escapeHtmlQuick(String s) {
                 if (s == null) return "";
@@ -4771,12 +4806,16 @@ jobs:
                                     for (int len = Math.min(maxTypoLen, sentence.length() - i); len >= minTypoLen; len--) {
                                         String sub = sentence.substring(i, i + len);
                                         if (typoMap.containsKey(sub)) {
-                                            // ===== 新增防误判拦截 =====
+                                            // ===== 新增防误判与防冲突双重拦截 =====
                                             if (isFalsePositiveTypo(sentence, i, sub)) {
                                                 continue; 
                                             }
-                                            // =======================
                                             String correct = typoMap.get(sub);
+                                            // 探测如果替换，是否会导致逻辑交叠碰撞，如果是则跳过
+                                            if (!sub.equals(correct) && isConflictingCorrection(sentence, i, sub, correct)) {
+                                                continue;
+                                            }
+                                            // =======================
                                             boolean isRealTypo = !sub.equals(correct);
                                             int blockType = customTypoKeys.contains(sub) ? 4 : 2;
                                             intermediateBlocks.add(new TextBlock(sub, correct, isRealTypo, 1.0f, blockType));
