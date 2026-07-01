@@ -810,6 +810,9 @@ jobs:
                             <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnFloat" android:layout_width="24dp" android:layout_height="24dp" 
                                 android:layout_marginEnd="8dp" android:text="✓" android:textSize="12sp" 
                                 android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null" android:padding="0dp"/>
+                            <Button android:id="@+id/btnFont" android:layout_width="32dp" android:layout_height="32dp" 
+                                android:text="A" android:textStyle="bold" android:textSize="14sp" android:backgroundTint="#90CAF9" android:textColor="#FFFFFF"
+                                android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                             <Button android:id="@+id/btnMenu" android:layout_width="32dp" android:layout_height="32dp" 
                                 android:text="≡" android:textSize="14sp" android:backgroundTint="#BDBDBD" 
                                 android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="8dp"/>
@@ -961,6 +964,19 @@ jobs:
                                 android:textColor="#FFFFFF"
                                 android:textSize="14sp"
                                 android:backgroundTint="#2196F3" />
+                                
+                            <Button
+                                android:id="@+id/btnEditorRedo"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:minWidth="55dp"
+                                android:minHeight="40dp"
+                                android:paddingHorizontal="10dp"
+                                android:layout_marginEnd="4dp"
+                                android:text="还原"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp"
+                                android:backgroundTint="#00BCD4" />
     
                             <Button
                                 android:id="@+id/btnEditorSave"
@@ -2575,7 +2591,115 @@ jobs:
             public boolean isEditorSelfModifying = false;
             public List<ClauseLink> currentClauseLinks = new ArrayList<>();
             private java.util.Stack<SpannableStringBuilder> editorUndoStack = new java.util.Stack<>();
+            private java.util.Stack<SpannableStringBuilder> editorRedoStack = new java.util.Stack<>();
             private Map<TextBlock, TargetSpan> blockToMainTargetSpan = new HashMap<>();
+
+            private void updateFontSize(int offset) {
+                int ioSize = 15 + offset;
+                // 非主要文本最多只缩放 -1 或 +1
+                int uiOffset = Math.max(-1, Math.min(1, offset));
+                
+                if (inputText != null) inputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, ioSize);
+                if (outputText != null) outputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, ioSize);
+                EditText expandedEditText = findViewById(R.id.expandedEditText);
+                if (expandedEditText != null) expandedEditText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, ioSize);
+                
+                TextView tvTitle = findViewById(R.id.tvTitle);
+                if (tvTitle != null) tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 20 + uiOffset);
+                if (rbFast != null) rbFast.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                if (rbPro != null) rbPro.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                if (btnCheck != null) btnCheck.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16 + uiOffset);
+                if (btnImport != null) btnImport.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (btnPaste != null) btnPaste.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (btnClear != null) btnClear.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (btnCopy != null) btnCopy.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (btnSaveTxt != null) btnSaveTxt.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (tvWordCount != null) tvWordCount.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11 + uiOffset);
+                
+                Button btnEditorIndent = findViewById(R.id.btnEditorIndent);
+                if (btnEditorIndent != null) btnEditorIndent.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                Button btnEditorUndo = findViewById(R.id.btnEditorUndo);
+                if (btnEditorUndo != null) btnEditorUndo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                Button btnEditorRedo = findViewById(R.id.btnEditorRedo);
+                if (btnEditorRedo != null) btnEditorRedo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                Button btnEditorSave = findViewById(R.id.btnEditorSave);
+                if (btnEditorSave != null) btnEditorSave.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+            }
+            
+            private void showFontSizeDialog() {
+                int currentOffset = sp.getInt("font_offset", 0);
+                
+                LinearLayout layout = new LinearLayout(this);
+                layout.setOrientation(LinearLayout.VERTICAL);
+                layout.setPadding(60, 50, 60, 30);
+                layout.setBackgroundColor(Color.TRANSPARENT);
+                
+                TextView tvTitle = new TextView(this);
+                tvTitle.setText("调节字体大小");
+                tvTitle.setTextSize(18f);
+                tvTitle.setTextColor(0xFF000000);
+                tvTitle.getPaint().setFakeBoldText(true);
+                
+                TextView tvSubtitle = new TextView(this);
+                tvSubtitle.setText("当前字号: " + (15 + currentOffset));
+                tvSubtitle.setTextSize(14f);
+                tvSubtitle.setTextColor(0xFF666666);
+                tvSubtitle.setPadding(0, 20, 0, 40);
+                
+                android.widget.SeekBar seekBar = new android.widget.SeekBar(this);
+                seekBar.setMax(14); // 范围: -4 到 +10
+                seekBar.setProgress(currentOffset + 4);
+                seekBar.setPadding(20, 0, 20, 40);
+                
+                seekBar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                    @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) {
+                        int offset = progress - 4;
+                        tvSubtitle.setText("当前字号: " + (15 + offset));
+                        updateFontSize(offset);
+                    }
+                    @Override public void onStartTrackingTouch(android.widget.SeekBar seekBar) {}
+                    @Override public void onStopTrackingTouch(android.widget.SeekBar seekBar) {}
+                });
+                
+                Button btnDone = new Button(this);
+                btnDone.setText("完成");
+                btnDone.setTextColor(0xFF2196F3);
+                btnDone.setBackgroundColor(Color.TRANSPARENT);
+                LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                btnLp.gravity = android.view.Gravity.END;
+                btnDone.setLayoutParams(btnLp);
+                
+                layout.addView(tvTitle);
+                layout.addView(tvSubtitle);
+                layout.addView(seekBar);
+                layout.addView(btnDone);
+                
+                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                    .setView(layout)
+                    .create();
+                    
+                btnDone.setOnClickListener(v -> {
+                    sp.edit().putInt("font_offset", seekBar.getProgress() - 4).apply();
+                    dialog.dismiss();
+                });
+                
+                dialog.setOnCancelListener(d -> sp.edit().putInt("font_offset", seekBar.getProgress() - 4).apply());
+                
+                dialog.show();
+                
+                // 定位在屏幕中上部并且设定为宽度的80%
+                android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams();
+                lp.copyFrom(dialog.getWindow().getAttributes());
+                lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.80f);
+                lp.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+                lp.y = (int) (getResources().getDisplayMetrics().heightPixels * 0.18f); // 距离顶部18%的距离
+                dialog.getWindow().setAttributes(lp);
+                
+                android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                gd.setColor(Color.WHITE);
+                gd.setCornerRadius(16f);
+                dialog.getWindow().setBackgroundDrawable(gd);
+            }
 
             public static class TargetSpan {
                 String expected;
@@ -3334,6 +3458,11 @@ jobs:
                 TextView tvTitle = findViewById(R.id.tvTitle);
                 Button btnMenu = findViewById(R.id.btnMenu);
                 View btnFloat = findViewById(R.id.btnFloat);
+                Button btnFont = findViewById(R.id.btnFont);
+                
+                btnFont.setOnClickListener(v -> showFontSizeDialog());
+                // 启动时读取本地设置恢复字体大小
+                updateFontSize(sp.getInt("font_offset", 0));
 
                 View scrollTouchArea = findViewById(R.id.scrollTouchArea);
                 scrollTouchArea.setOnTouchListener((v, event) -> {
@@ -3431,6 +3560,8 @@ jobs:
                             SpannableStringBuilder snapshot = new SpannableStringBuilder(s);
                             editorUndoStack.push(snapshot);
                             if (editorUndoStack.size() > 50) editorUndoStack.remove(0);
+                            // 有新输入的时候，清理“重做栈”，避免逻辑错乱
+                            editorRedoStack.clear(); 
                         } catch (Exception e) {}
                     }
                     @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -3735,11 +3866,16 @@ jobs:
                 });
                 
                 Button btnEditorUndo = findViewById(R.id.btnEditorUndo);
+                Button btnEditorRedo = findViewById(R.id.btnEditorRedo);
+                
                 btnEditorUndo.setOnClickListener(v -> {
                     if (!editorUndoStack.isEmpty()) {
                         try {
                             int savedSelection = expandedEditText.getSelectionStart();
                             int savedScrollY = editorScrollView.getScrollY();
+                            
+                            // 撤销前，把当前画面压入“重做栈”
+                            editorRedoStack.push(new SpannableStringBuilder(expandedEditText.getText()));
                 
                             isEditorSelfModifying = true;
                             SpannableStringBuilder previous = editorUndoStack.pop();
@@ -3767,6 +3903,7 @@ jobs:
                                     expandedEditText.setText(lastEditorSpannable);
                                     isEditorSelfModifying = false;
                                     editorUndoStack.clear();
+                                    editorRedoStack.clear();
                     
                                     int len2 = expandedEditText.length();
                                     expandedEditText.setSelection(Math.max(0, Math.min(restoredSelection, len2)));
@@ -3780,6 +3917,37 @@ jobs:
                                     });
                                 }
                             }
+                        } catch (Exception e) {
+                            isEditorSelfModifying = false;
+                        }
+                    }
+                });
+
+                btnEditorRedo.setOnClickListener(v -> {
+                    if (!editorRedoStack.isEmpty()) {
+                        try {
+                            int savedSelection = expandedEditText.getSelectionStart();
+                            int savedScrollY = editorScrollView.getScrollY();
+
+                            // 还原前，把当前状态再存回“撤销栈”
+                            editorUndoStack.push(new SpannableStringBuilder(expandedEditText.getText()));
+                            
+                            isEditorSelfModifying = true;
+                            SpannableStringBuilder next = editorRedoStack.pop();
+                            expandedEditText.setText(next);
+                            isEditorSelfModifying = false;
+
+                            int newLen = expandedEditText.length();
+                            int restoredSelection = Math.max(0, Math.min(savedSelection, newLen));
+                            expandedEditText.setSelection(restoredSelection);
+
+                            editorScrollView.post(() -> {
+                                try {
+                                    View child = editorScrollView.getChildAt(0);
+                                    int maxScrollY = child != null ? child.getHeight() - editorScrollView.getHeight() : savedScrollY;
+                                    editorScrollView.scrollTo(0, Math.max(0, Math.min(savedScrollY, maxScrollY)));
+                                } catch (Exception ignored) {}
+                            });
                         } catch (Exception e) {
                             isEditorSelfModifying = false;
                         }
@@ -3928,7 +4096,7 @@ jobs:
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
                             "• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
-                            "• 一键粘贴：点击按钮快速读取剪贴板内容。\n" +
+                            "• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次粘贴超过20万字，可能会导致闪退）\n" +
                             "• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n" +
                             "  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n" +
                             "• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
