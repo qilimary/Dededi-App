@@ -896,7 +896,7 @@ jobs:
                         <ScrollView android:id="@+id/scrollView" android:layout_width="match_parent" android:layout_height="match_parent"
                             android:scrollbarSize="16dp" android:scrollbarThumbVertical="@drawable/scrollbar_thumb" android:fadeScrollbars="false">
                             <TextView android:id="@+id/outputText" android:layout_width="match_parent" android:layout_height="wrap_content"
-                                android:textSize="15sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
+                                android:textSize="15.5sp" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="30dp" android:textColor="@color/text_primary" android:lineSpacingExtra="5dp"/>
                         </ScrollView>
                         <View android:id="@+id/scrollTouchArea" android:layout_width="40dp" android:layout_height="match_parent" android:layout_gravity="end"/>
                     </FrameLayout>
@@ -2609,7 +2609,7 @@ jobs:
                 int uiOffset = Math.max(-1, Math.min(1, offset));
                 
                 if (inputText != null) inputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, ioSize);
-                if (outputText != null) outputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, ioSize);
+                // 输出框已被设定为最舒适的固定字号 15.5sp，不再跟随滑块变动
                 EditText expandedEditText = findViewById(R.id.expandedEditText);
                 if (expandedEditText != null) expandedEditText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, ioSize);
                 
@@ -3961,6 +3961,8 @@ jobs:
                         } catch (Exception e) {
                             isEditorSelfModifying = false;
                         }
+                    } else {
+                        Toast.makeText(MainActivity.this, "上一步非撤销操作，无法还原", Toast.LENGTH_SHORT).show();
                     }
                 });
 
@@ -4084,6 +4086,7 @@ jobs:
                         });
                     } catch (Exception ignored) {}
                 }).start();
+                
 
                 tvTitle.setOnClickListener(v -> {
                     String helpText = "【模型介绍】\n" +
@@ -4106,7 +4109,7 @@ jobs:
                             "• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n" +
                             "• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n" +
                             "• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n" +
-                            "• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次粘贴超过20万字，可能会导致闪退）\n" +
+                            "• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能会导致闪退）\n" +
                             "• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n" +
                             "  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n" +
                             "• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n" +
@@ -4121,8 +4124,24 @@ jobs:
                             "【标点清理：】\n" +
                             "  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
-                    new AlertDialog.Builder(this).setTitle("使用说明").setMessage(helpText).setPositiveButton("知道了", null).show();
+                            
+                    int currentOffset = sp.getInt("font_offset", 0);
+                    int uiOffset = Math.max(-1, Math.min(1, currentOffset));
+                    
+                    TextView tvHelp = new TextView(MainActivity.this);
+                    tvHelp.setText(helpText);
+                    tvHelp.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                    tvHelp.setTextColor(0xFF333333);
+                    tvHelp.setLineSpacing(0, 1.2f);
+                    int pad = (int) (20 * getResources().getDisplayMetrics().density);
+                    tvHelp.setPadding(pad, pad / 2, pad, 0);
+                    
+                    ScrollView sv = new ScrollView(MainActivity.this);
+                    sv.addView(tvHelp);
+                    
+                    new AlertDialog.Builder(this).setTitle("使用说明").setView(sv).setPositiveButton("知道了", null).show();
                 });
+                    
 
                 btnMenu.setOnClickListener(v -> {
                     editingTypoKey = null;
