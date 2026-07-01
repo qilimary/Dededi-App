@@ -919,7 +919,7 @@ jobs:
                         
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="48dp"
+                            android:layout_height="50dp"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
                             android:background="@color/card_bg"
@@ -927,11 +927,11 @@ jobs:
                             
                             <Button
                                 android:id="@+id/btnEditorCollapse"
-                                android:layout_width="48dp"
-                                android:layout_height="48dp"
+                                android:layout_width="50dp"
+                                android:layout_height="50dp"
                                 android:text="↓"
                                 android:textColor="#03A9F4"
-                                android:textSize="20sp"
+                                android:textSize="21sp"
                                 android:background="?android:attr/selectableItemBackgroundBorderless"
                                 android:textStyle="bold"
                                 android:focusable="false"
@@ -943,66 +943,66 @@ jobs:
                                 android:id="@+id/btnEditorIndent"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:minWidth="50dp"
-                                android:minHeight="36dp"
-                                android:paddingHorizontal="8dp"
+                                android:minWidth="52dp"
+                                android:minHeight="38dp"
+                                android:paddingHorizontal="9dp"
                                 android:layout_marginEnd="4dp"
                                 android:text="首行缩进"
                                 android:textColor="#FFFFFF"
-                                android:textSize="13sp"
+                                android:textSize="13.5sp"
                                 android:backgroundTint="#2196F3" />
     
                             <Button
                                 android:id="@+id/btnEditorUndo"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:minWidth="50dp"
-                                android:minHeight="36dp"
-                                android:paddingHorizontal="8dp"
+                                android:minWidth="52dp"
+                                android:minHeight="38dp"
+                                android:paddingHorizontal="9dp"
                                 android:layout_marginEnd="4dp"
                                 android:text="撤销"
                                 android:textColor="#FFFFFF"
-                                android:textSize="13sp"
+                                android:textSize="13.5sp"
                                 android:backgroundTint="#2196F3" />
                                 
                             <Button
                                 android:id="@+id/btnEditorRedo"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:minWidth="50dp"
-                                android:minHeight="36dp"
-                                android:paddingHorizontal="8dp"
+                                android:minWidth="52dp"
+                                android:minHeight="38dp"
+                                android:paddingHorizontal="9dp"
                                 android:layout_marginEnd="4dp"
                                 android:text="还原"
                                 android:textColor="#FFFFFF"
-                                android:textSize="13sp"
+                                android:textSize="13.5sp"
                                 android:backgroundTint="#2196F3" />
     
                             <Button
                                 android:id="@+id/btnEditorSave"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:minWidth="50dp"
-                                android:minHeight="36dp"
-                                android:paddingHorizontal="8dp"
+                                android:minWidth="52dp"
+                                android:minHeight="38dp"
+                                android:paddingHorizontal="9dp"
                                 android:layout_marginEnd="8dp"
                                 android:text="保存"
                                 android:textColor="#FFFFFF"
-                                android:textSize="13sp"
+                                android:textSize="13.5sp"
                                 android:backgroundTint="#4CAF50" />
                                 
                             <Button
                                 android:id="@+id/btnEditorClose"
-                                android:layout_width="48dp"
-                                android:layout_height="48dp"
+                                android:layout_width="50dp"
+                                android:layout_height="50dp"
                                 android:text="✕"
                                 android:textColor="#E53935"
-                                android:textSize="16sp"
+                                android:textSize="17sp"
                                 android:background="?android:attr/selectableItemBackgroundBorderless"
                                 android:focusable="false"
                                 android:padding="0dp"/>
                         </LinearLayout>
-
+                        
                         <ScrollView
                             android:id="@+id/editorScrollView"
                             android:layout_width="match_parent"
@@ -2588,10 +2588,19 @@ jobs:
             private String originalEditorText = "";
             private SpannableStringBuilder lastEditorSpannable;
             
+            public static class EditorState {
+                public android.text.SpannableStringBuilder text;
+                public int selectionStart;
+                public EditorState(android.text.SpannableStringBuilder text, int selectionStart) {
+                    this.text = text;
+                    this.selectionStart = selectionStart;
+                }
+            }
+
             public boolean isEditorSelfModifying = false;
             public List<ClauseLink> currentClauseLinks = new ArrayList<>();
-            private java.util.Stack<SpannableStringBuilder> editorUndoStack = new java.util.Stack<>();
-            private java.util.Stack<SpannableStringBuilder> editorRedoStack = new java.util.Stack<>();
+            private java.util.Stack<EditorState> editorUndoStack = new java.util.Stack<>();
+            private java.util.Stack<EditorState> editorRedoStack = new java.util.Stack<>();
             private Map<TextBlock, TargetSpan> blockToMainTargetSpan = new HashMap<>();
 
             private void updateFontSize(int offset) {
@@ -2617,14 +2626,15 @@ jobs:
                 if (tvWordCount != null) tvWordCount.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11 + uiOffset);
                 
                 Button btnEditorIndent = findViewById(R.id.btnEditorIndent);
-                if (btnEditorIndent != null) btnEditorIndent.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (btnEditorIndent != null) btnEditorIndent.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f + uiOffset);
                 Button btnEditorUndo = findViewById(R.id.btnEditorUndo);
-                if (btnEditorUndo != null) btnEditorUndo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (btnEditorUndo != null) btnEditorUndo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f + uiOffset);
                 Button btnEditorRedo = findViewById(R.id.btnEditorRedo);
-                if (btnEditorRedo != null) btnEditorRedo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (btnEditorRedo != null) btnEditorRedo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f + uiOffset);
                 Button btnEditorSave = findViewById(R.id.btnEditorSave);
-                if (btnEditorSave != null) btnEditorSave.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
+                if (btnEditorSave != null) btnEditorSave.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f + uiOffset);
             }
+            
             
             private void showFontSizeDialog() {
                 int currentOffset = sp.getInt("font_offset", 0);
@@ -3557,8 +3567,8 @@ jobs:
                     @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
                         if (isEditorSelfModifying || isCheckingMain || currentClauseLinks == null) return;
                         try {
-                            SpannableStringBuilder snapshot = new SpannableStringBuilder(s);
-                            editorUndoStack.push(snapshot);
+                            android.text.SpannableStringBuilder snapshot = new android.text.SpannableStringBuilder(s);
+                            editorUndoStack.push(new EditorState(snapshot, expandedEditText.getSelectionStart()));
                             if (editorUndoStack.size() > 50) editorUndoStack.remove(0);
                             // 有新输入的时候，清理“重做栈”，避免逻辑错乱
                             editorRedoStack.clear(); 
@@ -3805,7 +3815,7 @@ jobs:
                     android.text.Editable editable = expandedEditText.getText();
                     if (editable == null || editable.length() == 0) return;
 
-                    editorUndoStack.push(new android.text.SpannableStringBuilder(editable));
+                    editorUndoStack.push(new EditorState(new android.text.SpannableStringBuilder(editable), expandedEditText.getSelectionStart()));
 
                     String text = editable.toString();
                     java.util.List<int[]> replacements = new java.util.ArrayList<>();
@@ -3871,23 +3881,22 @@ jobs:
                 btnEditorUndo.setOnClickListener(v -> {
                     if (!editorUndoStack.isEmpty()) {
                         try {
-                            int savedSelection = expandedEditText.getSelectionStart();
                             int savedScrollY = editorScrollView.getScrollY();
                             
                             // 撤销前，把当前画面压入“重做栈”
-                            editorRedoStack.push(new SpannableStringBuilder(expandedEditText.getText()));
-                            // 【纯收益优化】防止暴力操作导致还原栈撑爆内存
+                            editorRedoStack.push(new EditorState(new android.text.SpannableStringBuilder(expandedEditText.getText()), expandedEditText.getSelectionStart()));
                             if (editorRedoStack.size() > 50) editorRedoStack.remove(0);
-                
+
                             isEditorSelfModifying = true;
-                            SpannableStringBuilder previous = editorUndoStack.pop();
-                            expandedEditText.setText(previous);
+                            EditorState previous = editorUndoStack.pop();
+                            expandedEditText.setText(previous.text);
                             isEditorSelfModifying = false;
-                
+
+                            // 完美恢复到撤销前所在的光标位置
                             int newLen = expandedEditText.length();
-                            int restoredSelection = Math.max(0, Math.min(savedSelection, newLen));
+                            int restoredSelection = Math.max(0, Math.min(previous.selectionStart, newLen));
                             expandedEditText.setSelection(restoredSelection);
-                
+
                             editorScrollView.post(() -> {
                                 try {
                                     View child = editorScrollView.getChildAt(0);
@@ -3895,8 +3904,8 @@ jobs:
                                     editorScrollView.scrollTo(0, Math.max(0, Math.min(savedScrollY, maxScrollY)));
                                 } catch (Exception ignored) {}
                             });
-                
-                            String currentText = previous.toString();
+
+                            String currentText = previous.text.toString();
                             if (currentText.equals(originalEditorText)) {
                                 isManuallyEditedOut = originalIsManuallyEdited;
                                 if (!isManuallyEditedOut) {
@@ -3904,8 +3913,7 @@ jobs:
                                     isEditorSelfModifying = true;
                                     expandedEditText.setText(lastEditorSpannable);
                                     isEditorSelfModifying = false;
-                                    editorUndoStack.clear();
-                                    editorRedoStack.clear();
+                                    // 删除了这里的 clear() 操作，根除了在原点点击导致还原栈损坏的问题
                     
                                     int len2 = expandedEditText.length();
                                     expandedEditText.setSelection(Math.max(0, Math.min(restoredSelection, len2)));
@@ -3928,19 +3936,19 @@ jobs:
                 btnEditorRedo.setOnClickListener(v -> {
                     if (!editorRedoStack.isEmpty()) {
                         try {
-                            int savedSelection = expandedEditText.getSelectionStart();
                             int savedScrollY = editorScrollView.getScrollY();
 
                             // 还原前，把当前状态再存回“撤销栈”
-                            editorUndoStack.push(new SpannableStringBuilder(expandedEditText.getText()));
+                            editorUndoStack.push(new EditorState(new android.text.SpannableStringBuilder(expandedEditText.getText()), expandedEditText.getSelectionStart()));
                             
                             isEditorSelfModifying = true;
-                            SpannableStringBuilder next = editorRedoStack.pop();
-                            expandedEditText.setText(next);
+                            EditorState next = editorRedoStack.pop();
+                            expandedEditText.setText(next.text);
                             isEditorSelfModifying = false;
 
+                            // 完美恢复到重做前所在的光标位置
                             int newLen = expandedEditText.length();
-                            int restoredSelection = Math.max(0, Math.min(savedSelection, newLen));
+                            int restoredSelection = Math.max(0, Math.min(next.selectionStart, newLen));
                             expandedEditText.setSelection(restoredSelection);
 
                             editorScrollView.post(() -> {
