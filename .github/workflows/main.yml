@@ -2604,14 +2604,17 @@ jobs:
             private Map<TextBlock, TargetSpan> blockToMainTargetSpan = new HashMap<>();
 
             private void updateFontSize(int offset) {
-                int ioSize = 15 + offset;
+                float inputSize = 15f + offset;
+                // 输出框和便签框的基础字号定为 15.5sp（比原始略大一点点），并跟随滑块正常缩放
+                float outputSize = 15.5f + offset;
+                
                 // 非主要文本最多只缩放 -1 或 +1
                 int uiOffset = Math.max(-1, Math.min(1, offset));
                 
-                if (inputText != null) inputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, ioSize);
-                // 输出框已被设定为最舒适的固定字号 15.5sp，不再跟随滑块变动
+                if (inputText != null) inputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, inputSize);
+                if (outputText != null) outputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, outputSize);
                 EditText expandedEditText = findViewById(R.id.expandedEditText);
-                if (expandedEditText != null) expandedEditText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, ioSize);
+                if (expandedEditText != null) expandedEditText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, outputSize);
                 
                 TextView tvTitle = findViewById(R.id.tvTitle);
                 if (tvTitle != null) tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 20 + uiOffset);
