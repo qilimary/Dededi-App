@@ -2603,13 +2603,13 @@ jobs:
             private java.util.Stack<EditorState> editorRedoStack = new java.util.Stack<>();
             private Map<TextBlock, TargetSpan> blockToMainTargetSpan = new HashMap<>();
 
-            private void updateFontSize(int offset) {
-                float inputSize = 15f + offset;
-                // 输出框和便签框的基础字号定为 15.5sp（比原始略大一点点），并跟随滑块正常缩放
-                float outputSize = 15.5f + offset;
+            private void updateFontSize(int textOffset, int sysOffset) {
+                float inputSize = 15f + textOffset;
+                // 输出框和便签框的基础字号定为 15.5sp（比输入框略大），并跟随滑块正常缩放
+                float outputSize = 15.5f + textOffset;
                 
-                // 非主要文本最多只缩放 -1 或 +1
-                int uiOffset = Math.max(-1, Math.min(1, offset));
+                // 系统字体限制在 -2 到 +2
+                int uiOffset = Math.max(-2, Math.min(2, sysOffset));
                 
                 if (inputText != null) inputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, inputSize);
                 if (outputText != null) outputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, outputSize);
@@ -2638,9 +2638,9 @@ jobs:
                 if (btnEditorSave != null) btnEditorSave.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f + uiOffset);
             }
             
-            
             private void showFontSizeDialog() {
-                int currentOffset = sp.getInt("font_offset", 0);
+                int currentTextOffset = sp.getInt("font_offset_text", 0);
+                int currentSysOffset = sp.getInt("font_offset_sys", 0);
                 
                 LinearLayout layout = new LinearLayout(this);
                 layout.setOrientation(LinearLayout.VERTICAL);
@@ -2651,24 +2651,45 @@ jobs:
                 tvTitle.setText("调节字体大小");
                 tvTitle.setTextSize(18f);
                 tvTitle.setTextColor(0xFF000000);
-                tvTitle.getPaint().setFakeBoldText(true);
+                tvTitle.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
                 
-                TextView tvSubtitle = new TextView(this);
-                tvSubtitle.setText("当前字号: " + (15 + currentOffset));
-                tvSubtitle.setTextSize(14f);
-                tvSubtitle.setTextColor(0xFF666666);
-                tvSubtitle.setPadding(0, 20, 0, 40);
+                TextView tvTextSubtitle = new TextView(this);
+                tvTextSubtitle.setText("正文字号 (输入/输出/便签): " + (15 + currentTextOffset));
+                tvTextSubtitle.setTextSize(14f);
+                tvTextSubtitle.setTextColor(0xFF666666);
+                tvTextSubtitle.setPadding(0, 35, 0, 10);
                 
-                android.widget.SeekBar seekBar = new android.widget.SeekBar(this);
-                seekBar.setMax(14); // 范围: -4 到 +10
-                seekBar.setProgress(currentOffset + 4);
-                seekBar.setPadding(20, 0, 20, 40);
+                android.widget.SeekBar seekText = new android.widget.SeekBar(this);
+                seekText.setMax(14); // 对应 -4 到 +10
+                seekText.setProgress(currentTextOffset + 4);
+                seekText.setPadding(20, 10, 20, 40);
                 
-                seekBar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                TextView tvSysSubtitle = new TextView(this);
+                tvSysSubtitle.setText("系统字号 (按钮/标题等): " + (currentSysOffset > 0 ? "+" + currentSysOffset : currentSysOffset));
+                tvSysSubtitle.setTextSize(14f);
+                tvSysSubtitle.setTextColor(0xFF666666);
+                tvSysSubtitle.setPadding(0, 10, 0, 10);
+                
+                android.widget.SeekBar seekSys = new android.widget.SeekBar(this);
+                seekSys.setMax(4); // 对应 -2 到 +2
+                seekSys.setProgress(currentSysOffset + 2);
+                seekSys.setPadding(20, 10, 20, 40);
+                
+                seekText.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
                     @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) {
-                        int offset = progress - 4;
-                        tvSubtitle.setText("当前字号: " + (15 + offset));
-                        updateFontSize(offset);
+                        int tOffset = progress - 4;
+                        tvTextSubtitle.setText("正文字号 (输入/输出等): " + (15 + tOffset));
+                        updateFontSize(tOffset, seekSys.getProgress() - 2);
+                    }
+                    @Override public void onStartTrackingTouch(android.widget.SeekBar seekBar) {}
+                    @Override public void onStopTrackingTouch(android.widget.SeekBar seekBar) {}
+                });
+                
+                seekSys.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                    @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) {
+                        int sOffset = progress - 2;
+                        tvSysSubtitle.setText("系统字号 (按钮/标题等): " + (sOffset > 0 ? "+" + sOffset : sOffset));
+                        updateFontSize(seekText.getProgress() - 4, sOffset);
                     }
                     @Override public void onStartTrackingTouch(android.widget.SeekBar seekBar) {}
                     @Override public void onStopTrackingTouch(android.widget.SeekBar seekBar) {}
@@ -2683,29 +2704,28 @@ jobs:
                 btnDone.setLayoutParams(btnLp);
                 
                 layout.addView(tvTitle);
-                layout.addView(tvSubtitle);
-                layout.addView(seekBar);
+                layout.addView(tvTextSubtitle);
+                layout.addView(seekText);
+                layout.addView(tvSysSubtitle);
+                layout.addView(seekSys);
                 layout.addView(btnDone);
                 
-                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                    .setView(layout)
-                    .create();
+                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this).setView(layout).create();
                     
                 btnDone.setOnClickListener(v -> {
-                    sp.edit().putInt("font_offset", seekBar.getProgress() - 4).apply();
+                    sp.edit().putInt("font_offset_text", seekText.getProgress() - 4).putInt("font_offset_sys", seekSys.getProgress() - 2).apply();
                     dialog.dismiss();
                 });
                 
-                dialog.setOnCancelListener(d -> sp.edit().putInt("font_offset", seekBar.getProgress() - 4).apply());
+                dialog.setOnCancelListener(d -> sp.edit().putInt("font_offset_text", seekText.getProgress() - 4).putInt("font_offset_sys", seekSys.getProgress() - 2).apply());
                 
                 dialog.show();
                 
-                // 定位在屏幕中上部并且设定为宽度的80%
                 android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams();
                 lp.copyFrom(dialog.getWindow().getAttributes());
-                lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.80f);
+                lp.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85f);
                 lp.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
-                lp.y = (int) (getResources().getDisplayMetrics().heightPixels * 0.18f); // 距离顶部18%的距离
+                lp.y = (int) (getResources().getDisplayMetrics().heightPixels * 0.15f);
                 dialog.getWindow().setAttributes(lp);
                 
                 android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
@@ -2713,6 +2733,7 @@ jobs:
                 gd.setCornerRadius(16f);
                 dialog.getWindow().setBackgroundDrawable(gd);
             }
+                
 
             public static class TargetSpan {
                 String expected;
@@ -3474,8 +3495,8 @@ jobs:
                 Button btnFont = findViewById(R.id.btnFont);
                 
                 btnFont.setOnClickListener(v -> showFontSizeDialog());
-                // 启动时读取本地设置恢复字体大小
-                updateFontSize(sp.getInt("font_offset", 0));
+                // 启动时读取正文和系统字体的独立设置
+                updateFontSize(sp.getInt("font_offset_text", 0), sp.getInt("font_offset_sys", 0));
 
                 View scrollTouchArea = findViewById(R.id.scrollTouchArea);
                 scrollTouchArea.setOnTouchListener((v, event) -> {
@@ -4128,8 +4149,8 @@ jobs:
                             "  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n" +
                             "• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                             
-                    int currentOffset = sp.getInt("font_offset", 0);
-                    int uiOffset = Math.max(-1, Math.min(1, currentOffset));
+                    int currentSysOffset = sp.getInt("font_offset_sys", 0);
+                    int uiOffset = Math.max(-2, Math.min(2, currentSysOffset));
                     
                     TextView tvHelp = new TextView(MainActivity.this);
                     tvHelp.setText(helpText);
@@ -5408,7 +5429,11 @@ jobs:
                     }).show();
                 }
             }
-
+            
+            
+            
+            
+            
             private void renderFinalBlocks() {
                 blockToMainTargetSpan.clear();
                 java.util.Map<TextBlock, Integer> blockToAbsOffset = new java.util.HashMap<>();
@@ -5470,7 +5495,8 @@ jobs:
                                     if (!b.current.equals(b.original) || !b.exp.isEmpty()) { 
                                         if (b.userModified && !b.current.equals(b.original)) ds.setColor(0xFF4CAF50); 
                                         else ds.setColor(0xFFE53935); 
-                                        ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); 
+                                        // 采用中等字重，彻底避免 OPPO/小米等机型加粗过度发虚
+                                        ds.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)); 
                                     } else { 
                                         ds.setColor(0xFF2196F3); 
                                     }
@@ -5527,11 +5553,11 @@ jobs:
                     
                     SpannableString listHeader = new SpannableString("【纠错清单：】\n"); 
                     listHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                    listHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                    listHeader.setSpan(new android.text.style.TypefaceSpan("sans-serif-medium"), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                     ssb.append(listHeader);
                     SpannableString listHeaderEd = new SpannableString("【纠错清单：】\n"); 
                     listHeaderEd.setSpan(new ForegroundColorSpan(0xFF757575), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                    listHeaderEd.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    listHeaderEd.setSpan(new android.text.style.TypefaceSpan("sans-serif-medium"), 0, listHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     ssbEditor.append(listHeaderEd);
                     
                     int listErrIdx = 0; 
@@ -5629,7 +5655,7 @@ jobs:
                                             }
                                         } catch (Exception e) {}
                                     }
-                                    @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
+                                    @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)); }
                                 };
                                 ssb.setSpan(jumpSpan, stStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
@@ -5664,7 +5690,7 @@ jobs:
                                                 if (!b.current.equals(b.original) || !b.exp.isEmpty()) { 
                                                     if (b.userModified && !b.current.equals(b.original)) ds.setColor(0xFF4CAF50); 
                                                     else ds.setColor(0xFFE53935); 
-                                                    ds.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); 
+                                                    ds.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)); 
                                                 } else { 
                                                     ds.setColor(0xFF2196F3); 
                                                 }
@@ -5709,7 +5735,7 @@ jobs:
                                 ListMarkerSpan lms = new ListMarkerSpan();
                                 ssbEditor.setSpan(lms, edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 ssbEditor.setSpan(new ForegroundColorSpan(0xFF2196F3), edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                ssbEditor.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                ssbEditor.setSpan(new android.text.style.TypefaceSpan("sans-serif-medium"), edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 link.listMarkerSpan = lms;
                                 
                                 JumpSpan edJumpSpan = new JumpSpan() {
@@ -5757,7 +5783,7 @@ jobs:
                                             }
                                         } catch (Exception e) {}
                                     }
-                                    @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
+                                    @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)); }
                                 };
                                 ssbEditor.setSpan(edJumpSpan, edMarkerStart, edMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                 
@@ -5786,7 +5812,8 @@ jobs:
                                         } else {
                                             ssbEditor.setSpan(new ForegroundColorSpan(0xFFE53935), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                                         }
-                                        ssbEditor.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        ssbEditor.setSpan(new android.text.style.TypefaceSpan("sans-serif-medium"), edNewStart, ssbEditor.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        
                                         if (!b.userModified && b.type == 1) {
                                             String confStr = "置信度: " + String.format("%.2f", b.conf);
                                             int confStart = ssbEditor.length(); ssbEditor.append("(").append(confStr).append(")"); 
@@ -5814,7 +5841,7 @@ jobs:
                                         if (ts != null) link.targetSpans.add(ts);
                                     }
                                 }
-                                currentClauseLinks.add(link); // [修复]：必须加回，否则便签编辑器无法同步修改
+                                currentClauseLinks.add(link);
                             }
                         }
                     }
@@ -5826,11 +5853,11 @@ jobs:
                 
                 SpannableString fullHeader = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); 
                 fullHeader.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                fullHeader.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
+                fullHeader.setSpan(new android.text.style.TypefaceSpan("sans-serif-medium"), 0, fullHeader.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
                 ssb.append(fullHeader);
                 SpannableString fullHeaderEd = new SpannableString(currentErrors > 0 ? "【修正后的全文】\n" : "【原文】\n"); 
                 fullHeaderEd.setSpan(new ForegroundColorSpan(0xFF757575), 0, fullHeaderEd.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); 
-                fullHeaderEd.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, fullHeaderEd.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                fullHeaderEd.setSpan(new android.text.style.TypefaceSpan("sans-serif-medium"), 0, fullHeaderEd.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 ssbEditor.append(fullHeaderEd);
                 
                 int topSectionEnd = ssb.length();
@@ -5858,7 +5885,6 @@ jobs:
                     } catch (Exception e) {}
                 }
                 
-                // 更换为使用刚刚写好的 MyLinkMovementMethod，告别一切假死和超时触发
                 outputText.setText(ssb); 
                 outputText.setMovementMethod(MyLinkMovementMethod.getInstance()); 
                 outputText.setHighlightColor(Color.TRANSPARENT);
