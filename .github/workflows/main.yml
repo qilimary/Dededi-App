@@ -811,7 +811,7 @@ jobs:
                                 android:layout_marginEnd="8dp" android:text="✓" android:textSize="12sp" 
                                 android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null" android:padding="0dp"/>
                             <Button android:id="@+id/btnFont" android:layout_width="32dp" android:layout_height="32dp" 
-                                android:text="A" android:textStyle="bold" android:textSize="14sp" android:backgroundTint="#90CAF9" android:textColor="#FFFFFF"
+                                android:text="A" android:textStyle="bold" android:textSize="18sp" android:background="@null" android:textColor="#2196F3"
                                 android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                             <Button android:id="@+id/btnMenu" android:layout_width="32dp" android:layout_height="32dp" 
                                 android:text="≡" android:textSize="14sp" android:backgroundTint="#BDBDBD" 
@@ -919,7 +919,7 @@ jobs:
                         
                         <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="52dp"
+                            android:layout_height="48dp"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
                             android:background="@color/card_bg"
@@ -927,11 +927,11 @@ jobs:
                             
                             <Button
                                 android:id="@+id/btnEditorCollapse"
-                                android:layout_width="52dp"
-                                android:layout_height="52dp"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
                                 android:text="↓"
                                 android:textColor="#03A9F4"
-                                android:textSize="22sp"
+                                android:textSize="20sp"
                                 android:background="?android:attr/selectableItemBackgroundBorderless"
                                 android:textStyle="bold"
                                 android:focusable="false"
@@ -943,61 +943,61 @@ jobs:
                                 android:id="@+id/btnEditorIndent"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:minWidth="55dp"
-                                android:minHeight="40dp"
-                                android:paddingHorizontal="10dp"
+                                android:minWidth="50dp"
+                                android:minHeight="36dp"
+                                android:paddingHorizontal="8dp"
                                 android:layout_marginEnd="4dp"
                                 android:text="首行缩进"
                                 android:textColor="#FFFFFF"
-                                android:textSize="14sp"
+                                android:textSize="13sp"
                                 android:backgroundTint="#2196F3" />
     
                             <Button
                                 android:id="@+id/btnEditorUndo"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:minWidth="55dp"
-                                android:minHeight="40dp"
-                                android:paddingHorizontal="10dp"
+                                android:minWidth="50dp"
+                                android:minHeight="36dp"
+                                android:paddingHorizontal="8dp"
                                 android:layout_marginEnd="4dp"
                                 android:text="撤销"
                                 android:textColor="#FFFFFF"
-                                android:textSize="14sp"
+                                android:textSize="13sp"
                                 android:backgroundTint="#2196F3" />
                                 
                             <Button
                                 android:id="@+id/btnEditorRedo"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:minWidth="55dp"
-                                android:minHeight="40dp"
-                                android:paddingHorizontal="10dp"
+                                android:minWidth="50dp"
+                                android:minHeight="36dp"
+                                android:paddingHorizontal="8dp"
                                 android:layout_marginEnd="4dp"
                                 android:text="还原"
                                 android:textColor="#FFFFFF"
-                                android:textSize="14sp"
-                                android:backgroundTint="#00BCD4" />
+                                android:textSize="13sp"
+                                android:backgroundTint="#2196F3" />
     
                             <Button
                                 android:id="@+id/btnEditorSave"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:minWidth="55dp"
-                                android:minHeight="40dp"
-                                android:paddingHorizontal="10dp"
+                                android:minWidth="50dp"
+                                android:minHeight="36dp"
+                                android:paddingHorizontal="8dp"
                                 android:layout_marginEnd="8dp"
                                 android:text="保存"
                                 android:textColor="#FFFFFF"
-                                android:textSize="14sp"
+                                android:textSize="13sp"
                                 android:backgroundTint="#4CAF50" />
                                 
                             <Button
                                 android:id="@+id/btnEditorClose"
-                                android:layout_width="52dp"
-                                android:layout_height="52dp"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
                                 android:text="✕"
                                 android:textColor="#E53935"
-                                android:textSize="18sp"
+                                android:textSize="16sp"
                                 android:background="?android:attr/selectableItemBackgroundBorderless"
                                 android:focusable="false"
                                 android:padding="0dp"/>
@@ -2617,13 +2617,13 @@ jobs:
                 if (tvWordCount != null) tvWordCount.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11 + uiOffset);
                 
                 Button btnEditorIndent = findViewById(R.id.btnEditorIndent);
-                if (btnEditorIndent != null) btnEditorIndent.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                if (btnEditorIndent != null) btnEditorIndent.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
                 Button btnEditorUndo = findViewById(R.id.btnEditorUndo);
-                if (btnEditorUndo != null) btnEditorUndo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                if (btnEditorUndo != null) btnEditorUndo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
                 Button btnEditorRedo = findViewById(R.id.btnEditorRedo);
-                if (btnEditorRedo != null) btnEditorRedo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                if (btnEditorRedo != null) btnEditorRedo.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
                 Button btnEditorSave = findViewById(R.id.btnEditorSave);
-                if (btnEditorSave != null) btnEditorSave.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + uiOffset);
+                if (btnEditorSave != null) btnEditorSave.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + uiOffset);
             }
             
             private void showFontSizeDialog() {
@@ -3876,6 +3876,8 @@ jobs:
                             
                             // 撤销前，把当前画面压入“重做栈”
                             editorRedoStack.push(new SpannableStringBuilder(expandedEditText.getText()));
+                            // 【纯收益优化】防止暴力操作导致还原栈撑爆内存
+                            if (editorRedoStack.size() > 50) editorRedoStack.remove(0);
                 
                             isEditorSelfModifying = true;
                             SpannableStringBuilder previous = editorUndoStack.pop();
