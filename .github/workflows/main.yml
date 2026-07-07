@@ -579,7 +579,7 @@ jobs:
                 tvTitle.setText("提示：发现符号残留");
                 tvTitle.setTextSize(15f);
                 tvTitle.setTextColor(0xFF000000);
-                tvTitle.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+                tvTitle.getPaint().setFakeBoldText(true);
                 tvTitle.setPadding(0, 0, 0, 8);
                 
                 TextView tvMsg = new TextView(this);
@@ -803,7 +803,7 @@ jobs:
                     
                     <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp">
                         <TextView android:id="@+id/tvTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" 
-                            android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text_primary"
+                            android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="@color/text_primary"
                             android:layout_alignParentStart="true" android:layout_centerVertical="true"
                             android:clickable="true" android:focusable="true"/>
                         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_alignParentEnd="true" android:layout_centerVertical="true" android:gravity="center_vertical">
@@ -811,7 +811,7 @@ jobs:
                                 android:layout_marginEnd="8dp" android:text="✓" android:textSize="12sp" 
                                 android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null" android:padding="0dp"/>
                             <Button android:id="@+id/btnFont" android:layout_width="32dp" android:layout_height="32dp" 
-                                android:text="A" android:fontFamily="sans-serif-medium" android:textSize="18sp" android:background="@null" android:textColor="#2196F3"
+                                android:text="A" android:textStyle="bold" android:textSize="18sp" android:background="@null" android:textColor="#2196F3"
                                 android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                             <Button android:id="@+id/btnMenu" android:layout_width="32dp" android:layout_height="32dp" 
                                 android:text="≡" android:textSize="14sp" android:backgroundTint="#BDBDBD" 
@@ -835,21 +835,21 @@ jobs:
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的" android:textSize="12sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text_primary"/>
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
                                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
                             </LinearLayout>
                             <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地" android:textSize="12sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text_primary"/>
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
                                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
                             </LinearLayout>
                             <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得" android:textSize="12sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text_primary"/>
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/>
                                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/>
                             </LinearLayout>
                             <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
@@ -933,7 +933,7 @@ jobs:
                                 android:textColor="#03A9F4"
                                 android:textSize="21sp"
                                 android:background="?android:attr/selectableItemBackgroundBorderless"
-                                android:fontFamily="sans-serif-medium"
+                                android:textStyle="bold"
                                 android:focusable="false"
                                 android:padding="0dp"/>
                                 
@@ -1036,7 +1036,7 @@ jobs:
                 <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:padding="16dp">
                     <LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content">
                         
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="自定义错词库" android:textSize="16sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text_primary" android:layout_marginBottom="8dp"/>
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="自定义错词库" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_marginBottom="8dp"/>
                         <com.app.dededi.FlowLayout android:id="@+id/llCustomTypos" android:layout_width="match_parent" android:layout_height="wrap_content"/>
                         <Button android:id="@+id/btnExpandTypos" android:layout_width="match_parent" android:layout_height="36dp" android:text="展开更多" android:textSize="12sp" android:backgroundTint="#E0E0E0" android:textColor="@color/text_primary" android:visibility="gone" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                         
@@ -1048,9 +1048,9 @@ jobs:
                         </LinearLayout>
 
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#E0E0E0" android:layout_marginBottom="16dp"/>
-                        
+
                         <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp">
-                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="最近50条纠错历史" android:textSize="16sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text_primary" android:layout_centerVertical="true"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="最近50条纠错历史" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_centerVertical="true"/>
                             <TextView android:id="@+id/btnClearHistory" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="清空" android:textSize="14sp" android:textColor="#2196F3" android:layout_alignParentEnd="true" android:layout_centerVertical="true" android:padding="4dp" android:background="?android:attr/selectableItemBackground"/>
                         </RelativeLayout>
                         <LinearLayout android:id="@+id/llHistory" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
@@ -1074,7 +1074,7 @@ jobs:
                 android:padding="10dp" android:visibility="gone">
                 
                 <LinearLayout android:id="@+id/panelTopBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="6dp">
-                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:fontFamily="sans-serif-medium"/>
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="悬浮台" android:textSize="13sp" android:textColor="@color/text_primary" android:textStyle="bold"/>
                     <Button android:id="@+id/btnFloatJump" android:layout_width="36dp" android:layout_height="32dp" android:text="↗" android:textSize="14sp" android:backgroundTint="#03A9F4" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                     <Button android:id="@+id/btnFloatCloseAll" android:layout_width="36dp" android:layout_height="32dp" android:text="✕" android:textSize="12sp" android:backgroundTint="#E53935" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="4dp"/>
                 </LinearLayout>
@@ -2303,6 +2303,9 @@ jobs:
                     gramRules.add(new GramRule("(?<=[0-9一二三四五六七八九十两零〇]{1,4}月[0-9一二三四五六七八九十两零〇]{1,4}[日号]?)(前)()(去|往|来|报到|汇报|报名|登记|申请|找)", new String[][]{ {"之前", null} }));
                     gramRules.add(new GramRule("(几个)([^的，。；！？、\\n]{0,8}?)(校长|老师|领导|教授|医生|警察|党员|干部)", new String[][]{ {"几位", null} }));
                     gramRules.add(new GramRule("(出于)([^，。；！？、\\n]{1,15}?)(的决定)", new String[][]{ {"", "决定"} }));
+
+                    // 【新增】成分残缺纠正：具有...的功效
+                    gramRules.add(new GramRule("(具有)((?:消食|化积|润肠|通便|清热|解毒|活血|化瘀|消肿|止痛|健脾|养胃|安神|补血|益气|滋阴|补肾|祛风|除湿|润肺|化痰|止咳|平喘|抗氧|抗菌|消炎)[^，。！？；…\\n]{0,20}?)(?<!的)(?=[，。！？；…\\n]|$)", new String[][]{ {null, "的功效", "成分残缺，补充宾语"} }));
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -2337,9 +2340,31 @@ jobs:
                 "如鱼得水", "留得", "留的", "拍立得", "坏的", "使得","余地","厕所的","睡觉的",
             };
             
+            // 内置规则白名单（防止错别字词库误杀安全词）
+            public static final String[] WHITE_LIST = {
+                "枝丫", 
+            };
+
             // 新增：防错词误杀双重后处理（向前看+向后看）
             public static boolean isFalsePositiveTypo(String sentence, int i, String sub) {
                 if (sub.length() == 0) return false;
+
+                // 【新增】白名单重叠检测：对 txt 错词库和自定义错词库全局生效！
+                for (String w : WHITE_LIST) {
+                    int searchStart = Math.max(0, i - w.length());
+                    int searchEnd = Math.min(sentence.length(), i + sub.length() + w.length());
+                    String window = sentence.substring(searchStart, searchEnd);
+                    int idx = window.indexOf(w);
+                    while (idx >= 0) {
+                        int actualMatchStart = searchStart + idx;
+                        int actualMatchEnd = actualMatchStart + w.length();
+                        // 如果发现白名单词（如"枝丫"）与当前错词（如"丫环"）在文中紧紧挨着且重叠，说明是安全语境，放行！
+                        if (actualMatchStart < i + sub.length() && actualMatchEnd > i) {
+                            return true; // 判定为误杀，直接拦截拦截替换逻辑
+                        }
+                        idx = window.indexOf(w, idx + 1);
+                    }
+                }
                 
                 // 规则1：处理“做/作”开头的词组，双重预测
                 if (sub.charAt(0) == '做' || sub.charAt(0) == '作') {
@@ -2546,7 +2571,7 @@ jobs:
                                         }
                                     } catch (Exception e) {}
                                 }
-                                @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)); }
+                                @Override public void updateDrawState(TextPaint ds) { ds.setColor(0xFF2196F3); ds.setUnderlineText(true); ds.setFakeBoldText(true); }
                             };
                         } else if (type.equals("IgnoredInCopySpan")) {
                             span = new IgnoredInCopySpan();
