@@ -2856,7 +2856,7 @@ jobs:
                             lastSavedHistoryFileId = null;
                             isManuallyEditedOut = false;
                             lastEditorSpannable = null;
-                            currentClauseLinks = new ArrayList<>();
+                            currentClauseLinks.clear();
                         }
                         AppExecutors.MAIN.removeCallbacks(update); AppExecutors.MAIN.postDelayed(update, 400);
                     }
