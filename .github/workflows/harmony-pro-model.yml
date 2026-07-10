@@ -28,6 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .ci
+
           cat << 'EOF' > .ci/requirements-harmony-pro.txt
           --extra-index-url https://download.pytorch.org/whl/cpu
           torch==1.13.1+cpu
@@ -55,47 +56,65 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           rm -rf harmony_pro_source harmony_pro_model
-          mkdir -p harmony_pro_source harmony_pro_model
+          mkdir -p harmony_pro_source
+          mkdir -p harmony_pro_model
 
           gdown 10NTeKyG6JigASVwsekKs3MJl0Ev4Oj29 \
             -O harmony_pro_source/pro_model.zip
 
-          test -s harmony_pro_source/pro_model.zip
-          unzip -oq harmony_pro_source/pro_model.zip \
+          test -s harmony_pro_source/pro_model.zip || {
+            echo "专业模型压缩包下载失败或为空"
+            exit 1
+          }
+
+          unzip -oq \
+            harmony_pro_source/pro_model.zip \
             -d harmony_pro_source/unpacked
 
           MODEL_PATH="$(find harmony_pro_source/unpacked \
-            -type f -name 'model_traced.pt' -print -quit)"
+            -type f \
+            -name 'model_traced.pt' \
+            -print \
+            -quit)"
 
           TOKENIZER_PATH="$(find harmony_pro_source/unpacked \
-            -type f -name 'tokenizer.json' -print -quit)"
+            -type f \
+            -name 'tokenizer.json' \
+            -print \
+            -quit)"
 
           test -n "$MODEL_PATH" || {
-            echo "未找到 model_traced.pt"
+            echo "没有找到 model_traced.pt"
             exit 1
           }
 
           test -n "$TOKENIZER_PATH" || {
-            echo "未找到 tokenizer.json"
+            echo "没有找到 tokenizer.json"
             exit 1
           }
 
-          cp "$MODEL_PATH" harmony_pro_source/model_traced.pt
-          cp "$TOKENIZER_PATH" harmony_pro_source/tokenizer.json
+          cp "$MODEL_PATH" \
+            harmony_pro_source/model_traced.pt
 
+          cp "$TOKENIZER_PATH" \
+            harmony_pro_source/tokenizer.json
+
+          echo "模型路径：$MODEL_PATH"
+          echo "词表路径：$TOKENIZER_PATH"
           echo "模型大小：$(stat -c '%s' harmony_pro_source/model_traced.pt) bytes"
           echo "词表大小：$(stat -c '%s' harmony_pro_source/tokenizer.json) bytes"
 
-      - name: Inspect, export and validate ONNX
+      - name: Export and validate professional model
         id: export
         shell: bash
         run: |
           set -euo pipefail
 
           cat << 'PY' > export_professional_model.py
+          import gc
           import hashlib
-          import inspect
           import json
           import os
           import sys
@@ -106,42 +125,77 @@ jobs:
           import onnx
           import onnxruntime as ort
           import torch
-          import torch.nn as nn
 
 
-          SOURCE_MODEL = Path("harmony_pro_source/model_traced.pt")
-          TOKENIZER = Path("harmony_pro_source/tokenizer.json")
-          OUTPUT_DIR = Path("harmony_pro_model")
-          DYNAMIC_ONNX = OUTPUT_DIR / "dededi_pro_dynamic.onnx"
-          FIXED_ONNX = OUTPUT_DIR / "dededi_pro_fixed_302.onnx"
-          VOCAB_OUTPUT = OUTPUT_DIR / "roberta_vocab.json"
-          MANIFEST_OUTPUT = OUTPUT_DIR / "model_manifest.json"
-          REPORT_OUTPUT = OUTPUT_DIR / "conversion_report.txt"
+          SOURCE_MODEL = Path(
+              "harmony_pro_source/model_traced.pt"
+          )
 
-          OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-          report = []
+          TOKENIZER_FILE = Path(
+              "harmony_pro_source/tokenizer.json"
+          )
+
+          OUTPUT_DIR = Path(
+              "harmony_pro_model"
+          )
+
+          DYNAMIC_ONNX = OUTPUT_DIR / (
+              "dededi_pro_dynamic.onnx"
+          )
+
+          FIXED_ONNX = OUTPUT_DIR / (
+              "dededi_pro_fixed_302.onnx"
+          )
+
+          VOCAB_OUTPUT = OUTPUT_DIR / (
+              "roberta_vocab.json"
+          )
+
+          MANIFEST_OUTPUT = OUTPUT_DIR / (
+              "model_manifest.json"
+          )
+
+          REPORT_OUTPUT = OUTPUT_DIR / (
+              "conversion_report.txt"
+          )
+
+          OUTPUT_DIR.mkdir(
+              parents=True,
+              exist_ok=True
+          )
+
+          REPORT_LINES = []
 
 
           def log(message=""):
               text = str(message)
               print(text, flush=True)
-              report.append(text)
+              REPORT_LINES.append(text)
 
 
           def save_report():
               REPORT_OUTPUT.write_text(
-                  "\n".join(report) + "\n",
+                  "\n".join(REPORT_LINES) + "\n",
                   encoding="utf-8"
               )
 
 
-          def set_output(name, value):
-              output_file = os.environ.get("GITHUB_OUTPUT")
-              if not output_file:
+          def github_output(name, value):
+              target = os.environ.get(
+                  "GITHUB_OUTPUT"
+              )
+
+              if not target:
                   return
 
-              with open(output_file, "a", encoding="utf-8") as file:
-                  file.write(f"{name}={value}\n")
+              with open(
+                  target,
+                  "a",
+                  encoding="utf-8"
+              ) as file:
+                  file.write(
+                      f"{name}={value}\n"
+                  )
 
 
           def sha256(path):
@@ -149,7 +203,9 @@ jobs:
 
               with path.open("rb") as file:
                   while True:
-                      block = file.read(1024 * 1024)
+                      block = file.read(
+                          1024 * 1024
+                      )
 
                       if not block:
                           break
@@ -163,147 +219,173 @@ jobs:
               if torch.is_tensor(value):
                   return value
 
-              if isinstance(value, (tuple, list)):
+              if isinstance(
+                  value,
+                  (tuple, list)
+              ):
                   for item in value:
-                      if torch.is_tensor(item):
-                          return item
+                      try:
+                          return first_tensor(item)
+                      except TypeError:
+                          continue
 
               if isinstance(value, dict):
                   for item in value.values():
-                      if torch.is_tensor(item):
-                          return item
+                      try:
+                          return first_tensor(item)
+                      except TypeError:
+                          continue
 
               raise TypeError(
-                  "专业模型输出中没有找到 Tensor，"
-                  f"实际类型为 {type(value)!r}"
+                  "模型输出中没有找到 Tensor，"
+                  f"实际输出类型：{type(value)!r}"
               )
 
 
-          class ProfessionalWrapper(nn.Module):
-              def __init__(self, module):
-                  super().__init__()
-                  self.module = module
-
-              def forward(
-                  self,
-                  input_ids,
-                  attention_mask,
-                  token_type_ids
-              ):
-                  output = self.module(
-                      input_ids,
-                      attention_mask,
-                      token_type_ids
-                  )
-
-                  return first_tensor(output)
-
-
-          def load_vocab():
+          def load_vocabulary():
               raw = json.loads(
-                  TOKENIZER.read_text(encoding="utf-8")
+                  TOKENIZER_FILE.read_text(
+                      encoding="utf-8"
+                  )
               )
 
-              model = raw.get("model")
+              tokenizer_model = raw.get(
+                  "model"
+              )
 
-              if not isinstance(model, dict):
+              if not isinstance(
+                  tokenizer_model,
+                  dict
+              ):
                   raise ValueError(
                       "tokenizer.json 缺少 model"
                   )
 
-              vocabulary = model.get("vocab")
+              raw_vocabulary = (
+                  tokenizer_model.get("vocab")
+              )
 
               if (
-                  not isinstance(vocabulary, dict)
-                  or not vocabulary
+                  not isinstance(
+                      raw_vocabulary,
+                      dict
+                  )
+                  or not raw_vocabulary
               ):
                   raise ValueError(
                       "tokenizer.json 缺少有效 vocab"
                   )
 
-              clean = {
+              vocabulary = {
                   str(token): int(index)
-                  for token, index in vocabulary.items()
+                  for token, index
+                  in raw_vocabulary.items()
               }
 
               VOCAB_OUTPUT.write_text(
                   json.dumps(
-                      clean,
+                      vocabulary,
                       ensure_ascii=False,
                       separators=(",", ":")
                   ),
                   encoding="utf-8"
               )
 
-              vocabulary_size = max(clean.values()) + 1
+              vocabulary_size = (
+                  max(vocabulary.values()) + 1
+              )
 
               special_ids = {
                   "cls_id": int(
-                      clean.get("[CLS]", 101)
+                      vocabulary.get(
+                          "[CLS]",
+                          101
+                      )
                   ),
                   "sep_id": int(
-                      clean.get("[SEP]", 102)
+                      vocabulary.get(
+                          "[SEP]",
+                          102
+                      )
                   ),
                   "mask_id": int(
-                      clean.get("[MASK]", 103)
+                      vocabulary.get(
+                          "[MASK]",
+                          103
+                      )
                   ),
                   "unk_id": int(
-                      clean.get("[UNK]", 100)
+                      vocabulary.get(
+                          "[UNK]",
+                          100
+                      )
                   ),
                   "pad_id": int(
-                      clean.get("[PAD]", 0)
+                      vocabulary.get(
+                          "[PAD]",
+                          0
+                      )
                   ),
                   "de_id": int(
-                      clean.get("的", 0)
+                      vocabulary.get(
+                          "的",
+                          0
+                      )
                   ),
                   "di_id": int(
-                      clean.get("地", 0)
+                      vocabulary.get(
+                          "地",
+                          0
+                      )
                   ),
                   "de2_id": int(
-                      clean.get("得", 0)
+                      vocabulary.get(
+                          "得",
+                          0
+                      )
                   )
               }
 
               log(
-                  f"词表项目数：{len(clean)}"
+                  f"词表项目数："
+                  f"{len(vocabulary)}"
               )
 
               log(
-                  f"词表尺寸：{vocabulary_size}"
+                  f"词表尺寸："
+                  f"{vocabulary_size}"
               )
 
               log(
-                  f"特殊 ID：{special_ids}"
+                  f"特殊 ID："
+                  f"{special_ids}"
               )
 
               return (
-                  clean,
+                  vocabulary,
                   vocabulary_size,
                   special_ids
               )
 
 
           def make_inputs(
-              sequence_length,
+              effective_length,
               vocabulary_size,
               special_ids,
               seed,
-              padded_length=None
+              total_length=None
           ):
-              if sequence_length < 2:
+              if effective_length < 2:
                   raise ValueError(
-                      "序列长度至少为 2"
+                      "有效序列长度不能小于 2"
                   )
 
-              total_length = (
-                  padded_length
-                  if padded_length is not None
-                  else sequence_length
-              )
+              if total_length is None:
+                  total_length = effective_length
 
-              if total_length < sequence_length:
+              if total_length < effective_length:
                   raise ValueError(
-                      "填充长度不能小于有效长度"
+                      "总长度不能小于有效长度"
                   )
 
               generator = torch.Generator(
@@ -318,46 +400,48 @@ jobs:
                   dtype=torch.long
               )
 
-              random_body = torch.randint(
-                  low=0,
-                  high=vocabulary_size,
-                  size=(
-                      1,
-                      max(0, sequence_length - 2)
-                  ),
-                  dtype=torch.long,
-                  generator=generator
+              attention_mask = torch.zeros(
+                  (1, total_length),
+                  dtype=torch.long
+              )
+
+              token_type_ids = torch.zeros(
+                  (1, total_length),
+                  dtype=torch.long
               )
 
               input_ids[0, 0] = (
                   special_ids["cls_id"]
               )
 
-              if sequence_length > 2:
+              body_length = max(
+                  0,
+                  effective_length - 2
+              )
+
+              if body_length > 0:
+                  body = torch.randint(
+                      low=0,
+                      high=vocabulary_size,
+                      size=(1, body_length),
+                      dtype=torch.long,
+                      generator=generator
+                  )
+
                   input_ids[
                       0,
-                      1:sequence_length - 1
-                  ] = random_body
+                      1:effective_length - 1
+                  ] = body
 
               input_ids[
                   0,
-                  sequence_length - 1
+                  effective_length - 1
               ] = special_ids["sep_id"]
 
-              attention_mask = torch.zeros(
-                  (1, total_length),
-                  dtype=torch.long
-              )
-
               attention_mask[
-                  :,
-                  :sequence_length
+                  0,
+                  :effective_length
               ] = 1
-
-              token_type_ids = torch.zeros(
-                  (1, total_length),
-                  dtype=torch.long
-              )
 
               return (
                   input_ids,
@@ -366,19 +450,40 @@ jobs:
               )
 
 
-          def run_torch(wrapper, inputs):
+          def run_pytorch(
+              model,
+              model_inputs
+          ):
               with torch.inference_mode():
+                  output = model(
+                      *model_inputs
+                  )
+
+                  tensor = first_tensor(
+                      output
+                  )
+
                   return (
-                      wrapper(*inputs)
+                      tensor
                       .detach()
                       .cpu()
                       .numpy()
                   )
 
 
-          def export_onnx(
-              wrapper,
-              inputs,
+          def remove_if_exists(path):
+              try:
+                  path.unlink(
+                      missing_ok=True
+                  )
+              except TypeError:
+                  if path.exists():
+                      path.unlink()
+
+
+          def export_onnx_once(
+              module,
+              model_inputs,
               output_path,
               dynamic
           ):
@@ -405,8 +510,8 @@ jobs:
                   }
 
               torch.onnx.export(
-                  wrapper,
-                  inputs,
+                  module,
+                  model_inputs,
                   str(output_path),
                   export_params=True,
                   opset_version=13,
@@ -423,95 +528,228 @@ jobs:
                   verbose=False
               )
 
-              if (
-                  not output_path.is_file()
-                  or output_path.stat().st_size < 1024
-              ):
-                  raise RuntimeError(
-                      f"{output_path.name} 没有正确生成"
+
+          def export_onnx(
+              original_model,
+              model_inputs,
+              output_path,
+              dynamic
+          ):
+              remove_if_exists(
+                  output_path
+              )
+
+              candidates = [
+                  (
+                      "原始 TorchScript",
+                      original_model
+                  )
+              ]
+
+              try:
+                  frozen_model = (
+                      torch.jit.freeze(
+                          original_model.eval()
+                      )
                   )
 
-              model = onnx.load(
-                  str(output_path)
-              )
-
-              onnx.checker.check_model(
-                  model
-              )
-
-              log(
-                  f"{output_path.name} 导出成功，"
-                  f"大小 {output_path.stat().st_size} bytes"
-              )
-
-              log(
-                  f"{output_path.name} SHA-256："
-                  f"{sha256(output_path)}"
-              )
-
-              operator_counts = {}
-
-              for node in model.graph.node:
-                  operator_counts[node.op_type] = (
-                      operator_counts.get(
-                          node.op_type,
-                          0
-                      ) + 1
+                  candidates.insert(
+                      0,
+                      (
+                          "冻结后的 TorchScript",
+                          frozen_model
+                      )
                   )
-
-              log(
-                  f"{output_path.name} 算子统计："
-              )
-
-              for name in sorted(
-                  operator_counts
-              ):
+              except Exception as error:
                   log(
-                      f"  {name}: "
-                      f"{operator_counts[name]}"
+                      "TorchScript freeze 失败，"
+                      "将使用原始模型："
+                      f"{type(error).__name__}: "
+                      f"{error}"
                   )
+
+              failures = []
+
+              for (
+                  candidate_name,
+                  candidate_model
+              ) in candidates:
+                  remove_if_exists(
+                      output_path
+                  )
+
+                  try:
+                      log(
+                          f"正在使用"
+                          f"{candidate_name}"
+                          f"导出 "
+                          f"{output_path.name}"
+                      )
+
+                      export_onnx_once(
+                          candidate_model,
+                          model_inputs,
+                          output_path,
+                          dynamic
+                      )
+
+                      if (
+                          not output_path.is_file()
+                          or output_path.stat().st_size
+                          < 1024
+                      ):
+                          raise RuntimeError(
+                              "导出的 ONNX "
+                              "文件为空或异常"
+                          )
+
+                      onnx_model = onnx.load(
+                          str(output_path)
+                      )
+
+                      onnx.checker.check_model(
+                          onnx_model
+                      )
+
+                      log(
+                          f"{output_path.name} "
+                          f"导出成功"
+                      )
+
+                      log(
+                          f"{output_path.name} "
+                          f"大小："
+                          f"{output_path.stat().st_size} "
+                          f"bytes"
+                      )
+
+                      log(
+                          f"{output_path.name} "
+                          f"SHA-256："
+                          f"{sha256(output_path)}"
+                      )
+
+                      operator_counts = {}
+
+                      for node in (
+                          onnx_model.graph.node
+                      ):
+                          operator_counts[
+                              node.op_type
+                          ] = (
+                              operator_counts.get(
+                                  node.op_type,
+                                  0
+                              ) + 1
+                          )
+
+                      log(
+                          f"{output_path.name} "
+                          "算子统计："
+                      )
+
+                      for operator_name in sorted(
+                          operator_counts
+                      ):
+                          log(
+                              f"  {operator_name}: "
+                              f"{operator_counts[operator_name]}"
+                          )
+
+                      return candidate_name
+
+                  except Exception as error:
+                      failure = (
+                          f"{candidate_name}："
+                          f"{type(error).__name__}: "
+                          f"{error}"
+                      )
+
+                      failures.append(
+                          failure
+                      )
+
+                      log(
+                          "导出尝试失败："
+                          f"{failure}"
+                      )
+
+                      log(
+                          traceback.format_exc()
+                      )
+
+              raise RuntimeError(
+                  f"{output_path.name} "
+                  "所有导出方式均失败："
+                  + "；".join(failures)
+              )
 
 
           def create_session(path):
+              options = (
+                  ort.SessionOptions()
+              )
+
+              options.graph_optimization_level = (
+                  ort.GraphOptimizationLevel
+                  .ORT_ENABLE_ALL
+              )
+
               return ort.InferenceSession(
                   str(path),
+                  sess_options=options,
                   providers=[
                       "CPUExecutionProvider"
                   ]
               )
 
 
-          def run_onnx(session, inputs):
-              available = {
-                  "input_ids":
-                      inputs[0]
-                      .cpu()
-                      .numpy()
-                      .astype(np.int64),
-                  "attention_mask":
-                      inputs[1]
-                      .cpu()
-                      .numpy()
-                      .astype(np.int64),
-                  "token_type_ids":
-                      inputs[2]
+          def run_onnx(
+              session,
+              model_inputs
+          ):
+              available_inputs = {
+                  "input_ids": (
+                      model_inputs[0]
+                      .detach()
                       .cpu()
                       .numpy()
                       .astype(np.int64)
+                  ),
+                  "attention_mask": (
+                      model_inputs[1]
+                      .detach()
+                      .cpu()
+                      .numpy()
+                      .astype(np.int64)
+                  ),
+                  "token_type_ids": (
+                      model_inputs[2]
+                      .detach()
+                      .cpu()
+                      .numpy()
+                      .astype(np.int64)
+                  )
               }
 
-              metadata = session.get_inputs()
               feed = {}
 
-              for item in metadata:
-                  if item.name not in available:
+              for metadata in (
+                  session.get_inputs()
+              ):
+                  if (
+                      metadata.name
+                      not in available_inputs
+                  ):
                       raise RuntimeError(
-                          "出现未知 ONNX 输入："
-                          f"{item.name}"
+                          "ONNX 出现未知输入："
+                          f"{metadata.name}"
                       )
 
-                  feed[item.name] = (
-                      available[item.name]
+                  feed[metadata.name] = (
+                      available_inputs[
+                          metadata.name
+                      ]
                   )
 
               outputs = session.run(
@@ -521,41 +759,53 @@ jobs:
 
               if not outputs:
                   raise RuntimeError(
-                      "ONNX 没有返回输出"
+                      "ONNX Runtime "
+                      "没有返回输出"
                   )
 
-              return np.asarray(outputs[0])
+              return np.asarray(
+                  outputs[0]
+              )
 
 
           def compare_outputs(
-              name,
+              title,
               expected,
               actual
           ):
-              if expected.shape != actual.shape:
+              if (
+                  expected.shape
+                  != actual.shape
+              ):
                   raise RuntimeError(
-                      f"{name} 输出形状不一致："
+                      f"{title} 输出形状不一致："
                       f"{expected.shape} != "
                       f"{actual.shape}"
                   )
 
               difference = np.abs(
-                  expected.astype(np.float64)
-                  - actual.astype(np.float64)
+                  expected.astype(
+                      np.float64
+                  )
+                  - actual.astype(
+                      np.float64
+                  )
               )
 
-              maximum = float(
+              maximum_error = float(
                   np.max(difference)
               )
 
-              mean = float(
+              mean_error = float(
                   np.mean(difference)
               )
 
               log(
-                  f"{name}："
-                  f"max_error={maximum:.12g}，"
-                  f"mean_error={mean:.12g}"
+                  f"{title}："
+                  f"max_error="
+                  f"{maximum_error:.12g}，"
+                  f"mean_error="
+                  f"{mean_error:.12g}"
               )
 
               if not np.allclose(
@@ -565,10 +815,262 @@ jobs:
                   atol=3e-5
               ):
                   raise RuntimeError(
-                      f"{name} 误差超过容许范围"
+                      f"{title} "
+                      "误差超过容许范围"
                   )
 
-              return maximum
+              return maximum_error
+
+
+          def validate_dynamic_model(
+              source_model,
+              onnx_path,
+              vocabulary_size,
+              special_ids
+          ):
+              session = create_session(
+                  onnx_path
+              )
+
+              log(
+                  "动态 ONNX 输入："
+              )
+
+              for item in (
+                  session.get_inputs()
+              ):
+                  log(
+                      f"  name={item.name}, "
+                      f"type={item.type}, "
+                      f"shape={item.shape}"
+                  )
+
+              log(
+                  "动态 ONNX 输出："
+              )
+
+              for item in (
+                  session.get_outputs()
+              ):
+                  log(
+                      f"  name={item.name}, "
+                      f"type={item.type}, "
+                      f"shape={item.shape}"
+                  )
+
+              maximum_error = 0.0
+
+              for sequence_length in (
+                  4,
+                  8,
+                  16,
+                  64,
+                  128,
+                  302
+              ):
+                  model_inputs = make_inputs(
+                      effective_length=(
+                          sequence_length
+                      ),
+                      vocabulary_size=(
+                          vocabulary_size
+                      ),
+                      special_ids=(
+                          special_ids
+                      ),
+                      seed=(
+                          20260800
+                          + sequence_length
+                      )
+                  )
+
+                  expected = run_pytorch(
+                      source_model,
+                      model_inputs
+                  )
+
+                  actual = run_onnx(
+                      session,
+                      model_inputs
+                  )
+
+                  case_error = (
+                      compare_outputs(
+                          "动态 ONNX "
+                          f"sequence="
+                          f"{sequence_length}",
+                          expected,
+                          actual
+                      )
+                  )
+
+                  maximum_error = max(
+                      maximum_error,
+                      case_error
+                  )
+
+              del session
+              gc.collect()
+
+              return maximum_error
+
+
+          def validate_fixed_model(
+              source_model,
+              onnx_path,
+              vocabulary_size,
+              special_ids
+          ):
+              session = create_session(
+                  onnx_path
+              )
+
+              log(
+                  "固定 ONNX 输入："
+              )
+
+              for item in (
+                  session.get_inputs()
+              ):
+                  log(
+                      f"  name={item.name}, "
+                      f"type={item.type}, "
+                      f"shape={item.shape}"
+                  )
+
+              log(
+                  "固定 ONNX 输出："
+              )
+
+              for item in (
+                  session.get_outputs()
+              ):
+                  log(
+                      f"  name={item.name}, "
+                      f"type={item.type}, "
+                      f"shape={item.shape}"
+                  )
+
+              maximum_error = 0.0
+
+              padding_maximum_error = 0.0
+
+              for effective_length in (
+                  4,
+                  8,
+                  16,
+                  64,
+                  128,
+                  302
+              ):
+                  padded_inputs = make_inputs(
+                      effective_length=(
+                          effective_length
+                      ),
+                      total_length=302,
+                      vocabulary_size=(
+                          vocabulary_size
+                      ),
+                      special_ids=(
+                          special_ids
+                      ),
+                      seed=(
+                          20260900
+                          + effective_length
+                      )
+                  )
+
+                  expected_padded = (
+                      run_pytorch(
+                          source_model,
+                          padded_inputs
+                      )
+                  )
+
+                  actual_padded = run_onnx(
+                      session,
+                      padded_inputs
+                  )
+
+                  fixed_error = (
+                      compare_outputs(
+                          "固定 ONNX "
+                          f"effective="
+                          f"{effective_length}",
+                          expected_padded,
+                          actual_padded
+                      )
+                  )
+
+                  maximum_error = max(
+                      maximum_error,
+                      fixed_error
+                  )
+
+                  exact_inputs = make_inputs(
+                      effective_length=(
+                          effective_length
+                      ),
+                      total_length=(
+                          effective_length
+                      ),
+                      vocabulary_size=(
+                          vocabulary_size
+                      ),
+                      special_ids=(
+                          special_ids
+                      ),
+                      seed=(
+                          20260900
+                          + effective_length
+                      )
+                  )
+
+                  expected_exact = (
+                      run_pytorch(
+                          source_model,
+                          exact_inputs
+                      )
+                  )
+
+                  exact_valid = (
+                      expected_exact[
+                          :,
+                          :effective_length,
+                          :
+                      ]
+                  )
+
+                  padded_valid = (
+                      expected_padded[
+                          :,
+                          :effective_length,
+                          :
+                      ]
+                  )
+
+                  padding_error = (
+                      compare_outputs(
+                          "填充等价 "
+                          f"effective="
+                          f"{effective_length}",
+                          exact_valid,
+                          padded_valid
+                      )
+                  )
+
+                  padding_maximum_error = max(
+                      padding_maximum_error,
+                      padding_error
+                  )
+
+              del session
+              gc.collect()
+
+              return (
+                  maximum_error,
+                  padding_maximum_error
+              )
 
 
           def main():
@@ -581,21 +1083,24 @@ jobs:
               )
 
               log(
-                  f"PyTorch：{torch.__version__}"
+                  f"PyTorch："
+                  f"{torch.__version__}"
               )
 
               log(
-                  f"ONNX：{onnx.__version__}"
+                  f"ONNX："
+                  f"{onnx.__version__}"
               )
 
               log(
-                  "ONNX Runtime："
+                  f"ONNX Runtime："
                   f"{ort.__version__}"
               )
 
               log(
                   "源模型大小："
-                  f"{SOURCE_MODEL.stat().st_size} bytes"
+                  f"{SOURCE_MODEL.stat().st_size} "
+                  "bytes"
               )
 
               log(
@@ -604,10 +1109,10 @@ jobs:
               )
 
               (
-                  _,
+                  vocabulary,
                   vocabulary_size,
                   special_ids
-              ) = load_vocab()
+              ) = load_vocabulary()
 
               model = torch.jit.load(
                   str(SOURCE_MODEL),
@@ -617,7 +1122,8 @@ jobs:
               model.eval()
 
               log(
-                  f"模型类型：{type(model)!r}"
+                  f"模型类型："
+                  f"{type(model)!r}"
               )
 
               try:
@@ -627,233 +1133,148 @@ jobs:
                   )
               except Exception as error:
                   log(
-                      "无法读取 forward schema："
+                      "无法读取 "
+                      "forward schema："
                       f"{error}"
                   )
-
-              try:
-                  log(
-                      "forward 签名："
-                      f"{inspect.signature(model.forward)}"
-                  )
-              except Exception as error:
-                  log(
-                      "无法读取 forward 签名："
-                      f"{error}"
-                  )
-
-              wrapper = ProfessionalWrapper(
-                  model
-              )
-
-              wrapper.eval()
 
               probe_inputs = make_inputs(
-                  sequence_length=16,
-                  vocabulary_size=vocabulary_size,
+                  effective_length=16,
+                  vocabulary_size=(
+                      vocabulary_size
+                  ),
                   special_ids=special_ids,
                   seed=20260720
               )
 
-              probe_output = run_torch(
-                  wrapper,
+              probe_output = run_pytorch(
+                  model,
                   probe_inputs
               )
-
-              if probe_output.ndim != 3:
-                  raise RuntimeError(
-                      "专业模型输出预期为三维，"
-                      f"实际为 {probe_output.shape}"
-                  )
-
-              if probe_output.shape[0] != 1:
-                  raise RuntimeError(
-                      "专业模型 batch 维异常"
-                  )
-
-              if probe_output.shape[1] != 16:
-                  raise RuntimeError(
-                      "专业模型 sequence 维异常"
-                  )
-
-              if (
-                  probe_output.shape[2]
-                  != vocabulary_size
-              ):
-                  raise RuntimeError(
-                      "专业模型输出词表维"
-                      "与 tokenizer 不一致："
-                      f"{probe_output.shape[2]} != "
-                      f"{vocabulary_size}"
-                  )
 
               log(
                   "PyTorch 探测输出："
                   f"{probe_output.shape}"
               )
 
-              export_onnx(
-                  wrapper,
-                  probe_inputs,
-                  DYNAMIC_ONNX,
-                  dynamic=True
+              if (
+                  probe_output.ndim != 3
+              ):
+                  raise RuntimeError(
+                      "模型输出不是三维："
+                      f"{probe_output.shape}"
+                  )
+
+              if (
+                  probe_output.shape[0] != 1
+                  or probe_output.shape[1] != 16
+                  or probe_output.shape[2]
+                  != vocabulary_size
+              ):
+                  raise RuntimeError(
+                      "模型输出形状异常："
+                      f"{probe_output.shape}，"
+                      "预期为 "
+                      f"(1, 16, "
+                      f"{vocabulary_size})"
+                  )
+
+              dynamic_export_method = (
+                  export_onnx(
+                      original_model=model,
+                      model_inputs=probe_inputs,
+                      output_path=(
+                          DYNAMIC_ONNX
+                      ),
+                      dynamic=True
+                  )
               )
 
               fixed_inputs = make_inputs(
-                  sequence_length=302,
-                  vocabulary_size=vocabulary_size,
+                  effective_length=302,
+                  total_length=302,
+                  vocabulary_size=(
+                      vocabulary_size
+                  ),
                   special_ids=special_ids,
-                  seed=20260721,
-                  padded_length=302
+                  seed=20260721
               )
 
-              export_onnx(
-                  wrapper,
-                  fixed_inputs,
-                  FIXED_ONNX,
-                  dynamic=False
-              )
-
-              dynamic_session = (
-                  create_session(
-                      DYNAMIC_ONNX
+              fixed_export_method = (
+                  export_onnx(
+                      original_model=model,
+                      model_inputs=fixed_inputs,
+                      output_path=(
+                          FIXED_ONNX
+                      ),
+                      dynamic=False
                   )
               )
 
-              fixed_session = (
-                  create_session(
-                      FIXED_ONNX
-                  )
-              )
-
-              dynamic_max_error = 0.0
-              fixed_max_error = 0.0
-              padded_equivalence_error = 0.0
-
-              for sequence_length in (
-                  4,
-                  8,
-                  16,
-                  64,
-                  128,
-                  302
-              ):
-                  exact_inputs = make_inputs(
-                      sequence_length=sequence_length,
-                      vocabulary_size=vocabulary_size,
-                      special_ids=special_ids,
-                      seed=(
-                          20260800
-                          + sequence_length
+              dynamic_max_error = (
+                  validate_dynamic_model(
+                      source_model=model,
+                      onnx_path=(
+                          DYNAMIC_ONNX
+                      ),
+                      vocabulary_size=(
+                          vocabulary_size
+                      ),
+                      special_ids=(
+                          special_ids
                       )
                   )
+              )
 
-                  torch_exact = run_torch(
-                      wrapper,
-                      exact_inputs
+              (
+                  fixed_max_error,
+                  padding_max_error
+              ) = validate_fixed_model(
+                  source_model=model,
+                  onnx_path=(
+                      FIXED_ONNX
+                  ),
+                  vocabulary_size=(
+                      vocabulary_size
+                  ),
+                  special_ids=(
+                      special_ids
                   )
-
-                  onnx_dynamic = run_onnx(
-                      dynamic_session,
-                      exact_inputs
-                  )
-
-                  dynamic_error = compare_outputs(
-                      "动态 ONNX "
-                      f"sequence={sequence_length}",
-                      torch_exact,
-                      onnx_dynamic
-                  )
-
-                  dynamic_max_error = max(
-                      dynamic_max_error,
-                      dynamic_error
-                  )
-
-                  padded_inputs = make_inputs(
-                      sequence_length=sequence_length,
-                      vocabulary_size=vocabulary_size,
-                      special_ids=special_ids,
-                      seed=(
-                          20260800
-                          + sequence_length
-                      ),
-                      padded_length=302
-                  )
-
-                  torch_padded = run_torch(
-                      wrapper,
-                      padded_inputs
-                  )
-
-                  onnx_fixed = run_onnx(
-                      fixed_session,
-                      padded_inputs
-                  )
-
-                  fixed_error = compare_outputs(
-                      "固定 ONNX "
-                      f"sequence={sequence_length}",
-                      torch_padded,
-                      onnx_fixed
-                  )
-
-                  fixed_max_error = max(
-                      fixed_max_error,
-                      fixed_error
-                  )
-
-                  valid_exact = (
-                      torch_exact[
-                          :,
-                          :sequence_length,
-                          :
-                      ]
-                  )
-
-                  valid_padded = (
-                      torch_padded[
-                          :,
-                          :sequence_length,
-                          :
-                      ]
-                  )
-
-                  padding_error = compare_outputs(
-                      "填充等价 "
-                      f"sequence={sequence_length}",
-                      valid_exact,
-                      valid_padded
-                  )
-
-                  padded_equivalence_error = max(
-                      padded_equivalence_error,
-                      padding_error
-                  )
-
-              dynamic_input_names = [
-                  item.name
-                  for item in (
-                      dynamic_session.get_inputs()
-                  )
-              ]
-
-              fixed_input_names = [
-                  item.name
-                  for item in (
-                      fixed_session.get_inputs()
-                  )
-              ]
+              )
 
               manifest = {
-                  "model":
-                      "DedediProfessionalRoBERTa",
-                  "dynamic_input_names":
-                      dynamic_input_names,
-                  "fixed_input_names":
-                      fixed_input_names,
-                  "input_dtype":
-                      "int64",
+                  "model": (
+                      "DedediProfessionalRoBERTa"
+                  ),
+                  "source_model_type": (
+                      str(type(model))
+                  ),
+                  "source_sha256": (
+                      sha256(SOURCE_MODEL)
+                  ),
+                  "vocabulary_items": (
+                      len(vocabulary)
+                  ),
+                  "vocabulary_size": (
+                      vocabulary_size
+                  ),
+                  "special_ids": (
+                      special_ids
+                  ),
+                  "maximum_source_text_length": (
+                      300
+                  ),
+                  "maximum_model_sequence_length": (
+                      302
+                  ),
+                  "input_names": [
+                      "input_ids",
+                      "attention_mask",
+                      "token_type_ids"
+                  ],
+                  "input_dtype": (
+                      "int64"
+                  ),
                   "dynamic_input_shape": [
                       1,
                       "sequence"
@@ -862,33 +1283,38 @@ jobs:
                       1,
                       302
                   ],
-                  "output_name":
-                      "logits",
-                  "output_dtype":
-                      "float32",
+                  "output_name": (
+                      "logits"
+                  ),
+                  "output_dtype": (
+                      "float32"
+                  ),
                   "output_shape": [
                       1,
                       "sequence",
                       vocabulary_size
                   ],
-                  "vocabulary_size":
-                      vocabulary_size,
-                  "max_source_text_length":
-                      300,
-                  "max_model_sequence_length":
-                      302,
-                  "special_ids":
-                      special_ids,
-                  "dynamic_onnx_sha256":
-                      sha256(DYNAMIC_ONNX),
-                  "fixed_onnx_sha256":
-                      sha256(FIXED_ONNX),
-                  "dynamic_max_error":
-                      dynamic_max_error,
-                  "fixed_max_error":
-                      fixed_max_error,
-                  "padded_equivalence_max_error":
-                      padded_equivalence_error
+                  "dynamic_export_method": (
+                      dynamic_export_method
+                  ),
+                  "fixed_export_method": (
+                      fixed_export_method
+                  ),
+                  "dynamic_onnx_sha256": (
+                      sha256(DYNAMIC_ONNX)
+                  ),
+                  "fixed_onnx_sha256": (
+                      sha256(FIXED_ONNX)
+                  ),
+                  "dynamic_max_error": (
+                      dynamic_max_error
+                  ),
+                  "fixed_max_error": (
+                      fixed_max_error
+                  ),
+                  "padding_max_error": (
+                      padding_max_error
+                  )
               }
 
               MANIFEST_OUTPUT.write_text(
@@ -900,41 +1326,58 @@ jobs:
                   encoding="utf-8"
               )
 
-              set_output(
+              github_output(
                   "onnx_exported",
                   "true"
               )
 
-              set_output(
-                  "dynamic_max_error",
+              github_output(
+                  "dynamic_error",
                   f"{dynamic_max_error:.12g}"
               )
 
-              set_output(
-                  "fixed_max_error",
+              github_output(
+                  "fixed_error",
                   f"{fixed_max_error:.12g}"
               )
 
-              set_output(
-                  "padding_max_error",
-                  f"{padded_equivalence_error:.12g}"
+              github_output(
+                  "padding_error",
+                  f"{padding_max_error:.12g}"
+              )
+
+              github_output(
+                  "dynamic_method",
+                  dynamic_export_method
+              )
+
+              github_output(
+                  "fixed_method",
+                  fixed_export_method
               )
 
               log("")
               log(
                   "===== 最终结论 ====="
               )
+
               log(
                   "专业模型动态 ONNX "
-                  "已导出并验证。"
+                  "已成功导出并验证。"
               )
+
               log(
                   "专业模型固定 302 长度 "
-                  "ONNX 已导出并验证。"
+                  "ONNX 已成功导出并验证。"
               )
+
               log(
-                  "固定长度填充与原始动态长度"
-                  "结果已完成对比。"
+                  "本次直接导出 TorchScript，"
+                  "没有再套普通 Python Wrapper。"
+              )
+
+              log(
+                  "专业模型不需要重新训练。"
               )
 
 
@@ -942,7 +1385,7 @@ jobs:
               main()
 
           except Exception as error:
-              set_output(
+              github_output(
                   "onnx_exported",
                   "false"
               )
@@ -969,7 +1412,7 @@ jobs:
 
           set +e
           python export_professional_model.py
-          STATUS=$?
+          EXPORT_STATUS=$?
           set -e
 
           if [ -f harmony_pro_model/conversion_report.txt ]; then
@@ -977,137 +1420,13 @@ jobs:
               echo "## 专业模型转换报告"
               echo ""
               echo '```text'
-              tail -n 500 harmony_pro_model/conversion_report.txt
+              tail -n 600 \
+                harmony_pro_model/conversion_report.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          exit "$STATUS"
-
-      - name: Download official MindSpore Lite converter
-        id: converter
-        if: steps.export.outputs.onnx_exported == 'true'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PACKAGE="mindspore-lite-2.7.0-linux-x64.tar.gz"
-          URL="https://ms-release.obs.cn-north-4.myhuaweicloud.com/2.7.0/MindSpore/lite/release/linux/x86_64/${PACKAGE}"
-          EXPECTED_SHA256="8bb1097100c9fec12675670ba2d4264a2cd6da3a9be093eb56631d00fc0c455b"
-
-          rm -rf mindspore_lite_package
-          mkdir -p mindspore_lite_package
-
-          curl -fL \
-            --retry 3 \
-            --retry-delay 3 \
-            "$URL" \
-            -o "mindspore_lite_package/$PACKAGE"
-
-          echo "$EXPECTED_SHA256  mindspore_lite_package/$PACKAGE" \
-            | sha256sum -c -
-
-          tar -xzf \
-            "mindspore_lite_package/$PACKAGE" \
-            -C mindspore_lite_package
-
-          CONVERTER="$(find mindspore_lite_package \
-            -type f \
-            -name converter_lite \
-            -perm -u+x \
-            -print -quit)"
-
-          test -n "$CONVERTER" || {
-            echo "官方发布包内没有找到 converter_lite"
-            exit 1
-          }
-
-          CONVERTER_DIR="$(dirname "$CONVERTER")"
-          CONVERTER_BASE="$(dirname "$CONVERTER_DIR")"
-          LIB_DIR="$CONVERTER_BASE/lib"
-
-          test -d "$LIB_DIR" || {
-            echo "没有找到 converter 所需动态库目录：$LIB_DIR"
-            exit 1
-          }
-
-          echo "converter_path=$CONVERTER" \
-            >> "$GITHUB_OUTPUT"
-
-          echo "library_path=$LIB_DIR" \
-            >> "$GITHUB_OUTPUT"
-
-      - name: Convert ONNX models to MindSpore Lite
-        id: mindspore
-        if: steps.converter.outcome == 'success'
-        continue-on-error: true
-        shell: bash
-        env:
-          CONVERTER: ${{ steps.converter.outputs.converter_path }}
-          CONVERTER_LIB: ${{ steps.converter.outputs.library_path }}
-        run: |
-          set -o pipefail
-
-          export LD_LIBRARY_PATH="$CONVERTER_LIB:${LD_LIBRARY_PATH:-}"
-
-          REPORT="harmony_pro_model/mindspore_report.txt"
-
-          {
-            echo "===== MindSpore Lite 转换 ====="
-            "$CONVERTER" --version || true
-          } | tee "$REPORT"
-
-          set +e
-
-          "$CONVERTER" \
-            --fmk=ONNX \
-            --modelFile=harmony_pro_model/dededi_pro_dynamic.onnx \
-            --outputFile=harmony_pro_model/dededi_pro_dynamic \
-            2>&1 | tee -a "$REPORT"
-
-          DYNAMIC_STATUS=${PIPESTATUS[0]}
-
-          "$CONVERTER" \
-            --fmk=ONNX \
-            --modelFile=harmony_pro_model/dededi_pro_fixed_302.onnx \
-            --outputFile=harmony_pro_model/dededi_pro_fixed_302 \
-            2>&1 | tee -a "$REPORT"
-
-          FIXED_STATUS=${PIPESTATUS[0]}
-
-          set -e
-
-          DYNAMIC_OK=false
-          FIXED_OK=false
-
-          test "$DYNAMIC_STATUS" -eq 0 \
-            && test -s harmony_pro_model/dededi_pro_dynamic.ms \
-            && DYNAMIC_OK=true
-
-          test "$FIXED_STATUS" -eq 0 \
-            && test -s harmony_pro_model/dededi_pro_fixed_302.ms \
-            && FIXED_OK=true
-
-          echo "dynamic_ms=$DYNAMIC_OK" \
-            >> "$GITHUB_OUTPUT"
-
-          echo "fixed_ms=$FIXED_OK" \
-            >> "$GITHUB_OUTPUT"
-
-          {
-            echo ""
-            echo "### MindSpore Lite 转换结果"
-            echo ""
-            echo "- 动态模型：\`$DYNAMIC_OK\`"
-            echo "- 固定 302 模型：\`$FIXED_OK\`"
-            echo ""
-            echo '```text'
-            tail -n 300 "$REPORT"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          exit 0
+          exit "$EXPORT_STATUS"
 
       - name: Write final summary
         if: always()
@@ -1115,36 +1434,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          ONNX="${{ steps.export.outputs.onnx_exported }}"
-          DYNAMIC_MS="${{ steps.mindspore.outputs.dynamic_ms }}"
-          FIXED_MS="${{ steps.mindspore.outputs.fixed_ms }}"
-          DYNAMIC_ERROR="${{ steps.export.outputs.dynamic_max_error }}"
-          FIXED_ERROR="${{ steps.export.outputs.fixed_max_error }}"
-          PADDING_ERROR="${{ steps.export.outputs.padding_max_error }}"
+          ONNX_EXPORTED="${{ steps.export.outputs.onnx_exported }}"
+          DYNAMIC_ERROR="${{ steps.export.outputs.dynamic_error }}"
+          FIXED_ERROR="${{ steps.export.outputs.fixed_error }}"
+          PADDING_ERROR="${{ steps.export.outputs.padding_error }}"
+          DYNAMIC_METHOD="${{ steps.export.outputs.dynamic_method }}"
+          FIXED_METHOD="${{ steps.export.outputs.fixed_method }}"
 
           {
             echo ""
             echo "## 最终结果"
             echo ""
-            echo "- 专业模型 ONNX 已导出：\`${ONNX:-false}\`"
-            echo "- 动态 MindSpore Lite 已生成：\`${DYNAMIC_MS:-false}\`"
-            echo "- 固定 302 MindSpore Lite 已生成：\`${FIXED_MS:-false}\`"
+            echo "- 专业模型 ONNX 已导出：\`${ONNX_EXPORTED:-false}\`"
             echo "- 动态 ONNX 最大误差：\`${DYNAMIC_ERROR:-unknown}\`"
             echo "- 固定 ONNX 最大误差：\`${FIXED_ERROR:-unknown}\`"
             echo "- 填充等价最大误差：\`${PADDING_ERROR:-unknown}\`"
+            echo "- 动态模型导出方式：\`${DYNAMIC_METHOD:-unknown}\`"
+            echo "- 固定模型导出方式：\`${FIXED_METHOD:-unknown}\`"
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$ONNX" = "true" ]; then
+          if [ "$ONNX_EXPORTED" = "true" ]; then
             {
-              echo "✅ 专业模型 ONNX 转换与一致性验证成功。"
+              echo "✅ 专业模型 ONNX 转换和一致性验证成功。"
               echo ""
-              echo "请下载 Artifact："
+              echo "请下载页面底部的 Artifact："
               echo "\`Dededi-Harmony-Professional-Model\`"
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "❌ 专业模型导出失败，请查看上方报告。" \
-              >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "❌ 专业模型导出失败。"
+              echo "请查看上方专业模型转换报告。"
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload professional model package
