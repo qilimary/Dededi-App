@@ -549,7 +549,7 @@ jobs:
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-            <application android:name=".DedediApp" android:allowBackup="false" android:debuggable="false" android:extractNativeLibs="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="“的地得”纠错AI Pro" android:theme="@style/Theme.Dededi">
+            <application android:name=".DedediApp" android:allowBackup="false" android:extractNativeLibs="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="“的地得”纠错AI Pro" android:theme="@style/Theme.Dededi">
                 <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize">
                     <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
                     <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
@@ -2848,7 +2848,16 @@ jobs:
                     }
                     @Override public void afterTextChanged(Editable editable) {
                         btnSaveTxt.setEnabled(editable.length() > 0);
-                        if (!isRestoringHistory && "继续纠错".contentEquals(btnCheck.getText())) { btnCheck.setText("开始纠错"); allSentencesBlocks.clear(); outputText.setText(""); btnCopy.setEnabled(false); lastSavedHistoryFileId = null; }
+                        if (!isRestoringHistory && "继续纠错".contentEquals(btnCheck.getText())) {
+                            btnCheck.setText("开始纠错");
+                            allSentencesBlocks.clear();
+                            outputText.setText("");
+                            btnCopy.setEnabled(false);
+                            lastSavedHistoryFileId = null;
+                            isManuallyEditedOut = false;
+                            lastEditorSpannable = null;
+                            currentClauseLinks = new ArrayList<>();
+                        }
                         AppExecutors.MAIN.removeCallbacks(update); AppExecutors.MAIN.postDelayed(update, 400);
                     }
                 });
@@ -2886,7 +2895,19 @@ jobs:
                     InputMethodManager manager = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE); if (manager != null) manager.hideSoftInputFromWindow(v.getWindowToken(), 0);
                     if (isCheckingMain) { isCheckingMain = false; return; }
                     Runnable execute = () -> beginCheck();
-                    if (isManuallyEditedOut) new AlertDialog.Builder(this).setMessage("是否使用编辑后的文本继续纠错？\n（否则用原始文本）").setPositiveButton("是", (d, w) -> { inputText.setText(extractCleanTextFromSpanned((Spanned) outputText.getText())); execute.run(); }).setNegativeButton("否", (d, w) -> execute.run()).show(); else execute.run();
+                    if (isManuallyEditedOut) {
+                        CharSequence displayed = outputText.getText();
+                        String editedText = displayed instanceof Spanned ? extractCleanTextFromSpanned((Spanned) displayed) : displayed.toString();
+                        if (editedText.trim().isEmpty()) {
+                            isManuallyEditedOut = false;
+                            execute.run();
+                        } else {
+                            new AlertDialog.Builder(this).setMessage("是否使用编辑后的文本继续纠错？\n（否则用原始文本）")
+                                    .setPositiveButton("是", (d, w) -> { inputText.setText(editedText); execute.run(); })
+                                    .setNegativeButton("否", (d, w) -> execute.run())
+                                    .show();
+                        }
+                    } else execute.run();
                 });
                 btnCopy.setOnClickListener(v -> {
                     String value = isManuallyEditedOut ? extractCleanTextFromSpanned((Spanned) outputText.getText()) : getCleanTextStatic(); if (value.isEmpty()) return;
@@ -3272,7 +3293,9 @@ jobs:
                     @Override public void onClick(View view) { showEditDialog(block); }
                     @Override public void updateDrawState(TextPaint paint) {
                         paint.setUnderlineText(true);
-                        if (!block.current.equals(block.original) || !block.exp.isEmpty()) { paint.setColor(block.userModified && !block.current.equals(block.original) ? 0xFF4CAF50 : 0xFFE53935); paint.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0)); } else paint.setColor(0xFF2196F3);
+                        paint.setTypeface(android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL));
+                        if (!block.current.equals(block.original) || !block.exp.isEmpty()) paint.setColor(block.userModified && !block.current.equals(block.original) ? 0xFF4CAF50 : 0xFFE53935);
+                        else paint.setColor(0xFF2196F3);
                     }
                 };
             }
