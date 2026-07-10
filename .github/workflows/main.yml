@@ -1534,17 +1534,113 @@ jobs:
                     if (callback != null) AppExecutors.MAIN.post(() -> callback.onSaved(finalId));
                 });
             }
-
+            
             public static void saveBlocks(Context context, String fileId, List<List<MainActivity.TextBlock>> blocks) {
                 if (fileId == null || fileId.isEmpty() || blocks == null || blocks.isEmpty()) return;
+            
+                Context appContext = context.getApplicationContext();
+                String json = MainActivity.serializeBlocks(blocks);
+            
                 AppExecutors.IO.execute(() -> {
-                    try {
-                        String json = MainActivity.serializeBlocks(blocks);
-                        File directory = new File(context.getFilesDir(), "history"); if (!directory.exists()) directory.mkdirs();
-                        writeUtf8Atomic(new File(directory, fileId + "_blocks.json"), json);
-                    } catch (Exception ignored) {}
+                    synchronized (AppExecutors.HISTORY_LOCK) {
+                        try {
+                            File directory = new File(appContext.getFilesDir(), "history");
+                            if (!directory.exists() && !directory.mkdirs()) {
+                                throw new IllegalStateException("无法创建历史目录");
+                            }
+            
+                            writeUtf8Atomic(
+                                new File(directory, fileId + "_blocks.json"),
+                                json
+                            );
+            
+                            String currentText = readUtf8(
+                                new File(directory, fileId + ".txt")
+                            );
+            
+                            if (currentText.isEmpty()) return;
+            
+                            SharedPreferences preferences =
+                                appContext.getSharedPreferences(
+                                    "DedediConfig",
+                                    Context.MODE_PRIVATE
+                                );
+            
+                            JSONArray history = new JSONArray(
+                                preferences.getString("history_records", "[]")
+                            );
+            
+                            JSONArray deduplicated = new JSONArray();
+            
+                            int currentHash = currentText.hashCode();
+                            int currentLength = currentText.length();
+                            boolean changed = false;
+            
+                            for (int i = 0; i < history.length(); i++) {
+                                JSONObject record = history.getJSONObject(i);
+                                String otherId = record.optString("file", "");
+            
+                                // 当前这一次纠错记录始终保留
+                                if (fileId.equals(otherId)) {
+                                    deduplicated.put(record);
+                                    continue;
+                                }
+            
+                                // 先用长度和哈希快速筛选，再读取文件进行完整比较
+                                boolean sameTextMetadata =
+                                    record.optInt(
+                                        "textHash",
+                                        Integer.MIN_VALUE
+                                    ) == currentHash
+                                    &&
+                                    record.optInt(
+                                        "textLength",
+                                        -1
+                                    ) == currentLength;
+            
+                                if (sameTextMetadata && !otherId.isEmpty()) {
+                                    String otherText = readUtf8(
+                                        new File(
+                                            directory,
+                                            otherId + ".txt"
+                                        )
+                                    );
+            
+                                    String otherBlocks = readUtf8(
+                                        new File(
+                                            directory,
+                                            otherId + "_blocks.json"
+                                        )
+                                    );
+            
+                                    // 输入文本与纠错结果都完全一致，删除旧记录
+                                    if (
+                                        currentText.equals(otherText)
+                                        &&
+                                        json.equals(otherBlocks)
+                                    ) {
+                                        deleteFiles(directory, otherId);
+                                        changed = true;
+                                        continue;
+                                    }
+                                }
+            
+                                deduplicated.put(record);
+                            }
+            
+                            if (changed) {
+                                preferences.edit()
+                                    .putString(
+                                        "history_records",
+                                        deduplicated.toString()
+                                    )
+                                    .apply();
+                            }
+                        } catch (Exception ignored) {}
+                    }
                 });
             }
+
 
             public static void saveManual(Context context, String fileId, Spannable text) {
                 if (fileId == null || fileId.isEmpty() || text == null) return;
