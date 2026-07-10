@@ -431,7 +431,7 @@ jobs:
         dependencies {
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.8.0'
-            implementation 'org.pytorch:pytorch_android_lite:1.13.0'
+            implementation 'org.pytorch:pytorch_android_lite:1.13.1'
             implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
             implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
         }
@@ -2100,6 +2100,7 @@ jobs:
 
             public static MainActivity instance;
             public static Module fastModule, proModule;
+            private static final Object MODEL_CACHE_LOCK = new Object();
             public static final Map<String, Long> fastVocab = new HashMap<>(), proVocab = new HashMap<>();
             public static long clsId = 101, sepId = 102, maskId = 103, unkId = 100, deId, diId, de2Id;
             public static final Map<String, String> typoMap = new HashMap<>();
@@ -2906,19 +2907,125 @@ jobs:
                 String json = SecureAsset.readUtf8(this, asset); if (json == null || json.isEmpty()) return;
                 JSONObject object = new JSONObject(json); Iterator<String> keys = object.keys(); while (keys.hasNext()) { String key = keys.next(); map.put(key, (long) object.getInt(key)); }
             }
-
-            private Module loadDecryptedModule(Context context, String assetName, String cacheKey) throws Exception {
-                File directory = context.getCodeCacheDir();
-                File[] stale = directory.listFiles((dir, name) -> name.startsWith("dededi_model_") && name.endsWith(".ptl"));
-                if (stale != null) for (File file : stale) file.delete();
-                File temporary = File.createTempFile("dededi_model_", ".ptl", directory);
+            
+            private Module loadDecryptedModule(
+                Context context,
+                String assetName,
+                String cacheKey
+        ) throws Exception {
+            /*
+             * 防止同一进程中多个入口同时生成或加载同一个缓存。
+             */
+            synchronized (MODEL_CACHE_LOCK) {
+                File directory = new File(
+                        context.getCodeCacheDir(),
+                        "dededi_models"
+                );
+        
+                if (!directory.exists() && !directory.mkdirs()) {
+                    throw new IOException("无法创建模型缓存目录");
+                }
+        
+                String safeCacheKey = cacheKey.replaceAll(
+                        "[^a-zA-Z0-9._-]",
+                        "_"
+                );
+        
+                File cachedModel = new File(
+                        directory,
+                        "dededi_model_" + safeCacheKey + ".ptl"
+                );
+        
+                /*
+                 * 后续冷启动直接复用已经解密、解压完成的模型文件。
+                 */
+                if (cachedModel.isFile() && cachedModel.length() > 4096L) {
+                    try {
+                        Module cachedModule = LiteModuleLoader.load(
+                                cachedModel.getAbsolutePath()
+                        );
+        
+                        // 更新访问时间，便于系统在清理缓存时判断活跃程度。
+                        cachedModel.setLastModified(
+                                System.currentTimeMillis()
+                        );
+        
+                        return cachedModule;
+                    } catch (Throwable cacheError) {
+                        /*
+                         * 缓存损坏、系统写入中断或版本不兼容时，
+                         * 自动删除并从加密资源重新生成。
+                         */
+                        android.util.Log.w(
+                                "DedediModel",
+                                "模型缓存无效，正在重新生成："
+                                        + assetName,
+                                cacheError
+                        );
+        
+                        if (!cachedModel.delete()) {
+                            android.util.Log.w(
+                                    "DedediModel",
+                                    "无法立即删除失效模型缓存："
+                                            + cachedModel
+                            );
+                        }
+                    }
+                }
+        
+                /*
+                 * decryptToFile 本身使用 .part 临时文件并原子替换，
+                 * 即使应用在解密过程中被终止，也不会留下一个被当作
+                 * 完整模型加载的半成品文件。
+                 */
+                if (!SecureAsset.decryptToFile(
+                        context,
+                        assetName,
+                        cachedModel
+                )) {
+                    throw new Exception(
+                            "模型完整性校验或解密失败："
+                                    + SecureAsset.lastErrorSummary()
+                    );
+                }
+        
+                if (!cachedModel.isFile()
+                        || cachedModel.length() <= 4096L) {
+                    cachedModel.delete();
+                    throw new IOException("生成的模型缓存文件异常");
+                }
+        
                 try {
-                    if (!SecureAsset.decryptToFile(context, assetName, temporary)) throw new Exception("模型完整性校验或解密失败");
-                    return LiteModuleLoader.load(temporary.getAbsolutePath());
-                } finally {
-                    if (!temporary.delete()) temporary.deleteOnExit();
+                    Module module = LiteModuleLoader.load(
+                            cachedModel.getAbsolutePath()
+                    );
+        
+                    cachedModel.setLastModified(
+                            System.currentTimeMillis()
+                    );
+        
+                    return module;
+                } catch (Throwable error) {
+                    /*
+                     * 不保留无法被 PyTorch 正常加载的文件，
+                     * 下次启动会重新解密生成。
+                     */
+                    cachedModel.delete();
+        
+                    if (error instanceof Exception) {
+                        throw (Exception) error;
+                    }
+        
+                    if (error instanceof Error) {
+                        throw (Error) error;
+                    }
+        
+                    throw new Exception("模型加载失败", error);
                 }
             }
+        }
+
+            
 
             @SuppressLint("ClickableViewAccessibility")
             @Override protected void onCreate(Bundle savedInstanceState) {
@@ -3116,22 +3223,114 @@ jobs:
                     }
                 });
             }
-
+            
+            
+            
+            
+            private boolean loadFastEngine() {
+                try {
+                    // 先加载词表，最后再发布模型实例。
+                    // 这样用户切换模型时，不会遇到“模型存在但词表尚未加载完”的短暂状态。
+                    if (fastVocab.isEmpty()) {
+                        loadVocab(fastVocab, "sys_vocab_f.dat");
+                    }
+            
+                    if (fastModule == null) {
+                        fastModule = loadDecryptedModule(
+                                this,
+                                "sys_core_f.dat",
+                                "fast_secure_v3"
+                        );
+                    }
+            
+                    return fastModule != null && !fastVocab.isEmpty();
+                } catch (Throwable error) {
+                    SecureAsset.recordError("极速模型加载失败", error);
+                    return false;
+                }
+            }
+            
+            private boolean loadProEngine() {
+                try {
+                    // 先完整加载专业词表，再发布模型实例。
+                    if (proVocab.isEmpty()) {
+                        loadVocab(proVocab, "sys_vocab_p.dat");
+                    }
+            
+                    if (proVocab.isEmpty()) {
+                        throw new IllegalStateException("专业模型词表为空");
+                    }
+            
+                    clsId = proVocab.getOrDefault("[CLS]", 101L);
+                    sepId = proVocab.getOrDefault("[SEP]", 102L);
+                    maskId = proVocab.getOrDefault("[MASK]", 103L);
+                    unkId = proVocab.getOrDefault("[UNK]", 100L);
+                    deId = proVocab.getOrDefault("的", 0L);
+                    diId = proVocab.getOrDefault("地", 0L);
+                    de2Id = proVocab.getOrDefault("得", 0L);
+            
+                    if (proModule == null) {
+                        proModule = loadDecryptedModule(
+                                this,
+                                "sys_core_p.dat",
+                                "pro_secure_v3"
+                        );
+                    }
+            
+                    return proModule != null;
+                } catch (Throwable error) {
+                    SecureAsset.recordError("专业模型加载失败", error);
+                    return false;
+                }
+            }
+            
             private void loadModelsAsync() {
+                final boolean selectedFast =
+                        sp.getBoolean("is_fast_mode", false);
+            
                 AppExecutors.IO.execute(() -> {
-                    loadTypoMap(this);
-                    try { if (fastModule == null) fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_secure_v3"); if (fastVocab.isEmpty()) loadVocab(fastVocab, "sys_vocab_f.dat"); } catch (Throwable error) { SecureAsset.recordError("极速模型加载失败", error); }
-                    try {
-                        if (proModule == null) proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_secure_v3"); if (proVocab.isEmpty()) loadVocab(proVocab, "sys_vocab_p.dat");
-                        clsId = proVocab.getOrDefault("[CLS]", 101L); sepId = proVocab.getOrDefault("[SEP]", 102L); maskId = proVocab.getOrDefault("[MASK]", 103L); unkId = proVocab.getOrDefault("[UNK]", 100L); deId = proVocab.getOrDefault("的", 0L); diId = proVocab.getOrDefault("地", 0L); de2Id = proVocab.getOrDefault("得", 0L);
-                    } catch (Throwable error) { SecureAsset.recordError("专业模型加载失败", error); }
+                    ensureTypoMapLoaded(this);
+            
+                    /*
+                     * 优先加载用户当前选择的模型。
+                     * 默认专业模式时，不再先等待极速模型加载。
+                     */
+                    final boolean selectedReady = selectedFast
+                            ? loadFastEngine()
+                            : loadProEngine();
+            
                     AppExecutors.MAIN.post(() -> {
                         if (isFinishing()) return;
-                        if (proModule == null && fastModule == null) outputText.setText("AI加载失败：" + SecureAsset.lastErrorSummary());
-                        else if (!hasStartedChecking && !isManuallyEditedOut && allSentencesBlocks.isEmpty()) outputText.setText("AI已加载。");
+            
+                        if (!selectedReady) {
+                            outputText.setText(
+                                    (selectedFast ? "极速" : "专业")
+                                            + "模型加载失败："
+                                            + SecureAsset.lastErrorSummary()
+                            );
+                            return;
+                        }
+            
+                        if (!hasStartedChecking
+                                && !isManuallyEditedOut
+                                && allSentencesBlocks.isEmpty()) {
+                            outputText.setText("AI已加载。");
+                        }
                     });
+            
+                    /*
+                     * 当前模型已经可用后，再在后台预加载另一款模型。
+                     * 不会再阻塞当前选择模型的可用状态。
+                     */
+                    if (selectedFast) {
+                        loadProEngine();
+                    } else {
+                        loadFastEngine();
+                    }
                 });
             }
+            
+            
 
             private void showHelp() {
                 String text = "【模型介绍】\n两款模型均只纠错“的地得”使用。但软件同样支持其他错别字纠正，作为锦上添花的功能。\n\n极速：模型参数量小，推理极快，在毫秒级至秒级处理完万字长文。适合快速纠错，但准确率稍逊于专业版。\n\n专业：模型参数量大，推理速度较慢，精确率和错误率均表现最优。\n注：不同手机的速度会有不同，性能越强的手机，模型推理速度越快。\n模型可能会犯一些低级错误，这是神经网络的通病，在所难免。\n\n【温度参数】\n控制AI判断的自信（果断）程度。\n• 值越低（如0.5）：概率分布越尖锐。模型更自信（置信度更高），更激进，修改量可能上升，因为更不容易被拦截。\n• 值越高（如2.0）：概率分布越平缓。模型更保守（置信度更低），修改量可能下降，因为更容易被拦截。\n• 默认0.9～1.2，适合大多数场景\n举例：设置为0.5时，原本模棱两可的置信度会被拉高，执行修改；设置为1.5时，原本的置信度会被降低，只有模型非常确定的错误才会被修改。\n\n• 关闭模型：将任意模型温度参数设置为0即可关闭模型推理，仅检查错别字。速度极快。\n\n【置信度拦截阈值】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能会导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：1.在“原始文本”框输入例如“慢慢地”，直接提交。等效于白名单，模型在遇到该词后不会再修改。\n  2.在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义的规优先级高于模型。\n\n【悬浮窗】\n开启后支持后台随时随地推理。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
