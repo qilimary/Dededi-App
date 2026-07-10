@@ -86,45 +86,125 @@ jobs:
         EOF
         python convert.py
 
-    - name: Compress and Encrypt Models (Size & Security)
+    - name: Encrypt Models and Rules (AES-256-GCM)
       run: |
         set -euo pipefail
         cat << 'EOF' > encrypt.py
         import gzip
+        import hmac
+        import hashlib
+        import json
+        import secrets
+        import shutil
+        import tempfile
         from pathlib import Path
-        from Crypto.Cipher import ARC4
+        from Crypto.Cipher import AES
 
-        KEY = b'xT9#mP2!qL5*vN8^cK4@bJ7$zR1%yW0&'
+        MAGIC = b'DDA2'
+        VERSION = 1
+        DOMAIN = b'DEDEDI-ASSET-V2\x00'
+        CHUNK = 1024 * 1024
+        GENERATED = Path('generated_security')
+        GENERATED.mkdir(exist_ok=True)
 
-        def encrypted_gzip(data: bytes, level: int) -> bytes:
-            compressed = gzip.compress(data, compresslevel=level, mtime=0)
-            return ARC4.new(KEY).encrypt(compressed)
+        master = secrets.token_bytes(32)
+        part_a = secrets.token_bytes(32)
+        part_b = secrets.token_bytes(32)
+        part_c = bytes(master[i] ^ part_a[i] ^ part_b[i] for i in range(32))
+        build_token = secrets.token_bytes(16)
+        Path('.ci').mkdir(exist_ok=True)
+        Path('.ci/security_material.json').write_text(json.dumps({'master': master.hex(), 'token': build_token.hex()}, separators=(',', ':')), encoding='utf-8')
 
-        def process_model(file_in: str, file_out: str) -> None:
+        def rol8(v: int, shift: int) -> int:
+            shift &= 7
+            return ((v << shift) | (v >> (8 - shift))) & 0xFF if shift else v
+
+        def encode_part(part: bytes, variant: int):
+            masks = secrets.token_bytes(32)
+            encoded = []
+            for i, value in enumerate(part):
+                shift = ((i * (variant + 2) + variant) % 7) + 1
+                mixed = value ^ masks[i] ^ ((i * (31 + variant * 7) + 17 * variant) & 0xFF)
+                encoded.append(rol8(mixed, shift))
+            return bytes(encoded), masks
+
+        def cpp_array(data: bytes) -> str:
+            return ','.join(f'0x{x:02X}' for x in data)
+
+        def java_array(data: bytes) -> str:
+            return ','.join(f'(byte)0x{x:02X}' for x in data)
+
+        def write_cpp_share(path: Path, function_name: str, part: bytes, variant: int) -> None:
+            encoded, masks = encode_part(part, variant)
+            path.write_text(f'''#include <cstdint>\n\nnamespace {{\nconstexpr uint8_t ENCODED[32] = {{{cpp_array(encoded)}}};\nconstexpr uint8_t MASKS[32] = {{{cpp_array(masks)}}};\ninline uint8_t ror8(uint8_t value, unsigned shift) {{ shift &= 7U; return shift ? static_cast<uint8_t>((value >> shift) | (value << (8U - shift))) : value; }}\n}}\n\nextern "C" void {function_name}(uint8_t out[32]) {{\n    for (unsigned i = 0; i < 32; ++i) {{\n        unsigned shift = ((i * {variant + 2}U + {variant}U) % 7U) + 1U;\n        out[i] = static_cast<uint8_t>(ror8(ENCODED[i], shift) ^ MASKS[i] ^ ((i * {31 + variant * 7}U + {17 * variant}U) & 0xFFU));\n    }}\n}}\n''', encoding='utf-8')
+
+        write_cpp_share(GENERATED / 'key-part-a.cpp', 'dedediFillKeyPartA', part_a, 1)
+        write_cpp_share(GENERATED / 'key-part-b.cpp', 'dedediFillKeyPartB', part_b, 2)
+
+        encoded_c, masks_c = encode_part(part_c, 3)
+        (GENERATED / 'GeneratedSecuritySeed.java').write_text(f'''package com.app.dededi;\n\nfinal class GeneratedSecuritySeed {{\n    private static final byte[] ENCODED = new byte[]{{{java_array(encoded_c)}}};\n    private static final byte[] MASKS = new byte[]{{{java_array(masks_c)}}};\n    private static final byte[] TOKEN = new byte[]{{{java_array(build_token)}}};\n    private GeneratedSecuritySeed() {{}}\n    private static int ror8(int value, int shift) {{ shift &= 7; return shift == 0 ? value & 0xFF : ((value >>> shift) | (value << (8 - shift))) & 0xFF; }}\n    static byte[] revealPart() {{\n        byte[] out = new byte[32];\n        for (int i = 0; i < out.length; i++) {{\n            int shift = ((i * 5 + 3) % 7) + 1;\n            out[i] = (byte)(ror8(ENCODED[i] & 0xFF, shift) ^ (MASKS[i] & 0xFF) ^ ((i * 52 + 51) & 0xFF));\n        }}\n        return out;\n    }}\n    static byte[] buildToken() {{ return TOKEN.clone(); }}\n}}\n''', encoding='utf-8')
+
+        def derive_key(salt: bytes, asset_name: str) -> bytes:
+            message = DOMAIN + build_token + salt + asset_name.encode('utf-8')
+            return hmac.new(master, message, hashlib.sha256).digest()
+
+        def gzip_source(source: Path, level: int, patch_zip_header: bool) -> Path:
+            fd, name = tempfile.mkstemp(prefix='dededi_', suffix='.gz')
+            import os
+            os.close(fd)
+            target = Path(name)
+            try:
+                with source.open('rb') as src, target.open('wb') as raw_out:
+                    with gzip.GzipFile(fileobj=raw_out, mode='wb', compresslevel=level, mtime=0) as gz:
+                        first = src.read(2)
+                        if patch_zip_header and first == b'PK':
+                            gz.write(b'DE')
+                        else:
+                            gz.write(first)
+                        shutil.copyfileobj(src, gz, length=CHUNK)
+                return target
+            except Exception:
+                target.unlink(missing_ok=True)
+                raise
+
+        def encrypt_asset(file_in: str, file_out: str, level: int, patch_zip_header: bool) -> None:
             source = Path(file_in)
             if not source.exists():
+                print(f'跳过不存在的文件: {file_in}')
                 return
-            data = bytearray(source.read_bytes())
-            if len(data) > 2 and data[0] == 0x50 and data[1] == 0x4B:
-                data[0] = 0x44
-                data[1] = 0x45
-            Path(file_out).write_bytes(encrypted_gzip(bytes(data), 1))
+            salt = secrets.token_bytes(16)
+            nonce = secrets.token_bytes(12)
+            flags = 1 if patch_zip_header else 0
+            asset_name = Path(file_out).name
+            key = derive_key(salt, asset_name)
+            aad = MAGIC + bytes((VERSION, flags)) + salt + asset_name.encode('utf-8')
+            compressed = gzip_source(source, level, patch_zip_header)
+            try:
+                cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=16)
+                cipher.update(aad)
+                with compressed.open('rb') as src, Path(file_out).open('wb') as dst:
+                    dst.write(MAGIC)
+                    dst.write(bytes((VERSION, flags)))
+                    dst.write(salt)
+                    dst.write(nonce)
+                    while True:
+                        chunk = src.read(CHUNK)
+                        if not chunk:
+                            break
+                        dst.write(cipher.encrypt(chunk))
+                    dst.write(cipher.digest())
+                if Path(file_out).stat().st_size <= 50:
+                    raise RuntimeError(f'{file_out} 加密结果异常')
+            finally:
+                compressed.unlink(missing_ok=True)
 
-        def process_text(file_in: str, file_out: str) -> None:
-            source = Path(file_in)
-            if not source.exists():
-                return
-            Path(file_out).write_bytes(encrypted_gzip(source.read_bytes(), 9))
-
-        print('正在加密极速模型...')
-        process_model('dededi_mobile.ptl', 'sys_core_f.dat')
-        print('正在加密专业模型...')
-        process_model('roberta_mobile.ptl', 'sys_core_p.dat')
-        print('正在加密词表和规则...')
-        process_text('错别字.txt', 'sys_typo.dat')
-        process_text('student_vocab.json', 'sys_vocab_f.dat')
-        process_text('roberta_vocab.json', 'sys_vocab_p.dat')
-        print('加密完成！')
+        print('正在使用 AES-256-GCM 加固模型、词表和规则文件...')
+        encrypt_asset('dededi_mobile.ptl', 'sys_core_f.dat', 1, True)
+        encrypt_asset('roberta_mobile.ptl', 'sys_core_p.dat', 1, True)
+        encrypt_asset('错别字.txt', 'sys_typo.dat', 9, False)
+        encrypt_asset('student_vocab.json', 'sys_vocab_f.dat', 9, False)
+        encrypt_asset('roberta_vocab.json', 'sys_vocab_p.dat', 9, False)
+        print('AES-256-GCM 加固完成；每次构建均使用全新主密钥、盐和 Nonce。')
         EOF
         python encrypt.py
 
@@ -140,6 +220,10 @@ jobs:
         mkdir -p app/src/main/res/mipmap-xxxhdpi
         mkdir -p app/src/main/assets
         mkdir -p app/src/main/cpp
+
+        cp generated_security/GeneratedSecuritySeed.java app/src/main/java/com/app/dededi/
+        cp generated_security/key-part-a.cpp app/src/main/cpp/
+        cp generated_security/key-part-b.cpp app/src/main/cpp/
 
         cp sys_core_f.dat app/src/main/assets/ || true
         cp sys_core_p.dat app/src/main/assets/
@@ -173,206 +257,136 @@ jobs:
         cat << 'EOF' > app/src/main/cpp/CMakeLists.txt
         cmake_minimum_required(VERSION 3.10.2)
         project("dededi")
-        add_library(dededi SHARED native-lib.cpp)
+        add_library(dededi SHARED native-lib.cpp key-part-a.cpp key-part-b.cpp)
         target_compile_features(dededi PRIVATE cxx_std_11)
         target_compile_options(dededi PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)
         find_library(log-lib log)
-        target_link_libraries(dededi ${log-lib} android z -Wl,--gc-sections)
+        target_link_libraries(dededi ${log-lib} android -Wl,--gc-sections)
         EOF
 
         cat << 'EOF' > app/src/main/cpp/native-lib.cpp
         #include <jni.h>
+        #include <algorithm>
+        #include <array>
+        #include <cctype>
         #include <cstdio>
-        #include <cstring>
         #include <cstdint>
-        #include <limits>
+        #include <cstdlib>
+        #include <cstring>
         #include <string>
         #include <vector>
-        #include <unistd.h>
-        #include <android/asset_manager.h>
-        #include <android/asset_manager_jni.h>
-        #include <zlib.h>
+
+        extern "C" void dedediFillKeyPartA(uint8_t out[32]);
+        extern "C" void dedediFillKeyPartB(uint8_t out[32]);
 
         namespace {
-        constexpr unsigned char KEY[] = "xT9#mP2!qL5*vN8^cK4@bJ7$zR1%yW0&";
-        constexpr size_t KEY_LEN = sizeof(KEY) - 1;
-        constexpr size_t IO_BUFFER_SIZE = 64 * 1024;
+        constexpr char DOMAIN[] = "DEDEDI-ASSET-V2\0";
 
-        struct Rc4State {
-            unsigned char s[256];
-            unsigned int i = 0;
-            unsigned int j = 0;
-        };
-
-        void rc4Init(Rc4State& state) {
-            for (unsigned int n = 0; n < 256; ++n) state.s[n] = static_cast<unsigned char>(n);
-            unsigned int j = 0;
-            for (unsigned int n = 0; n < 256; ++n) {
-                j = (j + state.s[n] + KEY[n % KEY_LEN]) & 0xFFU;
-                unsigned char temp = state.s[n]; state.s[n] = state.s[j]; state.s[j] = temp;
-            }
+        void wipe(void* pointer, size_t length) {
+            volatile unsigned char* bytes = static_cast<volatile unsigned char*>(pointer);
+            while (length--) *bytes++ = 0;
         }
 
-        void rc4Process(Rc4State& state, unsigned char* data, size_t length) {
-            for (size_t n = 0; n < length; ++n) {
-                state.i = (state.i + 1U) & 0xFFU;
-                state.j = (state.j + state.s[state.i]) & 0xFFU;
-                unsigned char temp = state.s[state.i]; state.s[state.i] = state.s[state.j]; state.s[state.j] = temp;
-                data[n] ^= state.s[(state.s[state.i] + state.s[state.j]) & 0xFFU];
-            }
-        }
-
-        bool writeAll(FILE* file, const unsigned char* data, size_t length) {
-            size_t written = 0;
-            while (written < length) {
-                size_t current = fwrite(data + written, 1, length - written, file);
-                if (current == 0) return false;
-                written += current;
-            }
-            return true;
-        }
-
-        struct HeaderPatchState {
-            unsigned char pending[2] = {0, 0};
-            size_t pendingSize = 0;
-            bool completed = false;
-        };
-
-        bool writeWithHeaderPatch(FILE* file, const unsigned char* data, size_t length, HeaderPatchState& state) {
-            size_t offset = 0;
-            if (!state.completed) {
-                while (state.pendingSize < 2 && offset < length) state.pending[state.pendingSize++] = data[offset++];
-                if (state.pendingSize == 2) {
-                    if (state.pending[0] == 0x44 && state.pending[1] == 0x45) {
-                        state.pending[0] = 0x50; state.pending[1] = 0x4B;
-                    }
-                    if (!writeAll(file, state.pending, 2)) return false;
-                    state.completed = true;
+        bool tracerAttached() {
+            FILE* file = fopen("/proc/self/status", "r");
+            if (!file) return false;
+            char line[256];
+            bool attached = false;
+            while (fgets(line, sizeof(line), file)) {
+                if (strncmp(line, "TracerPid:", 10) == 0) {
+                    const char* value = line + 10;
+                    while (*value && std::isspace(static_cast<unsigned char>(*value))) ++value;
+                    attached = atoi(value) != 0;
+                    break;
                 }
             }
-            return offset >= length || writeAll(file, data + offset, length - offset);
+            fclose(file);
+            return attached;
         }
 
-        bool streamDecryptAndInflate(AAsset* asset, const char* outputPath) {
-            if (!asset || !outputPath) return false;
-            std::string tempPath(outputPath); tempPath += ".tmp";
-            FILE* output = fopen(tempPath.c_str(), "wb");
-            if (!output) return false;
-
-            z_stream stream{};
-            if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
-                fclose(output); remove(tempPath.c_str()); return false;
+        bool suspiciousMappings() {
+            FILE* file = fopen("/proc/self/maps", "r");
+            if (!file) return false;
+            char line[1024];
+            bool suspicious = false;
+            while (fgets(line, sizeof(line), file)) {
+                std::string value(line);
+                std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (value.find("frida") != std::string::npos || value.find("gum-js-loop") != std::string::npos || value.find("libgadget") != std::string::npos) {
+                    suspicious = true;
+                    break;
+                }
             }
+            fclose(file);
+            return suspicious;
+        }
 
-            Rc4State rc4; rc4Init(rc4);
-            std::vector<unsigned char> input(IO_BUFFER_SIZE), outBuffer(IO_BUFFER_SIZE);
-            HeaderPatchState headerState;
-            bool success = false, finished = false;
+        bool sha256(JNIEnv* env, const std::vector<uint8_t>& input, std::array<uint8_t, 32>& output) {
+            jclass cls = env->FindClass("java/security/MessageDigest");
+            if (!cls) return false;
+            jmethodID getInstance = env->GetStaticMethodID(cls, "getInstance", "(Ljava/lang/String;)Ljava/security/MessageDigest;");
+            jmethodID digest = env->GetMethodID(cls, "digest", "([B)[B");
+            if (!getInstance || !digest) { env->DeleteLocalRef(cls); return false; }
+            jstring algorithm = env->NewStringUTF("SHA-256");
+            jobject md = env->CallStaticObjectMethod(cls, getInstance, algorithm);
+            env->DeleteLocalRef(algorithm);
+            if (env->ExceptionCheck() || !md) { env->ExceptionClear(); env->DeleteLocalRef(cls); return false; }
+            jbyteArray bytes = env->NewByteArray(static_cast<jsize>(input.size()));
+            if (!bytes) { env->DeleteLocalRef(md); env->DeleteLocalRef(cls); return false; }
+            if (!input.empty()) env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(input.size()), reinterpret_cast<const jbyte*>(input.data()));
+            auto result = static_cast<jbyteArray>(env->CallObjectMethod(md, digest, bytes));
+            bool ok = !env->ExceptionCheck() && result && env->GetArrayLength(result) == 32;
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            if (ok) env->GetByteArrayRegion(result, 0, 32, reinterpret_cast<jbyte*>(output.data()));
+            if (result) env->DeleteLocalRef(result);
+            env->DeleteLocalRef(bytes); env->DeleteLocalRef(md); env->DeleteLocalRef(cls);
+            return ok;
+        }
 
-            while (!finished) {
-                int readCount = AAsset_read(asset, input.data(), input.size());
-                if (readCount <= 0) break;
-                rc4Process(rc4, input.data(), static_cast<size_t>(readCount));
-                stream.next_in = input.data();
-                stream.avail_in = static_cast<uInt>(readCount);
-                do {
-                    stream.next_out = outBuffer.data();
-                    stream.avail_out = static_cast<uInt>(outBuffer.size());
-                    int result = inflate(&stream, Z_NO_FLUSH);
-                    if (result != Z_OK && result != Z_STREAM_END) { finished = true; break; }
-                    size_t produced = outBuffer.size() - stream.avail_out;
-                    if (produced && !writeWithHeaderPatch(output, outBuffer.data(), produced, headerState)) { finished = true; break; }
-                    if (result == Z_STREAM_END) { success = true; finished = true; break; }
-                } while (stream.avail_in > 0 || stream.avail_out == 0);
+        bool hmacSha256(JNIEnv* env, const uint8_t key[32], const std::vector<uint8_t>& message, std::array<uint8_t, 32>& output) {
+            std::array<uint8_t, 64> ipad{}, opad{};
+            for (size_t i = 0; i < 64; ++i) {
+                uint8_t value = i < 32 ? key[i] : 0;
+                ipad[i] = static_cast<uint8_t>(value ^ 0x36U);
+                opad[i] = static_cast<uint8_t>(value ^ 0x5CU);
             }
-
-            if (!headerState.completed && headerState.pendingSize > 0 && !writeAll(output, headerState.pending, headerState.pendingSize)) success = false;
-            inflateEnd(&stream);
-            if (fflush(output) != 0) success = false;
-            int fd = fileno(output);
-            if (fd >= 0 && fsync(fd) != 0) success = false;
-            if (fclose(output) != 0) success = false;
-            if (!success) { remove(tempPath.c_str()); return false; }
-            remove(outputPath);
-            if (rename(tempPath.c_str(), outputPath) != 0) { remove(tempPath.c_str()); return false; }
-            return true;
+            std::vector<uint8_t> inner; inner.reserve(64 + message.size()); inner.insert(inner.end(), ipad.begin(), ipad.end()); inner.insert(inner.end(), message.begin(), message.end());
+            std::array<uint8_t, 32> innerHash{};
+            if (!sha256(env, inner, innerHash)) return false;
+            std::vector<uint8_t> outer; outer.reserve(96); outer.insert(outer.end(), opad.begin(), opad.end()); outer.insert(outer.end(), innerHash.begin(), innerHash.end());
+            bool ok = sha256(env, outer, output);
+            wipe(inner.data(), inner.size()); wipe(outer.data(), outer.size()); wipe(innerHash.data(), innerHash.size()); wipe(ipad.data(), ipad.size()); wipe(opad.data(), opad.size());
+            return ok;
+        }
         }
 
-        bool readEntireAsset(AAsset* asset, std::vector<unsigned char>& destination) {
-            if (!asset) return false;
-            off64_t length64 = AAsset_getLength64(asset);
-            if (length64 < 0 || static_cast<uint64_t>(length64) > std::numeric_limits<size_t>::max()) return false;
-            size_t length = static_cast<size_t>(length64);
-            destination.resize(length);
-            size_t offset = 0;
-            while (offset < length) {
-                int readCount = AAsset_read(asset, destination.data() + offset, length - offset);
-                if (readCount <= 0) return false;
-                offset += static_cast<size_t>(readCount);
+        extern "C" JNIEXPORT jbyteArray JNICALL
+        Java_com_app_dededi_NativeSecurity_deriveAssetKeyNative(JNIEnv* env, jclass, jbyteArray javaPart, jbyteArray buildToken, jbyteArray salt, jstring assetName) {
+            if (!javaPart || !buildToken || !salt || !assetName || tracerAttached() || suspiciousMappings()) return nullptr;
+            if (env->GetArrayLength(javaPart) != 32 || env->GetArrayLength(buildToken) != 16 || env->GetArrayLength(salt) != 16) return nullptr;
+            std::array<uint8_t, 32> partA{}, partB{}, partC{}, master{}, derived{};
+            std::array<uint8_t, 16> token{}, saltBytes{};
+            dedediFillKeyPartA(partA.data()); dedediFillKeyPartB(partB.data());
+            env->GetByteArrayRegion(javaPart, 0, 32, reinterpret_cast<jbyte*>(partC.data()));
+            env->GetByteArrayRegion(buildToken, 0, 16, reinterpret_cast<jbyte*>(token.data()));
+            env->GetByteArrayRegion(salt, 0, 16, reinterpret_cast<jbyte*>(saltBytes.data()));
+            for (size_t i = 0; i < 32; ++i) master[i] = static_cast<uint8_t>(partA[i] ^ partB[i] ^ partC[i]);
+            const char* name = env->GetStringUTFChars(assetName, nullptr);
+            if (!name) return nullptr;
+            std::vector<uint8_t> message;
+            message.insert(message.end(), DOMAIN, DOMAIN + sizeof(DOMAIN) - 1);
+            message.insert(message.end(), token.begin(), token.end());
+            message.insert(message.end(), saltBytes.begin(), saltBytes.end());
+            message.insert(message.end(), name, name + strlen(name));
+            env->ReleaseStringUTFChars(assetName, name);
+            bool ok = hmacSha256(env, master.data(), message, derived);
+            jbyteArray result = nullptr;
+            if (ok) {
+                result = env->NewByteArray(32);
+                if (result) env->SetByteArrayRegion(result, 0, 32, reinterpret_cast<const jbyte*>(derived.data()));
             }
-            return true;
-        }
-
-        bool inflateToVector(const unsigned char* source, size_t sourceLength, std::vector<unsigned char>& destination) {
-            if (sourceLength > std::numeric_limits<uInt>::max()) return false;
-            z_stream stream{};
-            if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) return false;
-            stream.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(source));
-            stream.avail_in = static_cast<uInt>(sourceLength);
-            destination.clear();
-            unsigned char buffer[32 * 1024];
-            bool success = false;
-            while (true) {
-                stream.next_out = buffer;
-                stream.avail_out = sizeof(buffer);
-                int result = inflate(&stream, Z_NO_FLUSH);
-                size_t produced = sizeof(buffer) - stream.avail_out;
-                if (produced) destination.insert(destination.end(), buffer, buffer + produced);
-                if (result == Z_STREAM_END) { success = true; break; }
-                if (result != Z_OK || (produced == 0 && stream.avail_in == 0)) break;
-            }
-            inflateEnd(&stream);
-            return success;
-        }
-        }
-
-        extern "C" JNIEXPORT jboolean JNICALL
-        Java_com_app_dededi_MainActivity_decryptFileNative(JNIEnv* env, jclass, jobject assetManager, jstring assetName, jstring outputPath) {
-            if (!assetManager || !assetName || !outputPath) return JNI_FALSE;
-            const char* assetChars = env->GetStringUTFChars(assetName, nullptr);
-            const char* outputChars = env->GetStringUTFChars(outputPath, nullptr);
-            if (!assetChars || !outputChars) {
-                if (assetChars) env->ReleaseStringUTFChars(assetName, assetChars);
-                if (outputChars) env->ReleaseStringUTFChars(outputPath, outputChars);
-                return JNI_FALSE;
-            }
-            AAssetManager* manager = AAssetManager_fromJava(env, assetManager);
-            AAsset* asset = manager ? AAssetManager_open(manager, assetChars, AASSET_MODE_STREAMING) : nullptr;
-            bool success = asset && streamDecryptAndInflate(asset, outputChars);
-            if (asset) AAsset_close(asset);
-            env->ReleaseStringUTFChars(assetName, assetChars);
-            env->ReleaseStringUTFChars(outputPath, outputChars);
-            return success ? JNI_TRUE : JNI_FALSE;
-        }
-
-        extern "C" JNIEXPORT jstring JNICALL
-        Java_com_app_dededi_MainActivity_getEncryptedStringNative(JNIEnv* env, jclass, jobject assetManager, jstring assetName) {
-            if (!assetManager || !assetName) return env->NewStringUTF("");
-            const char* assetChars = env->GetStringUTFChars(assetName, nullptr);
-            if (!assetChars) return env->NewStringUTF("");
-            AAssetManager* manager = AAssetManager_fromJava(env, assetManager);
-            AAsset* asset = manager ? AAssetManager_open(manager, assetChars, AASSET_MODE_STREAMING) : nullptr;
-            env->ReleaseStringUTFChars(assetName, assetChars);
-            if (!asset) return env->NewStringUTF("");
-            std::vector<unsigned char> encrypted;
-            bool readOk = readEntireAsset(asset, encrypted);
-            AAsset_close(asset);
-            if (!readOk) return env->NewStringUTF("");
-            Rc4State rc4; rc4Init(rc4); rc4Process(rc4, encrypted.data(), encrypted.size());
-            std::vector<unsigned char> decompressed;
-            if (!inflateToVector(encrypted.data(), encrypted.size(), decompressed)) return env->NewStringUTF("");
-            decompressed.push_back('\0');
-            return env->NewStringUTF(reinterpret_cast<const char*>(decompressed.data()));
+            wipe(partA.data(), partA.size()); wipe(partB.data(), partB.size()); wipe(partC.data(), partC.size()); wipe(master.data(), master.size()); wipe(derived.data(), derived.size()); wipe(token.data(), token.size()); wipe(saltBytes.data(), saltBytes.size()); wipe(message.data(), message.size());
+            return result;
         }
         EOF
 
@@ -418,6 +432,9 @@ jobs:
         -keep class org.pytorch.** { *; }
         -keep class com.facebook.jni.** { *; }
         -keepclasseswithmembers class * { native <methods>; }
+        -keep class com.app.dededi.NativeSecurity { *; }
+        -allowaccessmodification
+        -adaptclassstrings
         -dontwarn org.pytorch.**
         EOF
 
@@ -532,7 +549,7 @@ jobs:
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-            <application android:allowBackup="true" android:extractNativeLibs="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="“的地得”纠错AI Pro" android:theme="@style/Theme.Dededi">
+            <application android:name=".DedediApp" android:allowBackup="false" android:debuggable="false" android:extractNativeLibs="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="“的地得”纠错AI Pro" android:theme="@style/Theme.Dededi">
                 <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize">
                     <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
                     <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
@@ -543,6 +560,191 @@ jobs:
                 <service android:name=".FloatingService" android:exported="false"/>
             </application>
         </manifest>
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/app/dededi/DedediApp.java
+        package com.app.dededi;
+        import android.app.Application;
+        import android.content.Context;
+        public final class DedediApp extends Application {
+            private static volatile Context appContext;
+            @Override public void onCreate() { super.onCreate(); appContext = getApplicationContext(); }
+            static Context context() {
+                Context value = appContext;
+                if (value == null) throw new IllegalStateException("应用尚未初始化");
+                return value;
+            }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/app/dededi/RuleStrings.java
+        package com.app.dededi;
+        import org.json.JSONArray;
+        final class RuleStrings {
+            private static volatile String[] values;
+            private RuleStrings() {}
+            static String s(int index) {
+                String[] local = values;
+                if (local == null) {
+                    synchronized (RuleStrings.class) {
+                        local = values;
+                        if (local == null) {
+                            String raw = SecureAsset.readUtf8(DedediApp.context(), "sys_rules.dat");
+                            if (raw.isEmpty()) throw new IllegalStateException("规则资源校验失败");
+                            try {
+                                JSONArray array = new JSONArray(raw);
+                                local = new String[array.length()];
+                                for (int i = 0; i < local.length; i++) local[i] = array.getString(i);
+                                values = local;
+                            } catch (Exception exception) {
+                                throw new IllegalStateException("规则资源解析失败", exception);
+                            }
+                        }
+                    }
+                }
+                if (index < 0 || index >= local.length) throw new IndexOutOfBoundsException("规则索引异常");
+                return local[index];
+            }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/app/dededi/NativeSecurity.java
+        package com.app.dededi;
+        final class NativeSecurity {
+            static { System.loadLibrary("dededi"); }
+            private NativeSecurity() {}
+            static native byte[] deriveAssetKeyNative(byte[] javaPart, byte[] buildToken, byte[] salt, String assetName);
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/app/dededi/SecureAsset.java
+        package com.app.dededi;
+
+        import android.content.Context;
+        import android.content.res.AssetManager;
+        import java.io.ByteArrayOutputStream;
+        import java.io.File;
+        import java.io.FileInputStream;
+        import java.io.FileOutputStream;
+        import java.io.IOException;
+        import java.io.InputStream;
+        import java.io.OutputStream;
+        import java.nio.charset.StandardCharsets;
+        import java.security.GeneralSecurityException;
+        import java.util.Arrays;
+        import java.util.zip.GZIPInputStream;
+        import javax.crypto.Cipher;
+        import javax.crypto.AEADBadTagException;
+        import javax.crypto.spec.GCMParameterSpec;
+        import javax.crypto.spec.SecretKeySpec;
+
+        final class SecureAsset {
+            private static final byte[] MAGIC = new byte[]{'D', 'D', 'A', '2'};
+            private static final int VERSION = 1;
+            private static final int HEADER_SIZE = 4 + 1 + 1 + 16 + 12;
+            private static final int TAG_SIZE = 16;
+            private static final int BUFFER_SIZE = 64 * 1024;
+            private SecureAsset() {}
+
+            static String readUtf8(Context context, String assetName) {
+                ByteArrayOutputStream output = new ByteArrayOutputStream(32 * 1024);
+                try {
+                    decrypt(context, assetName, output);
+                    return output.toString("UTF-8");
+                } catch (Exception ignored) {
+                    return "";
+                }
+            }
+
+            static boolean decryptToFile(Context context, String assetName, File target) {
+                File temporary = new File(target.getAbsolutePath() + ".part");
+                try (FileOutputStream output = new FileOutputStream(temporary)) {
+                    decrypt(context, assetName, output);
+                    output.getFD().sync();
+                } catch (Exception exception) {
+                    temporary.delete();
+                    return false;
+                }
+                if (target.exists() && !target.delete()) { temporary.delete(); return false; }
+                if (!temporary.renameTo(target)) { temporary.delete(); return false; }
+                return true;
+            }
+
+            private static void decrypt(Context context, String assetName, OutputStream plainOutput) throws IOException, GeneralSecurityException {
+                File compressed = File.createTempFile("dac", ".tmp", context.getCodeCacheDir());
+                byte[] javaPart = null, token = null, salt = new byte[16], nonce = new byte[12], key = null;
+                try (InputStream input = context.getAssets().open(assetName, AssetManager.ACCESS_STREAMING); FileOutputStream compressedOutput = new FileOutputStream(compressed)) {
+                    byte[] magic = new byte[4]; readFully(input, magic);
+                    if (!Arrays.equals(MAGIC, magic)) throw new GeneralSecurityException("资源格式错误");
+                    int version = input.read(), flags = input.read();
+                    if (version != VERSION || flags < 0) throw new GeneralSecurityException("资源版本错误");
+                    readFully(input, salt); readFully(input, nonce);
+                    javaPart = GeneratedSecuritySeed.revealPart(); token = GeneratedSecuritySeed.buildToken();
+                    key = NativeSecurity.deriveAssetKeyNative(javaPart, token, salt, assetName);
+                    if (key == null || key.length != 32) throw new GeneralSecurityException("安全环境校验失败");
+                    Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                    cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, nonce));
+                    ByteArrayOutputStream aad = new ByteArrayOutputStream();
+                    aad.write(MAGIC); aad.write(version); aad.write(flags); aad.write(salt); aad.write(assetName.getBytes(StandardCharsets.UTF_8));
+                    cipher.updateAAD(aad.toByteArray());
+                    decryptCiphertextKeepingTag(input, compressedOutput, cipher);
+                    compressedOutput.getFD().sync();
+                    try (GZIPInputStream gzip = new GZIPInputStream(new FileInputStream(compressed), BUFFER_SIZE)) {
+                        int first = gzip.read(), second = gzip.read();
+                        if (first >= 0) {
+                            if ((flags & 1) != 0 && first == 0x44 && second == 0x45) { plainOutput.write(0x50); plainOutput.write(0x4B); }
+                            else { plainOutput.write(first); if (second >= 0) plainOutput.write(second); }
+                        }
+                        byte[] buffer = new byte[BUFFER_SIZE];
+                        int count;
+                        while ((count = gzip.read(buffer)) != -1) plainOutput.write(buffer, 0, count);
+                        Arrays.fill(buffer, (byte)0);
+                    }
+                } finally {
+                    if (javaPart != null) Arrays.fill(javaPart, (byte)0);
+                    if (token != null) Arrays.fill(token, (byte)0);
+                    Arrays.fill(salt, (byte)0); Arrays.fill(nonce, (byte)0);
+                    if (key != null) Arrays.fill(key, (byte)0);
+                    compressed.delete();
+                }
+            }
+
+            private static void decryptCiphertextKeepingTag(InputStream input, OutputStream output, Cipher cipher) throws IOException, GeneralSecurityException {
+                byte[] work = new byte[BUFFER_SIZE + TAG_SIZE];
+                int pendingLength = 0;
+                while (true) {
+                    int count = input.read(work, pendingLength, BUFFER_SIZE);
+                    if (count < 0) break;
+                    int total = pendingLength + count;
+                    if (total <= TAG_SIZE) { pendingLength = total; continue; }
+                    int processLength = total - TAG_SIZE;
+                    byte[] value = cipher.update(work, 0, processLength);
+                    if (value != null && value.length > 0) output.write(value);
+                    if (value != null) Arrays.fill(value, (byte)0);
+                    System.arraycopy(work, processLength, work, 0, TAG_SIZE);
+                    pendingLength = TAG_SIZE;
+                }
+                if (pendingLength != TAG_SIZE) throw new GeneralSecurityException("认证标签缺失");
+                try {
+                    byte[] last = cipher.doFinal(work, 0, pendingLength);
+                    if (last != null && last.length > 0) output.write(last);
+                    if (last != null) Arrays.fill(last, (byte)0);
+                } catch (AEADBadTagException exception) {
+                    throw new GeneralSecurityException("资源完整性验证失败", exception);
+                } finally {
+                    Arrays.fill(work, (byte)0);
+                }
+            }
+
+            private static void readFully(InputStream input, byte[] output) throws IOException {
+                int offset = 0;
+                while (offset < output.length) {
+                    int count = input.read(output, offset, output.length - offset);
+                    if (count < 0) throw new IOException("资源头不完整");
+                    offset += count;
+                }
+            }
+        }
         EOF
 
         cat << 'EOF' > app/src/main/java/com/app/dededi/FilePickerActivity.java
@@ -911,7 +1113,7 @@ jobs:
                 <ProgressBar android:id="@+id/circleSpin" android:layout_width="match_parent" android:layout_height="match_parent" android:visibility="invisible" android:indeterminateTint="#FFFFFF"/>
             </FrameLayout>
             <LinearLayout android:id="@+id/statusContainer" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_below="@id/btnCircle" android:background="#A0000000" android:orientation="vertical" android:visibility="invisible" android:minWidth="80dp" android:layout_marginTop="4dp">
-                <TextView android:id="@+id/tvStatus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="11sp" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="3dp" android:paddingBottom="3dp"/>
+                <TextView android:id="@+id/tvStatus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxWidth="300dp" android:maxLines="3" android:ellipsize="end" android:textColor="#FFFFFF" android:textSize="11sp" android:paddingStart="6dp" android:paddingEnd="6dp" android:paddingTop="3dp" android:paddingBottom="3dp"/>
                 <ProgressBar android:id="@+id/floatProgressBar" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="2dp" android:progressTint="#2196F3" android:max="100" android:progress="0" android:visibility="gone"/>
             </LinearLayout>
         </RelativeLayout>
@@ -1343,6 +1545,7 @@ jobs:
         import android.widget.ProgressBar;
         import android.widget.TextView;
         import android.widget.Toast;
+        import java.util.ArrayDeque;
         import java.util.List;
 
         public class FloatingService extends Service {
@@ -1359,31 +1562,22 @@ jobs:
             private String lastCorrectedText = "";
             private long lastErrorShownAt;
             private final Object errorStatusLock = new Object();
-            private String pendingErrorStatus;
+            private final ArrayDeque<String> visibleErrorLines = new ArrayDeque<>(3);
             private boolean errorStatusFlushScheduled;
             private SharedPreferences sp;
             private final Runnable hideStatusRunnable = () -> { if (!destroyed && statusContainer != null) statusContainer.setVisibility(View.INVISIBLE); };
-            private final Runnable errorStatusFlushRunnable = new Runnable() {
-                @Override public void run() {
-                    String message;
-                    synchronized (errorStatusLock) {
-                        message = pendingErrorStatus;
-                        pendingErrorStatus = null;
-                    }
-                    if (!destroyed && !isInterruptRequested && message != null) {
-                        tvStatus.setText(message);
-                        statusContainer.setVisibility(View.VISIBLE);
-                        statusContainer.removeCallbacks(hideStatusRunnable);
-                        statusContainer.postDelayed(hideStatusRunnable, 5000);
-                        lastErrorShownAt = android.os.SystemClock.uptimeMillis();
-                    }
-                    synchronized (errorStatusLock) {
-                        if (pendingErrorStatus != null && !destroyed && !isInterruptRequested) {
-                            AppExecutors.MAIN.postDelayed(this, 120);
-                        } else {
-                            errorStatusFlushScheduled = false;
-                        }
-                    }
+            private final Runnable errorStatusFlushRunnable = () -> {
+                StringBuilder display = new StringBuilder();
+                synchronized (errorStatusLock) {
+                    for (String line : visibleErrorLines) { if (display.length() > 0) display.append('\n'); display.append(line); }
+                    errorStatusFlushScheduled = false;
+                }
+                if (!destroyed && !isInterruptRequested && display.length() > 0) {
+                    tvStatus.setText(display.toString());
+                    statusContainer.setVisibility(View.VISIBLE);
+                    statusContainer.removeCallbacks(hideStatusRunnable);
+                    statusContainer.postDelayed(hideStatusRunnable, 5000);
+                    lastErrorShownAt = android.os.SystemClock.uptimeMillis();
                 }
             };
             private final Runnable syncTextRunnable = () -> {
@@ -1543,12 +1737,22 @@ jobs:
                 });
             }
 
+            private String compactErrorStatus(String message) {
+                String value = message == null ? "" : message.replace("发现错误：", "").replace(" (置信度:", "（").replace(") | 共 ", "）｜共").replace(" | 共 ", "｜共");
+                if (value.length() <= 24) return value;
+                int suffixIndex = value.lastIndexOf("｜共");
+                String suffix = suffixIndex >= 0 ? value.substring(suffixIndex) : "";
+                int keep = Math.max(8, 23 - suffix.length());
+                return value.substring(0, Math.min(keep, value.length())) + "…" + suffix;
+            }
+
             private void showErrorStatus(String message) {
                 synchronized (errorStatusLock) {
-                    pendingErrorStatus = message;
+                    visibleErrorLines.addLast(compactErrorStatus(message));
+                    while (visibleErrorLines.size() > 3) visibleErrorLines.removeFirst();
                     if (!errorStatusFlushScheduled) {
                         errorStatusFlushScheduled = true;
-                        AppExecutors.MAIN.post(errorStatusFlushRunnable);
+                        AppExecutors.MAIN.postDelayed(errorStatusFlushRunnable, 40);
                     }
                 }
             }
@@ -1558,7 +1762,7 @@ jobs:
                     @Override public void run() {
                         if (destroyed || isInterruptRequested) { finishInterrupted(); return; }
                         synchronized (errorStatusLock) {
-                            if (errorStatusFlushScheduled || pendingErrorStatus != null) {
+                            if (errorStatusFlushScheduled) {
                                 AppExecutors.MAIN.postDelayed(this, 30);
                                 return;
                             }
@@ -1581,6 +1785,8 @@ jobs:
                 float tDi = MainActivity.parseFloatSafe(sp.getString(prefix + "th2", fast ? "0.80" : "0.75"), fast ? 0.80f : 0.75f);
                 float tDe3 = MainActivity.parseFloatSafe(sp.getString(prefix + "th3", fast ? "0.80" : "0.75"), fast ? 0.80f : 0.75f);
                 isChecking = true; isInterruptRequested = false; btnFloatSwitch.setEnabled(false); lastErrorShownAt = 0;
+                synchronized (errorStatusLock) { visibleErrorLines.clear(); errorStatusFlushScheduled = false; }
+                AppExecutors.MAIN.removeCallbacks(errorStatusFlushRunnable);
                 showStatus("正在纠错……", false); floatProgressBar.setVisibility(View.VISIBLE); floatProgressBar.setProgress(0); circleSpin.setVisibility(View.VISIBLE);
 
                 AppExecutors.INFERENCE.execute(() -> {
@@ -1622,7 +1828,7 @@ jobs:
             @Override public IBinder onBind(Intent intent) { return null; }
             @Override public void onDestroy() {
                 destroyed = true; isInterruptRequested = true; AppExecutors.MAIN.removeCallbacks(syncTextRunnable); AppExecutors.MAIN.removeCallbacks(hideStatusRunnable); AppExecutors.MAIN.removeCallbacks(errorStatusFlushRunnable);
-                synchronized (errorStatusLock) { pendingErrorStatus = null; errorStatusFlushScheduled = false; }
+                synchronized (errorStatusLock) { visibleErrorLines.clear(); errorStatusFlushScheduled = false; }
                 if (statusContainer != null) statusContainer.removeCallbacks(hideStatusRunnable);
                 if (floatView != null && windowManager != null) try { windowManager.removeView(floatView); } catch (Exception ignored) {}
                 super.onDestroy();
@@ -1716,8 +1922,6 @@ jobs:
 
         public class MainActivity extends AppCompatActivity {
             static { System.loadLibrary("dededi"); }
-            public static native boolean decryptFileNative(android.content.res.AssetManager mgr, String assetName, String outPath);
-            public static native String getEncryptedStringNative(android.content.res.AssetManager mgr, String assetName);
 
             public static MainActivity instance;
             public static Module fastModule, proModule;
@@ -2140,7 +2344,7 @@ jobs:
 
             public static synchronized void loadTypoMap(Context context) {
                 typoMap.clear(); customTypoKeys.clear(); typoLengthsByFirst.clear(); maxTypoLen = 0; minTypoLen = Integer.MAX_VALUE;
-                try (BufferedReader reader = new BufferedReader(new java.io.StringReader(getEncryptedStringNative(context.getAssets(), "sys_typo.dat")))) {
+                try (BufferedReader reader = new BufferedReader(new java.io.StringReader(SecureAsset.readUtf8(context, "sys_typo.dat")))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         line = line.trim(); if (line.isEmpty()) continue; String[] parts = line.split("\\s+", 3);
@@ -2445,16 +2649,21 @@ jobs:
             }
 
             private void loadVocab(Map<String, Long> map, String asset) throws Exception {
-                String json = getEncryptedStringNative(getAssets(), asset); if (json == null || json.isEmpty()) return;
+                String json = SecureAsset.readUtf8(this, asset); if (json == null || json.isEmpty()) return;
                 JSONObject object = new JSONObject(json); Iterator<String> keys = object.keys(); while (keys.hasNext()) { String key = keys.next(); map.put(key, (long) object.getInt(key)); }
             }
 
             private Module loadDecryptedModule(Context context, String assetName, String cacheKey) throws Exception {
-                File cache = new File(context.getFilesDir(), cacheKey + ".ptl"); File[] files = context.getFilesDir().listFiles();
-                if (files != null) { String prefix = cacheKey.contains("_v") ? cacheKey.substring(0, cacheKey.indexOf("_v")) : cacheKey; for (File file : files) if (file.getName().endsWith(".ptl") && file.getName().startsWith(prefix) && !file.equals(cache)) file.delete(); }
-                if (cache.exists() && cache.length() > 0) try { return LiteModuleLoader.load(cache.getAbsolutePath()); } catch (Exception ignored) { cache.delete(); }
-                if (!decryptFileNative(context.getAssets(), assetName, cache.getAbsolutePath())) throw new Exception("底层解密失败");
-                return LiteModuleLoader.load(cache.getAbsolutePath());
+                File directory = context.getCodeCacheDir();
+                File[] stale = directory.listFiles((dir, name) -> name.startsWith("dededi_model_") && name.endsWith(".ptl"));
+                if (stale != null) for (File file : stale) file.delete();
+                File temporary = File.createTempFile("dededi_model_", ".ptl", directory);
+                try {
+                    if (!SecureAsset.decryptToFile(context, assetName, temporary)) throw new Exception("模型完整性校验或解密失败");
+                    return LiteModuleLoader.load(temporary.getAbsolutePath());
+                } finally {
+                    if (!temporary.delete()) temporary.deleteOnExit();
+                }
             }
 
             @SuppressLint("ClickableViewAccessibility")
@@ -2648,9 +2857,9 @@ jobs:
             private void loadModelsAsync() {
                 AppExecutors.IO.execute(() -> {
                     loadTypoMap(this);
-                    try { if (fastModule == null) fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_cache_v2.5"); if (fastVocab.isEmpty()) loadVocab(fastVocab, "sys_vocab_f.dat"); } catch (Exception exception) { exception.printStackTrace(); }
+                    try { if (fastModule == null) fastModule = loadDecryptedModule(this, "sys_core_f.dat", "fast_secure_v3"); if (fastVocab.isEmpty()) loadVocab(fastVocab, "sys_vocab_f.dat"); } catch (Exception exception) { exception.printStackTrace(); }
                     try {
-                        if (proModule == null) proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_cache_v2.5"); if (proVocab.isEmpty()) loadVocab(proVocab, "sys_vocab_p.dat");
+                        if (proModule == null) proModule = loadDecryptedModule(this, "sys_core_p.dat", "pro_secure_v3"); if (proVocab.isEmpty()) loadVocab(proVocab, "sys_vocab_p.dat");
                         clsId = proVocab.getOrDefault("[CLS]", 101L); sepId = proVocab.getOrDefault("[SEP]", 102L); maskId = proVocab.getOrDefault("[MASK]", 103L); unkId = proVocab.getOrDefault("[UNK]", 100L); deId = proVocab.getOrDefault("的", 0L); diId = proVocab.getOrDefault("地", 0L); de2Id = proVocab.getOrDefault("得", 0L);
                     } catch (Exception exception) { exception.printStackTrace(); }
                     AppExecutors.MAIN.post(() -> {
@@ -3097,6 +3306,68 @@ jobs:
             }
         }
         EOF
+
+    - name: Protect Embedded Grammar Rules
+      run: |
+        set -euo pipefail
+        cat << 'EOF' > protect_rules.py
+        import gzip
+        import hashlib
+        import hmac
+        import json
+        import re
+        import secrets
+        from pathlib import Path
+        from Crypto.Cipher import AES
+
+        source_path = Path('app/src/main/java/com/app/dededi/MainActivity.java')
+        source = source_path.read_text(encoding='utf-8')
+        anchor = source.index('public static final List<GramRule> gramRules')
+        start = source.index('    static {', anchor)
+        end = source.index('    public static final class TypoMatch', start)
+        region = source[start:end]
+        literal_pattern = re.compile(r'"(?:\\.|[^"\\])*"')
+        strings = []
+        indices = {}
+
+        def replace_literal(match):
+            token = match.group(0)
+            value = json.loads(token)
+            index = indices.get(value)
+            if index is None:
+                index = len(strings)
+                indices[value] = index
+                strings.append(value)
+            return f'RuleStrings.s({index})'
+
+        protected_region = literal_pattern.sub(replace_literal, region)
+        source_path.write_text(source[:start] + protected_region + source[end:], encoding='utf-8')
+
+        material = json.loads(Path('.ci/security_material.json').read_text(encoding='utf-8'))
+        master = bytes.fromhex(material['master'])
+        token = bytes.fromhex(material['token'])
+        asset_name = 'sys_rules.dat'
+        salt = secrets.token_bytes(16)
+        nonce = secrets.token_bytes(12)
+        magic = b'DDA2'
+        version = 1
+        flags = 0
+        domain = b'DEDEDI-ASSET-V2\x00'
+        key = hmac.new(master, domain + token + salt + asset_name.encode('utf-8'), hashlib.sha256).digest()
+        aad = magic + bytes((version, flags)) + salt + asset_name.encode('utf-8')
+        raw = json.dumps(strings, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        compressed = gzip.compress(raw, compresslevel=9, mtime=0)
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=16)
+        cipher.update(aad)
+        encrypted, tag = cipher.encrypt_and_digest(compressed)
+        target = Path('app/src/main/assets') / asset_name
+        target.write_bytes(magic + bytes((version, flags)) + salt + nonce + encrypted + tag)
+        if len(strings) < 20 or target.stat().st_size < 100:
+            raise RuntimeError('规则加固结果异常')
+        print(f'已将 {len(strings)} 个规则/白名单字符串移出 DEX，并写入 AES-GCM 资源。')
+        EOF
+        python protect_rules.py
+        rm -f .ci/security_material.json protect_rules.py
 
     - name: Set up JDK 11
       uses: actions/setup-java@v4
