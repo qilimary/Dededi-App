@@ -304,11 +304,50 @@ jobs:
                       "LayerNorm epsilon"
                   )
               )
-
+              
               context = ivalue(
                   inputs(linear_node)[1],
                   "XNNPACK LinearOpContext"
               )
+        
+              try:
+                  packed_state = context.unpack()
+              except (AttributeError, RuntimeError):
+                  packed_state = context.__getstate__()
+        
+                  if (
+                      isinstance(packed_state, tuple)
+                      and len(packed_state) == 2
+                      and isinstance(packed_state[0], (tuple, list))
+                  ):
+                      packed_state = packed_state[0]
+        
+              if isinstance(packed_state, list):
+                  packed_state = tuple(packed_state)
+        
+              if (
+                  not isinstance(packed_state, tuple)
+                  or len(packed_state) != 4
+              ):
+                  raise RuntimeError(
+                      "无法从 XNNPACK LinearOpContext 中读取分类层权重，"
+                      f"实际返回类型：{type(packed_state)!r}"
+                  )
+        
+              classifier_weight, classifier_bias, out_min, out_max = (
+                  packed_state
+              )
+        
+              if not torch.is_tensor(classifier_weight):
+                  raise RuntimeError("分类层权重不是 Tensor")
+        
+              if (
+                  classifier_bias is not None
+                  and not torch.is_tensor(classifier_bias)
+              ):
+                  raise RuntimeError("分类层偏置不是 Tensor")
+
+              
               classifier_weight, classifier_bias, out_min, out_max = (
                   context.unpack()
               )
