@@ -3441,62 +3441,32 @@ jobs:
                 });
             }
 
-            private void beginCheck() {
-                hasStartedChecking = true;
-                saveSettings(currentIsFast);
-                autoScrollEnabled = true;
-                isManuallyEditedOut = false;
-
-                float temperature = parseFloatSafe(
-                        editTemp.getText().toString(),
-                        1f
+                        private void loadModelsAsync() {
+                final boolean selectedFast = sp.getBoolean(
+                        "is_fast_mode",
+                        false
                 );
 
-                boolean fast = rbFast.isChecked();
+                AppExecutors.IO.execute(() -> {
+                    ensureTypoMapLoaded(this);
 
-                if (temperature > 0) {
-                    if (fast && fastModule == null) {
-                        Toast.makeText(
-                                this,
-                                "模型仍在加载或环境异常，请稍后重试",
-                                Toast.LENGTH_SHORT
-                        ).show();
-                        return;
-                    }
+                    /*
+                     * 应用进程每次重新启动时，
+                     * 自动在后台载入当前选中的模型。
+                     *
+                     * 如果持久缓存已经存在，
+                     * 将直接从缓存文件载入内存，
+                     * 不再重新解密、解压和生成模型文件。
+                     */
+                    boolean selectedReady = selectedFast
+                            ? loadFastEngine()
+                            : loadProEngine();
 
-                    if (!fast && proModule == null) {
-                        Toast.makeText(
-                                this,
-                                "专业版模型仍在加载或环境异常，请稍后重试",
-                                Toast.LENGTH_SHORT
-                        ).show();
-                        return;
-                    }
-                } else {
-                    Toast.makeText(
-                            this,
-                            "已关闭“的地得”纠错，仅开启错别字纠错。",
-                            Toast.LENGTH_LONG
-                    ).show();
-                }
-
-                String raw = inputText.getText().toString();
-                if (raw.isEmpty()) return;
-
-                if (lastSavedHistoryFileId == null) {
-                    lastSavedHistoryFileId = java.util.UUID
-                            .randomUUID()
-                            .toString();
-                }
-
-                saveHistory(
-                        raw,
-                        lastSavedHistoryFileId
-                );
-
-                isCheckingMain = true;
-                btnCheck.setText("取消");
-                doInference(fast);
+                    publishSelectedModelLoadResult(
+                            selectedFast,
+                            selectedReady
+                    );
+                });
             }
 
             private void showHelp() {
@@ -3550,85 +3520,27 @@ jobs:
                 boolean fast = rbFast.isChecked();
 
                 if (temperature > 0f) {
-                    boolean engineReady = fast
-                            ? fastModule != null
-                            : proModule != null;
+                    if (fast && fastModule == null) {
+                        Toast.makeText(
+                                this,
+                                "模型仍在加载或环境异常，请稍后重试",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                        return;
+                    }
 
-                    /*
-                     * 当前进程尚未载入模型时，从持久缓存按需加载。
-                     * 加载过程放在后台线程，不阻塞Android主线程。
-                     */
-                    if (!engineReady) {
-                        btnCheck.setEnabled(false);
-                        btnCheck.setText("加载模型中");
-
-                        progressBar.setIndeterminate(true);
-                        progressBar.setVisibility(View.VISIBLE);
-
-                        outputText.setText(
-                                "正在从本地持久缓存载入"
-                                        + (
-                                            fast
-                                                    ? "极速"
-                                                    : "专业"
-                                        )
-                                        + "模型……"
-                        );
-
-                        AppExecutors.IO.execute(() -> {
-                            boolean ready = fast
-                                    ? loadFastEngine()
-                                    : loadProEngine();
-
-                            AppExecutors.MAIN.post(() -> {
-                                if (isFinishing()) return;
-
-                                progressBar.setIndeterminate(false);
-                                progressBar.setVisibility(
-                                        View.INVISIBLE
-                                );
-
-                                btnCheck.setEnabled(true);
-                                btnCheck.setText("开始纠错");
-
-                                if (!ready) {
-                                    String modelName = fast
-                                            ? "极速"
-                                            : "专业";
-
-                                    outputText.setText(
-                                            modelName
-                                                    + "模型加载失败："
-                                                    + SecureAsset
-                                                        .lastErrorSummary()
-                                    );
-
-                                    Toast.makeText(
-                                            this,
-                                            modelName
-                                                    + "模型加载失败",
-                                            Toast.LENGTH_LONG
-                                    ).show();
-
-                                    return;
-                                }
-
-                                /*
-                                 * 模型已经成功载入，再次进入正常纠错流程。
-                                 * 第二次进入时 engineReady 会为 true，
-                                 * 不会发生无限递归。
-                                 */
-                                beginCheck();
-                            });
-                        });
-
+                    if (!fast && proModule == null) {
+                        Toast.makeText(
+                                this,
+                                "专业版模型仍在加载或环境异常，请稍后重试",
+                                Toast.LENGTH_SHORT
+                        ).show();
                         return;
                     }
                 } else {
                     Toast.makeText(
                             this,
-                            "已关闭“的地得”纠错，"
-                                    + "仅开启错别字纠错。",
+                            "已关闭“的地得”纠错，仅开启错别字纠错。",
                             Toast.LENGTH_LONG
                     ).show();
                 }
