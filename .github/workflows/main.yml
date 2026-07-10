@@ -2565,7 +2565,7 @@ jobs:
                         String current = outputText.getText().toString(); if (current.isEmpty() || "正在加载...".equals(current) || "AI已加载。".equals(current) || isCheckingMain || lastEditorSpannable == null) return;
                         triggered = true; outputText.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
                         ViewGroup parent = (ViewGroup) scrollView.getParent(); int[] location = new int[2]; parent.getLocationOnScreen(location); int centerX = (int) (rawX - location[0]), centerY = (int) (rawY - location[1]);
-                        View ripple = new View(this); ripple.setBackgroundColor(Color.parseColor("#20000000")); ripple.setVisibility(View.INVISIBLE); parent.addView(ripple, new ViewGroup.LayoutParams(-1, -1));
+                        View ripple = new View(MainActivity.this); ripple.setBackgroundColor(Color.parseColor("#20000000")); ripple.setVisibility(View.INVISIBLE); parent.addView(ripple, new ViewGroup.LayoutParams(-1, -1));
                         float radius = (float) Math.hypot(Math.max(centerX, parent.getWidth() - centerX), Math.max(centerY, parent.getHeight() - centerY)); Animator reveal = ViewAnimationUtils.createCircularReveal(ripple, centerX, centerY, 0, radius); reveal.setDuration(350); ripple.setVisibility(View.VISIBLE); reveal.start();
                         reveal.addListener(new AnimatorListenerAdapter() { @Override public void onAnimationEnd(Animator animation) { parent.removeView(ripple); openEditor(); } });
                     };
