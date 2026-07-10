@@ -416,7 +416,7 @@ jobs:
             buildTypes {
                 release {
                     minifyEnabled true
-                    shrinkResources true
+                    shrinkResources false
                     proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
                     signingConfig signingConfigs.debug
                 }
@@ -442,8 +442,18 @@ jobs:
         -keep class com.facebook.jni.** { *; }
         -keepclasseswithmembers class * { native <methods>; }
         -keep class com.app.dededi.NativeSecurity { *; }
-        -allowaccessmodification
-        -adaptclassstrings
+
+        # ML Kit OCR relies on component discovery, reflection and native entry points.
+        # Keep only the OCR-related packages rather than disabling R8 globally.
+        -keep class com.google.mlkit.vision.text.** { *; }
+        -keep class com.google.mlkit.vision.common.** { *; }
+        -keep class com.google.mlkit.common.sdkinternal.** { *; }
+        -keep class com.google.android.gms.internal.mlkit_vision_text_common.** { *; }
+        -keep class com.google.android.gms.internal.mlkit_vision_text_bundled_common.** { *; }
+        -keepclasseswithmembernames class com.google.mlkit.** { native <methods>; }
+        -keepclasseswithmembernames class com.google.android.gms.internal.mlkit_vision_text_** { native <methods>; }
+        -dontwarn com.google.mlkit.**
+        -dontwarn com.google.android.gms.internal.mlkit_vision_text_**
         -dontwarn org.pytorch.**
         EOF
 
@@ -558,7 +568,7 @@ jobs:
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-            <application android:name=".DedediApp" android:allowBackup="false" android:extractNativeLibs="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="“的地得”纠错AI Pro" android:theme="@style/Theme.Dededi">
+            <application android:name=".DedediApp" android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="“的地得”纠错AI Pro" android:theme="@style/Theme.Dededi">
                 <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize">
                     <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
                     <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/></intent-filter>
@@ -864,7 +874,7 @@ jobs:
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ContextCompat.startForegroundService(this, serviceIntent);
                             else startService(serviceIntent);
                         } else {
-                            Toast.makeText(this, "无法读取文件内容或内容为空", Toast.LENGTH_SHORT).show();
+                            String detail = MainActivity.getLastExtractError(); Toast.makeText(this, detail.isEmpty() ? "无法读取文件内容或内容为空" : "导入失败：" + detail, Toast.LENGTH_LONG).show();
                         }
                         finish();
                     });
@@ -2444,6 +2454,10 @@ jobs:
             private static final Pattern WORD_TEXT_PATTERN = Pattern.compile("<w:t[^>]*>(.*?)</w:t>", Pattern.DOTALL);
             private static final Pattern PPT_TEXT_PATTERN = Pattern.compile("<a:t[^>]*>(.*?)</a:t>", Pattern.DOTALL);
 
+            private static volatile String lastExtractError = "";
+            private static final long OCR_TIMEOUT_SECONDS = 120L;
+            private static final long MAX_OCR_PIXELS = 20_000_000L;
+
             private static TextRecognizer getTextRecognizer() {
                 TextRecognizer local = textRecognizer;
                 if (local == null) synchronized (OCR_LOCK) {
@@ -2451,6 +2465,68 @@ jobs:
                     if (local == null) textRecognizer = local = TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
                 }
                 return local;
+            }
+
+            public static String getLastExtractError() { return lastExtractError == null ? "" : lastExtractError; }
+
+            private static String describeExtractError(Throwable throwable) {
+                Throwable root = throwable;
+                while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+                String message = root.getMessage();
+                String name = root.getClass().getSimpleName();
+                if (message == null || message.trim().isEmpty()) return name;
+                message = message.replace('\n', ' ').replace('\r', ' ').trim();
+                return name + "：" + (message.length() > 120 ? message.substring(0, 120) + "…" : message);
+            }
+
+            private static String recognizeInputImage(InputImage image) throws Exception {
+                synchronized (OCR_LOCK) {
+                    try {
+                        Text result = Tasks.await(getTextRecognizer().process(image), OCR_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+                        return result == null ? "" : result.getText();
+                    } catch (java.util.concurrent.ExecutionException exception) {
+                        Throwable cause = exception.getCause() == null ? exception : exception.getCause();
+                        throw new Exception("ML Kit识别失败：" + describeExtractError(cause), cause);
+                    } catch (java.util.concurrent.TimeoutException exception) {
+                        throw new Exception("OCR识别超时，请尝试较小的图片或PDF", exception);
+                    }
+                }
+            }
+
+            private static Bitmap decodeBitmapFromUri(Context context, android.net.Uri uri) throws Exception {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    android.graphics.ImageDecoder.Source source = android.graphics.ImageDecoder.createSource(context.getContentResolver(), uri);
+                    Bitmap bitmap = android.graphics.ImageDecoder.decodeBitmap(source, (decoder, info, src) -> {
+                        decoder.setAllocator(android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE);
+                        int width = info.getSize().getWidth(), height = info.getSize().getHeight();
+                        long pixels = (long) width * height;
+                        if (pixels > MAX_OCR_PIXELS) {
+                            double scale = Math.sqrt((double) MAX_OCR_PIXELS / pixels);
+                            decoder.setTargetSize(Math.max(1, (int) Math.round(width * scale)), Math.max(1, (int) Math.round(height * scale)));
+                        }
+                    });
+                    if (bitmap == null) throw new IOException("图片解码结果为空");
+                    return bitmap;
+                }
+
+                android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IOException("无法打开图片文件");
+                    android.graphics.BitmapFactory.decodeStream(input, null, bounds);
+                }
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new IOException("无法读取图片尺寸");
+                int sample = 1;
+                while ((long) Math.max(1, bounds.outWidth / sample) * Math.max(1, bounds.outHeight / sample) > MAX_OCR_PIXELS) sample <<= 1;
+                android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+                options.inSampleSize = sample;
+                options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IOException("无法重新打开图片文件");
+                    Bitmap bitmap = android.graphics.BitmapFactory.decodeStream(input, null, options);
+                    if (bitmap == null) throw new IOException("图片格式不受支持或文件已损坏");
+                    return bitmap;
+                }
             }
 
             public static void extractTextFromUriAsync(Context context, android.net.Uri uri, TextExtractCallback callback) {
@@ -2463,16 +2539,30 @@ jobs:
 
             public static String extractTextFromUriSync(Context context, android.net.Uri uri, TextExtractCallback callback) {
                 Bitmap bitmap = null;
+                lastExtractError = "";
                 try {
+                    if (uri == null) throw new IOException("文件地址为空");
                     String mime = context.getContentResolver().getType(uri), name = getFileName(context, uri); if (name != null) name = name.toLowerCase(Locale.ROOT);
-                    if ((name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".bmp") || name.endsWith(".webp"))) || (mime != null && mime.startsWith("image/"))) {
-                        bitmap = android.provider.MediaStore.Images.Media.getBitmap(context.getContentResolver(), uri);
-                        return performOcrOnBitmap(bitmap, context, callback);
+                    if ((name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".bmp") || name.endsWith(".webp") || name.endsWith(".heic") || name.endsWith(".heif"))) || (mime != null && mime.startsWith("image/"))) {
+                        bitmap = decodeBitmapFromUri(context, uri);
+                        String result = performOcrOnBitmap(bitmap, context, callback);
+                        if (result == null || result.trim().isEmpty()) lastExtractError = "图片读取成功，但没有识别到文字";
+                        return result == null ? "" : result;
                     }
-                    if ((name != null && name.endsWith(".pdf")) || "application/pdf".equals(mime)) return performOcrOnPdf(uri, context, callback);
-                    return extractTextFromUri(context, uri);
-                } catch (Exception ignored) { return ""; }
-                finally { if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle(); }
+                    if ((name != null && name.endsWith(".pdf")) || "application/pdf".equals(mime)) {
+                        String result = performOcrOnPdf(uri, context, callback);
+                        if (result == null || result.trim().isEmpty()) lastExtractError = "PDF读取成功，但没有识别到文字";
+                        return result == null ? "" : result;
+                    }
+                    String result = extractTextFromUri(context, uri);
+                    if (result == null || result.trim().isEmpty()) lastExtractError = "文件内容为空或格式不受支持";
+                    return result == null ? "" : result;
+                } catch (Throwable throwable) {
+                    if (throwable instanceof ThreadDeath) throw (ThreadDeath) throwable;
+                    lastExtractError = describeExtractError(throwable);
+                    android.util.Log.e("DedediOCR", "文件识别失败: " + uri, throwable);
+                    return "";
+                } finally { if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle(); }
             }
 
             public static String cleanOcrText(String text) {
@@ -2517,7 +2607,7 @@ jobs:
                     int start = splitPoints.get(i), height = splitPoints.get(i + 1) - start;
                     Bitmap chunk = Bitmap.createBitmap(fullBitmap, 0, start, fullBitmap.getWidth(), height);
                     try {
-                        Task<Text> task = getTextRecognizer().process(InputImage.fromBitmap(chunk, 0)); fullText.append(Tasks.await(task).getText()).append('\n');
+                        fullText.append(recognizeInputImage(InputImage.fromBitmap(chunk, 0))).append('\n');
                     } finally { chunk.recycle(); }
                 }
                 return cleanOcrText(fixPunctuation(fullText.toString()));
@@ -2536,13 +2626,13 @@ jobs:
                                 Bitmap bitmap = Bitmap.createBitmap(Math.max(1, (int) (page.getWidth() * scale)), Math.max(1, (int) (page.getHeight() * scale)), Bitmap.Config.ARGB_8888);
                                 try {
                                     bitmap.eraseColor(Color.WHITE); page.render(bitmap, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
-                                    fullText.append(Tasks.await(getTextRecognizer().process(InputImage.fromBitmap(bitmap, 0))).getText()).append('\n');
+                                    fullText.append(recognizeInputImage(InputImage.fromBitmap(bitmap, 0))).append('\n');
                                 } finally { bitmap.recycle(); }
                             }
                         }
                     }
                 }
-                return fixPunctuation(fullText.toString());
+                return cleanOcrText(fixPunctuation(fullText.toString()));
             }
 
             public static String fixPunctuation(String text) {
@@ -3103,7 +3193,7 @@ jobs:
                         android.net.Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM); if (uri != null) { Toast.makeText(this, "正在处理导入图片，请稍候...", Toast.LENGTH_SHORT).show(); extractTextFromUriAsync(this, uri, new TextExtractCallback() {
                             @Override public void onStart() { progressBar.setVisibility(View.VISIBLE); progressBar.setProgress(0); }
                             @Override public void onProgress(int progress, int max) { progressBar.setMax(max); progressBar.setProgress(progress); }
-                            @Override public void onExtracted(String text) { progressBar.setVisibility(View.INVISIBLE); if (text != null && !text.trim().isEmpty()) checkAndPromptCleanup(MainActivity.this, text, cleaned -> { lastSavedHistoryFileId = null; inputText.setText(cleaned); sp.edit().putString("sync_text", cleaned).apply(); saveHistory(cleaned, null); }); else Toast.makeText(MainActivity.this, "无法读取图片文字", Toast.LENGTH_SHORT).show(); }
+                            @Override public void onExtracted(String text) { progressBar.setVisibility(View.INVISIBLE); if (text != null && !text.trim().isEmpty()) checkAndPromptCleanup(MainActivity.this, text, cleaned -> { lastSavedHistoryFileId = null; inputText.setText(cleaned); sp.edit().putString("sync_text", cleaned).apply(); saveHistory(cleaned, null); }); else { String detail = getLastExtractError(); Toast.makeText(MainActivity.this, detail.isEmpty() ? "无法读取图片文字" : "识图失败：" + detail, Toast.LENGTH_LONG).show(); } }
                         }); }
                     }
                 } else if (intent.hasExtra("SYNC_TEXT")) {
@@ -3140,7 +3230,7 @@ jobs:
                     String finalText = combined.toString(); AppExecutors.MAIN.post(() -> {
                         progressBar.setVisibility(View.INVISIBLE);
                         if (!finalText.trim().isEmpty()) checkAndPromptCleanup(this, finalText, cleaned -> { lastSavedHistoryFileId = null; inputText.setText(cleaned); sp.edit().putString("sync_text", cleaned).apply(); saveHistory(cleaned, null); Toast.makeText(this, "导入成功", Toast.LENGTH_SHORT).show(); });
-                        else Toast.makeText(this, "无法读取文件内容或未识别到文字", Toast.LENGTH_SHORT).show();
+                        else { String detail = getLastExtractError(); Toast.makeText(this, detail.isEmpty() ? "无法读取文件内容或未识别到文字" : "导入失败：" + detail, Toast.LENGTH_LONG).show(); }
                     });
                 });
             }
