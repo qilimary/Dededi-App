@@ -2259,7 +2259,7 @@ jobs:
 
             public static final String NUMS = "一二两三四五六七八九十百千万这那几某";
             public static final String KNOWN_QUANTS = "个只条头匹辆部台口尾座把本名位";
-            public static final String[] IGNORE_WORDS = {"地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地", "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面", "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "取得", "赢得", "免得", "懒得", "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地", "如鱼得水", "留得", "留的", "拍立得", "坏的", "使得", "余地", "厕所的", "睡觉的"};
+            public static final String[] IGNORE_WORDS = {"地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地", "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面", "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "取得", "赢得", "免得", "懒得", "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地", "如鱼得水", "留得", "留的", "拍立得", "坏的", "使得", "余地", "厕所的", "睡觉的", "腰的"};
             public static final String[] WHITE_LIST = {"枝丫"};
 
             public static boolean isSafeCharAfterNoun(char c) {
@@ -3027,7 +3027,7 @@ jobs:
             private RadioGroup rgMode;
             private DrawerLayout drawerLayout;
             private SharedPreferences sp;
-            private boolean currentIsFast, hasStartedChecking, autoScrollEnabled = true, isTouchingScrollView, isTyposExpanded, isRestoringHistory, isManuallyEditedOut, originalIsManuallyEdited, isEditorSelfModifying;
+            private boolean currentIsFast, hasStartedChecking, autoScrollEnabled = true, isTouchingScrollView, isTyposExpanded, isRestoringHistory, isManuallyEditedOut, originalIsManuallyEdited, isEditorSelfModifying, firstEditorCursorTapPending;
             private volatile boolean isCheckingMain, modelsLoading;
             private int saveFormat;
             private String pendingSaveText = "", lastSavedHistoryFileId, editingTypoKey, originalEditorText = "";
@@ -3265,6 +3265,7 @@ jobs:
                 Button collapse = findViewById(R.id.btnEditorCollapse), indent = findViewById(R.id.btnEditorIndent), save = findViewById(R.id.btnEditorSave), close = findViewById(R.id.btnEditorClose), undo = findViewById(R.id.btnEditorUndo), redo = findViewById(R.id.btnEditorRedo);
                 expandedEditText.setOnTouchListener(new View.OnTouchListener() {
                     int scrollBeforeTouch;
+                    boolean protectInitialCursorTap;
                     JumpSpan pressedJumpSpan;
 
                     private JumpSpan findJumpSpan(EditText widget, MotionEvent event) {
@@ -3285,6 +3286,7 @@ jobs:
                         int action = event.getActionMasked();
                         if (action == MotionEvent.ACTION_DOWN) {
                             scrollBeforeTouch = editorScrollView.getScrollY();
+                            protectInitialCursorTap = firstEditorCursorTapPending || !widget.hasFocus();
                             pressedJumpSpan = findJumpSpan(widget, event);
                             // 从按下开始就拦截序号，避免 EditText 把光标/选区放到序号上，随后又自动滚回顶部。
                             return pressedJumpSpan != null;
@@ -3308,7 +3310,9 @@ jobs:
                         int offset = layout.getOffsetForHorizontal(line, x);
                         int lockedEnd = 0; for (IgnoredInCopySpan span : widget.getText().getSpans(0, widget.length(), IgnoredInCopySpan.class)) lockedEnd = Math.max(lockedEnd, widget.getText().getSpanEnd(span));
                         if (offset < lockedEnd) { int end = lockedEnd; widget.post(() -> widget.setSelection(Math.min(end, widget.length()))); }
-                        stabilizeEditorScrollAfterTap(scrollBeforeTouch);
+                        boolean extendedProtection = protectInitialCursorTap;
+                        firstEditorCursorTapPending = false;
+                        stabilizeEditorScrollAfterTap(scrollBeforeTouch, extendedProtection);
                         return false;
                     }
                 });
@@ -3351,15 +3355,29 @@ jobs:
                 save.setOnClickListener(v -> { isManuallyEditedOut = true; outputText.setText(expandedEditText.getText()); btnSaveTxt.performClick(); });
             }
 
-            private void stabilizeEditorScrollAfterTap(int expectedScrollY) {
+            private void stabilizeEditorScrollAfterTap(int expectedScrollY, boolean extendedProtection) {
+                if (editorScrollView == null) return;
                 Runnable restoreIfJumped = () -> {
                     if (!isEditorOpen || editorScrollView == null) return;
+                    View child = editorScrollView.getChildAt(0);
+                    int maxScrollY = child == null ? 0 : Math.max(0, child.getHeight() - editorScrollView.getHeight());
+                    int targetScrollY = Math.max(0, Math.min(expectedScrollY, maxScrollY));
                     int currentScrollY = editorScrollView.getScrollY();
-                    int threshold = Math.max(160, editorScrollView.getHeight() / 2);
-                    if (expectedScrollY > threshold && currentScrollY + threshold < expectedScrollY) editorScrollView.scrollTo(0, expectedScrollY);
+                    int threshold = Math.max(96, Math.max((int) (48f * getResources().getDisplayMetrics().density), editorScrollView.getHeight() / 6));
+                    // 只修复系统首次聚焦/键盘重排造成的“掉到顶部附近”，不干预正常的小幅自动调整或手动滚动。
+                    if (targetScrollY > threshold * 2 && currentScrollY <= threshold * 2 && targetScrollY - currentScrollY > threshold * 2) {
+                        editorScrollView.scrollTo(0, targetScrollY);
+                    }
                 };
-                editorScrollView.postDelayed(restoreIfJumped, 80);
-                editorScrollView.postDelayed(restoreIfJumped, 220);
+                editorScrollView.post(restoreIfJumped);
+                editorScrollView.postDelayed(restoreIfJumped, 48);
+                editorScrollView.postDelayed(restoreIfJumped, 120);
+                editorScrollView.postDelayed(restoreIfJumped, 260);
+                if (extendedProtection) {
+                    // 首次获得焦点时，软键盘与 250ms 入场动画可能在更晚的布局帧再次触发滚动。
+                    editorScrollView.postDelayed(restoreIfJumped, 420);
+                    editorScrollView.postDelayed(restoreIfJumped, 700);
+                }
             }
 
             private void jumpEditorToOffset(TextView textView, int target) {
@@ -3417,7 +3435,7 @@ jobs:
 
             private void openEditor() {
                 originalIsManuallyEdited = isManuallyEditedOut; if (isManuallyEditedOut) lastEditorSpannable = new SpannableStringBuilder(outputText.getText()); if (lastEditorSpannable == null) return;
-                originalEditorText = lastEditorSpannable.toString(); isEditorSelfModifying = true; expandedEditText.setText(lastEditorSpannable); isEditorSelfModifying = false; editorUndoStack.clear(); editorRedoStack.clear(); drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+                originalEditorText = lastEditorSpannable.toString(); isEditorSelfModifying = true; expandedEditText.setText(lastEditorSpannable); isEditorSelfModifying = false; editorUndoStack.clear(); editorRedoStack.clear(); firstEditorCursorTapPending = true; drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
                 expandedEditorOverlay.setAlpha(0); expandedEditorOverlay.setTranslationY(150); expandedEditorOverlay.setVisibility(View.VISIBLE); expandedEditorOverlay.animate().alpha(1).translationY(0).setDuration(250).start(); Toast.makeText(this, "进入编辑模式：波浪线为系统或你修改过的文字。", Toast.LENGTH_SHORT).show(); isEditorOpen = true;
             }
 
@@ -3430,6 +3448,7 @@ jobs:
             }
 
             private void closeEditor() {
+                firstEditorCursorTapPending = false;
                 expandedEditorOverlay.animate().alpha(0).translationY(150).setDuration(250).withEndAction(() -> { expandedEditorOverlay.setVisibility(View.GONE); drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED); isEditorOpen = false; }).start();
             }
 
