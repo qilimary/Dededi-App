@@ -1,0 +1,1012 @@
+name: Dededi Pro Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      temperature:
+        description: "专业模型温度（APP 默认 1.0）"
+        required: false
+        default: "1.0"
+      threshold_de:
+        description: "“的”最低置信度（APP 默认 0.70）"
+        required: false
+        default: "0.70"
+      threshold_di:
+        description: "“地”最低置信度（APP 默认 0.75）"
+        required: false
+        default: "0.75"
+      threshold_de3:
+        description: "“得”最低置信度（APP 默认 0.75）"
+        required: false
+        default: "0.75"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dededi-pro-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      DEDEDI_TEMPERATURE: ${{ github.event.inputs.temperature || '1.0' }}
+      DEDEDI_THRESHOLD_DE: ${{ github.event.inputs.threshold_de || '0.70' }}
+      DEDEDI_THRESHOLD_DI: ${{ github.event.inputs.threshold_di || '0.75' }}
+      DEDEDI_THRESHOLD_DE3: ${{ github.event.inputs.threshold_de3 || '0.75' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            torch==1.13.1+cpu \
+            gdown==5.2.0 \
+            regex==2024.11.6 \
+            --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download the SAME professional model used by the APP build
+        shell: bash
+        run: |
+          set -euo pipefail
+          gdown 10NTeKyG6JigASVwsekKs3MJl0Ev4Oj29 -O dededi_mobile_model_quantized.zip
+          test -s dededi_mobile_model_quantized.zip
+          mkdir -p .benchmark-pro-model
+          unzip -oq dededi_mobile_model_quantized.zip -d .benchmark-pro-model
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path(".benchmark-pro-model")
+          models = list(root.rglob("model_traced.pt"))
+          tokenizers = list(root.rglob("tokenizer.json"))
+
+          if not models:
+              raise FileNotFoundError("专业模型压缩包中没有找到 model_traced.pt")
+          if not tokenizers:
+              raise FileNotFoundError("专业模型压缩包中没有找到 tokenizer.json")
+
+          model = models[0]
+          tokenizer = tokenizers[0]
+
+          data = json.loads(tokenizer.read_text(encoding="utf-8"))
+          vocab = {k: int(v) for k, v in data["model"]["vocab"].items()}
+
+          Path(".benchmark-pro-model/model_path.txt").write_text(str(model), encoding="utf-8")
+          Path(".benchmark-pro-model/pro_vocab.json").write_text(
+              json.dumps(vocab, ensure_ascii=False, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          print("Professional model:", model)
+          print("Vocab size:", len(vocab))
+          PY
+
+      - name: Download benchmark datasets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/zejunwang1/CTCDataset.git .benchmark-data
+          test -s .benchmark-data/NLPCC2023/spell/data.jsonl
+          test -s .benchmark-data/yacsc/sighan_revised/test_sighan15.jsonl
+
+      - name: Run exact-style Dededi pipeline benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/dededi_pro_benchmark.py <<'PY'
+          import json
+          import math
+          import os
+          import random
+          import re
+          import time
+          from dataclasses import dataclass
+          from pathlib import Path
+
+          import regex as jregex
+          import torch
+
+          ROOT = Path.cwd()
+          APP_WORKFLOW = ROOT / ".github/workflows/dededi_3.1a.yml"
+          TYPO_FILE = ROOT / "错别字.txt"
+          DATA_ROOT = ROOT / ".benchmark-data"
+          MODEL_ROOT = ROOT / ".benchmark-pro-model"
+
+          LABELS = ("的", "地", "得")
+          MAX_SEQUENCE_LENGTH = 300
+
+          TEMPERATURE = float(os.environ.get("DEDEDI_TEMPERATURE", "1.0"))
+          THRESHOLDS = {
+              "的": float(os.environ.get("DEDEDI_THRESHOLD_DE", "0.70")),
+              "地": float(os.environ.get("DEDEDI_THRESHOLD_DI", "0.75")),
+              "得": float(os.environ.get("DEDEDI_THRESHOLD_DE3", "0.75")),
+          }
+
+          # APP itself randomly chooses among some grammar-rule alternatives.
+          # A fixed seed keeps benchmark runs reproducible while retaining
+          # the same "choose one option" behavior.
+          RNG = random.Random(20260807)
+
+          if not APP_WORKFLOW.exists():
+              raise FileNotFoundError(f"找不到当前 APP 工作流：{APP_WORKFLOW}")
+          if not TYPO_FILE.exists():
+              raise FileNotFoundError(f"找不到错词库：{TYPO_FILE}")
+
+          APP_SOURCE = APP_WORKFLOW.read_text(encoding="utf-8")
+
+          # -----------------------------------------------------------------
+          # Read current APP constants/rules FROM dededi_3.1a.yml itself.
+          # This prevents the benchmark's blacklist/whitelist/grammar rules
+          # from silently drifting away from the APP when the APP is updated.
+          # -----------------------------------------------------------------
+          def decode_java_string(raw):
+              # Java strings used here are JSON-compatible after being quoted.
+              return json.loads('"' + raw + '"')
+
+          def extract_java_string_constant(name):
+              m = re.search(
+                  rf'public static final String {re.escape(name)} = "((?:\\.|[^"\\])*)";',
+                  APP_SOURCE,
+              )
+              if not m:
+                  raise RuntimeError(f"无法从 APP 源码读取 {name}")
+              return decode_java_string(m.group(1))
+
+          def extract_java_string_array(name):
+              m = re.search(
+                  rf'public static final String\[\] {re.escape(name)} = \{{(.*?)\}};',
+                  APP_SOURCE,
+                  flags=re.S,
+              )
+              if not m:
+                  raise RuntimeError(f"无法从 APP 源码读取 {name}")
+              return [
+                  decode_java_string(x)
+                  for x in re.findall(r'"((?:\\.|[^"\\])*)"', m.group(1))
+              ]
+
+          NUMS = extract_java_string_constant("NUMS")
+          KNOWN_QUANTS = extract_java_string_constant("KNOWN_QUANTS")
+          IGNORE_WORDS = extract_java_string_array("IGNORE_WORDS")
+          WHITE_LIST = extract_java_string_array("WHITE_LIST")
+
+          safe_match = re.search(
+              r'public static boolean isSafeCharAfterNoun\(char c\).*?return "((?:\\.|[^"\\])*)"\.indexOf\(c\) >= 0;',
+              APP_SOURCE,
+              flags=re.S,
+          )
+          if not safe_match:
+              raise RuntimeError("无法从 APP 源码读取 isSafeCharAfterNoun 白名单")
+          SAFE_AFTER_NOUN = decode_java_string(safe_match.group(1))
+
+          # -----------------------------------------------------------------
+          # Parse all current grammar rules from the APP source.
+          # -----------------------------------------------------------------
+          @dataclass
+          class GramRule:
+              pattern: object
+              options: list
+              raw_pattern: str
+
+          GRAM_RULES = []
+          add_rule_re = re.compile(
+              r'addRule\("((?:\\.|[^"\\])*)",\s*new String\[\]\[\]\{(.*)\}\);'
+          )
+          value_re = re.compile(r'null|"(?:\\.|[^"\\])*"')
+
+          for line in APP_SOURCE.splitlines():
+              if "addRule(" not in line:
+                  continue
+              m = add_rule_re.search(line.strip())
+              if not m:
+                  raise RuntimeError("无法解析语法规则行：" + line.strip())
+
+              pattern_text = decode_java_string(m.group(1))
+              options_text = m.group(2)
+              option_groups = re.findall(r'\{([^{}]*)\}', options_text)
+              options = []
+
+              for group in option_groups:
+                  values = []
+                  for token in value_re.findall(group):
+                      if token == "null":
+                          values.append(None)
+                      else:
+                          values.append(decode_java_string(token[1:-1]))
+                  if values:
+                      options.append(values)
+
+              if not options:
+                  raise RuntimeError("语法规则没有解析到 options：" + line.strip())
+
+              try:
+                  compiled = jregex.compile(pattern_text)
+              except Exception as e:
+                  raise RuntimeError(
+                      f"Python regex 无法编译 APP 规则：{pattern_text}\n{e}"
+                  )
+
+              GRAM_RULES.append(GramRule(compiled, options, pattern_text))
+
+          if len(GRAM_RULES) < 20:
+              raise RuntimeError(
+                  f"只解析到 {len(GRAM_RULES)} 条语法规则，疑似 APP 源码格式已改变"
+              )
+
+          # -----------------------------------------------------------------
+          # Parse current quantifier rules from APP source.
+          # -----------------------------------------------------------------
+          QUANT_RULES = {}
+          for noun, primary, allowed in re.findall(
+              r"quantRules\.put\('(.?)',\s*new QuantifierRule\(\"((?:\\.|[^\"\\])*)\",\s*\"((?:\\.|[^\"\\])*)\"\)\)",
+              APP_SOURCE,
+          ):
+              QUANT_RULES[noun] = (
+                  decode_java_string(primary),
+                  decode_java_string(allowed),
+              )
+
+          if not QUANT_RULES:
+              raise RuntimeError("没有解析到量词规则")
+
+          # -----------------------------------------------------------------
+          # Load typo map exactly like loadTypoMap() for a clean installation.
+          # (GitHub Actions has no Android SharedPreferences, so user-added
+          # custom_typos on one phone are intentionally not part of benchmark.)
+          # -----------------------------------------------------------------
+          TYPO_MAP = {}
+          with TYPO_FILE.open("r", encoding="utf-8-sig", errors="ignore") as f:
+              for raw in f:
+                  line = raw.strip()
+                  if not line:
+                      continue
+                  parts = re.split(r"\s+", line, maxsplit=2)
+                  if len(parts) >= 2 and parts[0] != parts[1]:
+                      TYPO_MAP[parts[0]] = parts[1]
+
+          if not TYPO_MAP:
+              raise RuntimeError("错词库为空")
+
+          MAX_TYPO_LEN = max(map(len, TYPO_MAP))
+          MIN_TYPO_LEN = min(map(len, TYPO_MAP))
+
+          lengths_tmp = {}
+          for source in TYPO_MAP:
+              lengths_tmp.setdefault(source[0], set()).add(len(source))
+          TYPO_LENGTHS_BY_FIRST = {
+              ch: sorted(lengths, reverse=True)
+              for ch, lengths in lengths_tmp.items()
+          }
+
+          def is_false_positive_typo(sentence, index, source):
+              # Exact current APP static WHITE_LIST behavior.
+              for white in WHITE_LIST:
+                  search_start = max(0, index - len(white))
+                  search_end = min(
+                      len(sentence), index + len(source) + len(white)
+                  )
+                  window = sentence[search_start:search_end]
+                  found = window.find(white)
+                  while found >= 0:
+                      start = search_start + found
+                      end = start + len(white)
+                      if start < index + len(source) and end > index:
+                          return True
+                      found = window.find(white, found + 1)
+
+              if source == "作事" and index > 0 and sentence[index - 1] == "下":
+                  return True
+              if source == "导至" and index > 0 and sentence[index - 1] == "传":
+                  return True
+
+              if source and source[0] in ("做", "作"):
+                  if (
+                      index > 0
+                      and sentence[index - 1]
+                      in "创去要在该想会能可来把给多没不曾刚才将正就爱肯敢配帮替让叫使令"
+                  ):
+                      return True
+                  after = index + len(source)
+                  if (
+                      after < len(sentence)
+                      and sentence[after] in "扇筝联山发牙眼肢手脚衣裤帽鞋饭菜汤了"
+                  ):
+                      return True
+
+              return False
+
+          def is_conflicting_correction(sentence, index, source, correction):
+              if source == correction or MIN_TYPO_LEN <= 0:
+                  return False
+
+              simulated = (
+                  sentence[:index]
+                  + correction
+                  + sentence[index + len(source):]
+              )
+              start = index
+              end = index + len(correction)
+              search_start = max(0, start - MAX_TYPO_LEN + 1)
+
+              for cursor in range(search_start, end):
+                  if cursor < 0 or cursor >= len(simulated):
+                      continue
+                  lengths = TYPO_LENGTHS_BY_FIRST.get(simulated[cursor])
+                  if lengths is None:
+                      continue
+                  for length in lengths:
+                      if cursor + length > len(simulated):
+                          continue
+                      crosses_left = cursor < start and cursor + length > start
+                      crosses_right = cursor < end and cursor + length > end
+                      if not crosses_left and not crosses_right:
+                          continue
+                      candidate = simulated[cursor:cursor + length]
+                      target = TYPO_MAP.get(candidate)
+                      if target is not None and candidate != target:
+                          return True
+              return False
+
+          def find_typo_match(sentence, index):
+              if index < 0 or index >= len(sentence):
+                  return None
+              lengths = TYPO_LENGTHS_BY_FIRST.get(sentence[index])
+              if lengths is None:
+                  return None
+
+              for length in lengths:
+                  if index + length > len(sentence):
+                      continue
+                  candidate = sentence[index:index + length]
+                  correction = TYPO_MAP.get(candidate)
+                  if correction is None:
+                      continue
+                  if is_false_positive_typo(sentence, index, candidate):
+                      continue
+                  if (
+                      candidate != correction
+                      and is_conflicting_correction(
+                          sentence, index, candidate, correction
+                      )
+                  ):
+                      continue
+                  return candidate, correction
+              return None
+
+          # -----------------------------------------------------------------
+          # Grammar hits: same priority behavior as collectGrammarHits().
+          # Earlier gramRules win when several rules begin at same position.
+          # -----------------------------------------------------------------
+          def collect_grammar_hits(sentence):
+              hits = [None] * len(sentence)
+              for rule in GRAM_RULES:
+                  search_start = 0
+                  while search_start < len(sentence):
+                      match = rule.pattern.search(sentence, pos=search_start)
+                      if match is None:
+                          break
+                      match_start = match.start()
+                      if match_start < len(hits) and hits[match_start] is None:
+                          try:
+                              g1 = match.group(1)
+                              g2 = match.group(2)
+                              g3 = match.group(3)
+                          except IndexError as e:
+                              raise RuntimeError(
+                                  "APP grammar rule has fewer than 3 groups: "
+                                  + rule.raw_pattern
+                              ) from e
+                          hits[match_start] = (
+                              rule,
+                              match.end(),
+                              g1,
+                              g2,
+                              g3,
+                          )
+                      search_start = match_start + 1
+              return hits
+
+          def is_safe_char_after_noun(ch):
+              if ch == "\0" or not ("\u4e00" <= ch <= "\u9fff"):
+                  return True
+              return ch in SAFE_AFTER_NOUN
+
+          # -----------------------------------------------------------------
+          # Exact APP sentence/chunk split.
+          # -----------------------------------------------------------------
+          def split_text(text):
+              first_pass = []
+              current = []
+
+              for ch in text:
+                  current.append(ch)
+                  if ch in ("。", "！", "？", "!", "?", "\n"):
+                      first_pass.append("".join(current))
+                      current.clear()
+
+              if current:
+                  first_pass.append("".join(current))
+
+              result = []
+              for segment in first_pass:
+                  if len(segment) <= MAX_SEQUENCE_LENGTH:
+                      result.append(segment)
+                      continue
+
+                  pending = []
+                  for ch in segment:
+                      pending.append(ch)
+                      if len(pending) < MAX_SEQUENCE_LENGTH:
+                          continue
+
+                      split = -1
+                      low = max(0, len(pending) - 60)
+                      for j in range(len(pending) - 1, low - 1, -1):
+                          if pending[j] in ("，", ",", "；", ";", "、"):
+                              split = j
+                              break
+
+                      if split > 0:
+                          result.append("".join(pending[:split + 1]))
+                          pending = pending[split + 1:]
+                      else:
+                          result.append("".join(pending))
+                          pending.clear()
+
+                  if pending:
+                      result.append("".join(pending))
+
+              return result
+
+          # -----------------------------------------------------------------
+          # Build APP's intermediate corrected text + ignored mask.
+          # We only need these two things to reproduce model input.
+          # -----------------------------------------------------------------
+          def append_chars(out_chars, out_ignored, text, ignored):
+              out_chars.extend(text)
+              out_ignored.extend([ignored] * len(text))
+
+          def preprocess_sentence(sentence):
+              grammar_hits = collect_grammar_hits(sentence)
+              out_chars = []
+              out_ignored = []
+              cursor = 0
+
+              while cursor < len(sentence):
+                  typo = find_typo_match(sentence, cursor)
+                  if typo is not None:
+                      source, correction = typo
+                      # APP TextBlock type=2 -> ignored by model, even after replace.
+                      append_chars(out_chars, out_ignored, correction, True)
+                      cursor += len(source)
+                      continue
+
+                  grammar_hit = grammar_hits[cursor]
+                  if grammar_hit is not None:
+                      rule, end, group1, group2, group3 = grammar_hit
+                      selected = rule.options[RNG.randrange(len(rule.options))]
+
+                      replacement1 = (
+                          selected[0]
+                          if len(selected) > 0 and selected[0] is not None
+                          else group1
+                      )
+                      replacement3 = (
+                          selected[1]
+                          if len(selected) > 1 and selected[1] is not None
+                          else group3
+                      )
+                      explanation = (
+                          selected[2]
+                          if len(selected) > 2 and selected[2] is not None
+                          else ""
+                      )
+
+                      group1_error = (
+                          group1 != replacement1
+                          or (
+                              explanation != ""
+                              and len(selected) > 0
+                              and selected[0] is not None
+                          )
+                      )
+                      group3_error = (
+                          group3 != replacement3
+                          or (
+                              explanation != ""
+                              and len(selected) > 1
+                              and selected[1] is not None
+                          )
+                      )
+
+                      append_chars(
+                          out_chars, out_ignored, replacement1, group1_error
+                      )
+                      append_chars(out_chars, out_ignored, group2, False)
+                      append_chars(
+                          out_chars, out_ignored, replacement3, group3_error
+                      )
+                      cursor = end
+                      continue
+
+                  if cursor > 0 and cursor + 1 < len(sentence):
+                      number = sentence[cursor - 1]
+                      quantifier = sentence[cursor]
+                      noun = sentence[cursor + 1]
+
+                      if quantifier in KNOWN_QUANTS and number in NUMS:
+                          qrule = QUANT_RULES.get(noun)
+                          if qrule is not None:
+                              primary, allowed = qrule
+                              if quantifier not in allowed:
+                                  next_char = (
+                                      sentence[cursor + 2]
+                                      if cursor + 2 < len(sentence)
+                                      else "\0"
+                                  )
+                                  if is_safe_char_after_noun(next_char):
+                                      append_chars(
+                                          out_chars,
+                                          out_ignored,
+                                          primary,
+                                          True,
+                                      )
+                                      cursor += 1
+                                      continue
+
+                  append_chars(
+                      out_chars, out_ignored, sentence[cursor], False
+                  )
+                  cursor += 1
+
+              infer_text = "".join(out_chars)
+
+              # Exact current model skip-list / "blacklist" behavior.
+              for word in IGNORE_WORDS:
+                  index = infer_text.find(word)
+                  while index >= 0:
+                      end = min(len(out_ignored), index + len(word))
+                      for i in range(index, end):
+                          out_ignored[i] = True
+                      index = infer_text.find(word, index + 1)
+
+              return infer_text, out_ignored
+
+          # -----------------------------------------------------------------
+          # Professional model — SAME downloaded source used by APP build.
+          # We load model_traced.pt directly on GitHub CPU so benchmark does
+          # not accidentally run the repo's lightweight BiGRU model.
+          # -----------------------------------------------------------------
+          model_path = Path(
+              (MODEL_ROOT / "model_path.txt").read_text(encoding="utf-8").strip()
+          )
+          vocab = json.loads(
+              (MODEL_ROOT / "pro_vocab.json").read_text(encoding="utf-8")
+          )
+
+          UNK_ID = int(vocab.get("[UNK]", 100))
+          CLS_ID = int(vocab.get("[CLS]", 101))
+          SEP_ID = int(vocab.get("[SEP]", 102))
+          MASK_ID = int(vocab.get("[MASK]", 103))
+          DE_ID = int(vocab.get("的", 0))
+          DI_ID = int(vocab.get("地", 0))
+          DE3_ID = int(vocab.get("得", 0))
+          VOCAB_SIZE = len(vocab)
+
+          char_ids = {}
+          for token, token_id in vocab.items():
+              if len(token) == 1:
+                  char_ids[token] = int(token_id)
+
+          model = torch.jit.load(str(model_path), map_location="cpu")
+          model.eval()
+          # Keep runner responsive and avoid excessive thread oversubscription.
+          torch.set_num_threads(min(4, max(1, os.cpu_count() or 1)))
+
+          def first_tensor(obj):
+              if torch.is_tensor(obj):
+                  return obj
+              if isinstance(obj, (tuple, list)):
+                  for x in obj:
+                      t = first_tensor(x)
+                      if t is not None:
+                          return t
+              if isinstance(obj, dict):
+                  for x in obj.values():
+                      t = first_tensor(x)
+                      if t is not None:
+                          return t
+              return None
+
+          def softmax3(a, b, c, temperature):
+              inv = 1.0 / temperature
+              values = [a * inv, b * inv, c * inv]
+              m = max(values)
+              ex = [math.exp(v - m) for v in values]
+              s = sum(ex)
+              if not math.isfinite(s) or s <= 0:
+                  return [1 / 3, 1 / 3, 1 / 3]
+              return [x / s for x in ex]
+
+          @torch.inference_mode()
+          def professional_inference(infer_text, ignored):
+              has_target = any(
+                  (not ignored[i]) and ch in LABELS
+                  for i, ch in enumerate(infer_text)
+              )
+              if not has_target or TEMPERATURE <= 0:
+                  return infer_text
+
+              exact_length = len(infer_text) + 2
+              ids = [0] * exact_length
+              masks = [1] * exact_length
+              types = [0] * exact_length
+
+              ids[0] = CLS_ID
+              for i, ch in enumerate(infer_text):
+                  ids[i + 1] = (
+                      MASK_ID
+                      if (not ignored[i] and ch in LABELS)
+                      else char_ids.get(ch, UNK_ID)
+                  )
+              ids[-1] = SEP_ID
+
+              input_ids = torch.tensor([ids], dtype=torch.long)
+              attention_mask = torch.tensor([masks], dtype=torch.long)
+              token_type_ids = torch.tensor([types], dtype=torch.long)
+
+              output = model(input_ids, attention_mask, token_type_ids)
+              scores = first_tensor(output)
+              if scores is None:
+                  raise RuntimeError("专业模型没有返回 Tensor")
+
+              if scores.dim() != 3:
+                  raise RuntimeError(
+                      f"专业模型输出维度异常：{tuple(scores.shape)}"
+                  )
+              if scores.shape[0] != 1:
+                  raise RuntimeError(
+                      f"专业模型 batch 维度异常：{tuple(scores.shape)}"
+                  )
+              if scores.shape[1] < exact_length:
+                  raise RuntimeError(
+                      f"专业模型序列长度异常：{tuple(scores.shape)}"
+                  )
+              if scores.shape[2] < max(DE_ID, DI_ID, DE3_ID) + 1:
+                  raise RuntimeError(
+                      f"专业模型词表维度异常：{tuple(scores.shape)}"
+                  )
+
+              chars = list(infer_text)
+              for i, original in enumerate(chars):
+                  if ignored[i] or original not in LABELS:
+                      continue
+
+                  row = scores[0, i + 1]
+                  probs = softmax3(
+                      float(row[DE_ID]),
+                      float(row[DI_ID]),
+                      float(row[DE3_ID]),
+                      TEMPERATURE,
+                  )
+
+                  # Same tie behavior as APP:
+                  # start with 的; 地 only wins if strictly greater;
+                  # 得 only wins if strictly greater than current winner.
+                  best = 1 if probs[1] > probs[0] else 0
+                  if probs[2] > probs[best]:
+                      best = 2
+
+                  prediction = LABELS[best]
+                  confidence = probs[best]
+                  threshold = THRESHOLDS[prediction]
+
+                  if prediction != original and confidence >= threshold:
+                      chars[i] = prediction
+
+              return "".join(chars)
+
+          def correct_text(text):
+              out = []
+              for sentence in split_text(text):
+                  infer_text, ignored = preprocess_sentence(sentence)
+                  out.append(professional_inference(infer_text, ignored))
+              return "".join(out)
+
+          # -----------------------------------------------------------------
+          # Datasets + metrics
+          # -----------------------------------------------------------------
+          DATASETS = [
+              (
+                  "NLPCC2023-Task8",
+                  DATA_ROOT / "NLPCC2023/spell/data.jsonl",
+              ),
+              (
+                  "SIGHAN15-Revised",
+                  DATA_ROOT / "yacsc/sighan_revised/test_sighan15.jsonl",
+              ),
+          ]
+
+          def load_jsonl(path):
+              rows = []
+              with path.open("r", encoding="utf-8-sig") as f:
+                  for line_no, raw in enumerate(f, 1):
+                      raw = raw.strip()
+                      if not raw:
+                          continue
+                      obj = json.loads(raw)
+                      src = obj.get("source")
+                      tgt = obj.get("target")
+                      if not isinstance(src, str) or not isinstance(tgt, str):
+                          raise ValueError(
+                              f"{path}:{line_no} 缺少 source/target"
+                          )
+                      rows.append((src, tgt))
+              return rows
+
+          def safe_div(a, b):
+              return a / b if b else 0.0
+
+          def f1(p, r):
+              return 2 * p * r / (p + r) if p + r else 0.0
+
+          def evaluate(rows):
+              exact = 0
+              correct_inputs = 0
+              correct_preserved = 0
+              wrong_inputs = 0
+              wrong_exact_fixed = 0
+
+              det_tp = det_fp = det_fn = 0
+              cor_tp = cor_fp = cor_fn = 0
+              aligned_samples = 0
+              length_changed = 0
+
+              failures = []
+              total_chars = sum(len(src) for src, _ in rows)
+              total_time = 0.0
+
+              for idx, (src, tgt) in enumerate(rows):
+                  t0 = time.perf_counter()
+                  pred = correct_text(src)
+                  total_time += time.perf_counter() - t0
+
+                  if pred == tgt:
+                      exact += 1
+
+                  if src == tgt:
+                      correct_inputs += 1
+                      if pred == src:
+                          correct_preserved += 1
+                  else:
+                      wrong_inputs += 1
+                      if pred == tgt:
+                          wrong_exact_fixed += 1
+
+                  if len(src) == len(tgt) == len(pred):
+                      aligned_samples += 1
+                      gold_pos = {
+                          i for i, (a, b) in enumerate(zip(src, tgt))
+                          if a != b
+                      }
+                      pred_pos = {
+                          i for i, (a, b) in enumerate(zip(src, pred))
+                          if a != b
+                      }
+
+                      det_tp += len(gold_pos & pred_pos)
+                      det_fp += len(pred_pos - gold_pos)
+                      det_fn += len(gold_pos - pred_pos)
+
+                      for i in pred_pos:
+                          if i in gold_pos and pred[i] == tgt[i]:
+                              cor_tp += 1
+                          else:
+                              cor_fp += 1
+
+                      for i in gold_pos:
+                          if not (i in pred_pos and pred[i] == tgt[i]):
+                              cor_fn += 1
+                  elif len(pred) != len(src):
+                      length_changed += 1
+
+                  if pred != tgt and len(failures) < 60:
+                      failures.append(
+                          {
+                              "index": idx,
+                              "source": src,
+                              "target": tgt,
+                              "prediction": pred,
+                          }
+                      )
+
+              det_p = safe_div(det_tp, det_tp + det_fp)
+              det_r = safe_div(det_tp, det_tp + det_fn)
+              cor_p = safe_div(cor_tp, cor_tp + cor_fp)
+              cor_r = safe_div(cor_tp, cor_tp + cor_fn)
+
+              return {
+                  "samples": len(rows),
+                  "characters": total_chars,
+                  "exact": safe_div(exact, len(rows)),
+                  "correct_inputs": correct_inputs,
+                  "correct_preserve": safe_div(
+                      correct_preserved, correct_inputs
+                  ),
+                  "overcorrection": safe_div(
+                      correct_inputs - correct_preserved, correct_inputs
+                  ),
+                  "wrong_inputs": wrong_inputs,
+                  "wrong_exact_fix": safe_div(
+                      wrong_exact_fixed, wrong_inputs
+                  ),
+                  "det_p": det_p,
+                  "det_r": det_r,
+                  "det_f1": f1(det_p, det_r),
+                  "cor_p": cor_p,
+                  "cor_r": cor_r,
+                  "cor_f1": f1(cor_p, cor_r),
+                  "aligned_samples": aligned_samples,
+                  "length_changed": length_changed,
+                  "seconds": total_time,
+                  "chars_per_second": safe_div(total_chars, total_time),
+                  "ms_per_sentence": 1000 * safe_div(
+                      total_time, len(rows)
+                  ),
+                  "failures": failures,
+              }
+
+          # Warm-up, not counted.
+          _warm_text = "他的动作做得很快。"
+          _warm_infer, _warm_ignored = preprocess_sentence(_warm_text)
+          _ = professional_inference(_warm_infer, _warm_ignored)
+
+          results = {}
+          all_failures = []
+
+          for dataset_name, path in DATASETS:
+              rows = load_jsonl(path)
+              print(f"\n===== {dataset_name} | {len(rows)} 条 =====")
+              metrics = evaluate(rows)
+              results[dataset_name] = metrics
+              for row in metrics["failures"]:
+                  all_failures.append(
+                      {"dataset": dataset_name, **row}
+                  )
+
+          def pct(x):
+              return f"{x * 100:.2f}%"
+
+          report = []
+          report.append("# Dededi 专业模式基准测试")
+          report.append("")
+          report.append("## 运行配置")
+          report.append("")
+          report.append("- 模式：**专业（RoBERTa）**")
+          report.append(f"- Temperature：**{TEMPERATURE:g}**")
+          report.append(
+              "- 阈值："
+              + "，".join(
+                  f"{label}={THRESHOLDS[label]:g}" for label in LABELS
+              )
+          )
+          report.append(f"- 错词库：**{len(TYPO_MAP):,}** 条")
+          report.append(f"- 语法规则：**{len(GRAM_RULES):,}** 条")
+          report.append(f"- 量词规则：**{len(QUANT_RULES):,}** 条")
+          report.append(f"- 模型跳过词：**{len(IGNORE_WORDS):,}** 条")
+          report.append(f"- 静态白名单：**{len(WHITE_LIST):,}** 条")
+          report.append(
+              f"- 专业词表：**{VOCAB_SIZE:,}** tokens"
+          )
+          report.append("")
+          report.append(
+              "> 流程按当前 `dededi_3.1a.yml`："
+              "**错词库 → 语法规则 → 量词规则 → 已改位置保护 → "
+              "IGNORE_WORDS 保护 → 专业模型 的/地/得 → 置信度阈值**。"
+          )
+          report.append("")
+          report.append(
+              "> `IGNORE_WORDS`、`WHITE_LIST`、语法规则、量词规则均在运行时"
+              "直接从当前 APP 工作流读取，避免 benchmark 与 APP 配置脱节。"
+          )
+          report.append("")
+          report.append(
+              "> APP 的部分语法规则存在多个随机修法；为了让 GitHub 每次跑分"
+              "可复现，本 benchmark 固定随机种子，但仍使用同样的候选选择流程。"
+          )
+          report.append("")
+          report.append(
+              "> GitHub Actions 没有手机端 SharedPreferences，因此不会包含你"
+              "在某一台手机里后来手动添加的 `custom_typos`；仓库内置规则、"
+              "黑名单/白名单则会完整加载。"
+          )
+          report.append("")
+
+          report.append("## 结果")
+          report.append("")
+          report.append(
+              "| 数据集 | 句数 | 原文字符 | 整句完全正确 | "
+              "错句整句修好 | 正确句保持率 | 误改率 | "
+              "检测 P/R/F1 | 纠正 P/R/F1 | 速度 |"
+          )
+          report.append(
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+          )
+
+          for name, m in results.items():
+              report.append(
+                  f"| {name} "
+                  f"| {m['samples']:,} "
+                  f"| {m['characters']:,} "
+                  f"| {pct(m['exact'])} "
+                  f"| {pct(m['wrong_exact_fix'])} "
+                  f"| {pct(m['correct_preserve'])} "
+                  f"| {pct(m['overcorrection'])} "
+                  f"| {pct(m['det_p'])}/{pct(m['det_r'])}/{pct(m['det_f1'])} "
+                  f"| {pct(m['cor_p'])}/{pct(m['cor_r'])}/{pct(m['cor_f1'])} "
+                  f"| {m['chars_per_second']:.1f} 字/s |"
+              )
+
+          report.append("")
+          report.append("## 补充")
+          report.append("")
+          for name, m in results.items():
+              report.append(
+                  f"- **{name}**：总推理 {m['seconds']:.2f}s；"
+                  f"平均 {m['ms_per_sentence']:.2f}ms/条；"
+                  f"字符级指标可对齐样本 {m['aligned_samples']:,}/"
+                  f"{m['samples']:,}；输出长度改变 {m['length_changed']:,} 条。"
+              )
+
+          report.append("")
+          report.append(
+              "字符级 P/R/F1 仅在 source、target、prediction 等长时按位置计算；"
+              "整句完全正确率、错句修好率和正确句保持率覆盖全部样本。"
+          )
+
+          report_text = "\n".join(report)
+          Path("benchmark_report.md").write_text(
+              report_text, encoding="utf-8"
+          )
+
+          with Path("benchmark_failures.jsonl").open(
+              "w", encoding="utf-8"
+          ) as f:
+              for row in all_failures:
+                  f.write(
+                      json.dumps(row, ensure_ascii=False) + "\n"
+                  )
+
+          print("\n" + report_text)
+          PY
+
+          python /tmp/dededi_pro_benchmark.py
+
+          {
+            echo
+            cat benchmark_report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload detailed report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dededi-pro-benchmark-report
+          path: |
+            benchmark_report.md
+            benchmark_failures.jsonl
+          if-no-files-found: error
