@@ -1142,8 +1142,8 @@ jobs:
                     </RelativeLayout>
 
                     <RadioGroup android:id="@+id/rgMode" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="10dp" android:gravity="center">
-                        <RadioButton android:id="@+id/rbFast" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="极速（不检查的/地/得）" android:textColor="@color/text_primary" android:textSize="14sp"/>
-                        <RadioButton android:id="@+id/rbPro" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="专业（RoFormerV2）" android:checked="true" android:textColor="@color/text_primary" android:textSize="14sp"/>
+                        <RadioButton android:id="@+id/rbFast" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="极速（不查“的地得”）" android:textColor="@color/text_primary" android:textSize="14sp"/>
+                        <RadioButton android:id="@+id/rbPro" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="专业（RoFormer）" android:checked="true" android:textColor="@color/text_primary" android:textSize="14sp"/>
                     </RadioGroup>
 
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:background="@color/card_bg" android:padding="8dp" android:layout_marginBottom="10dp">
@@ -1153,15 +1153,15 @@ jobs:
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom"><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/></LinearLayout>
-                            <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                            <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom"><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/></LinearLayout>
-                            <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                            <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom"><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/></LinearLayout>
-                            <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                            <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.72" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                     </LinearLayout>
 
@@ -1310,9 +1310,10 @@ jobs:
                 }
             }
 
-            private static GrammarHit[] collectGrammarHits(String sentence) {
+            private static GrammarHit[] collectGrammarHits(String sentence, boolean fastMode) {
                 GrammarHit[] hits = new GrammarHit[sentence.length()];
                 for (MainActivity.GramRule rule : MainActivity.gramRules) {
+                    if (fastMode && rule.professionalOnly) continue;
                     Matcher matcher = rule.pattern.matcher(sentence).useTransparentBounds(true);
                     int searchStart = 0;
                     while (searchStart < sentence.length()) {
@@ -1349,7 +1350,7 @@ jobs:
                     String sentence = sentences.get(sentenceIndex);
                     if (sentence.isEmpty()) continue;
 
-                    GrammarHit[] grammarHits = collectGrammarHits(sentence);
+                    GrammarHit[] grammarHits = collectGrammarHits(sentence, fastMode);
                     List<MainActivity.TextBlock> intermediate = new ArrayList<>(Math.max(16, sentence.length() / 4));
                     StringBuilder plain = new StringBuilder();
                     int cursor = 0;
@@ -1896,7 +1897,7 @@ jobs:
                     if (clipboard != null) { clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", text)); showStatus("已复制修正后的全文。", true); }
                 });
                 btnFloatSwitch.setOnClickListener(v -> {
-                    boolean fast = !sp.getBoolean("is_fast_mode", false); sp.edit().putBoolean("is_fast_mode", fast).apply(); showStatus(fast ? "已切换至极速模式（不检查的/地/得）" : "已切换至专业 RoFormerV2", true);
+                    boolean fast = !sp.getBoolean("is_fast_mode", false); sp.edit().putBoolean("is_fast_mode", fast).apply(); showStatus(fast ? "已切换至极速模式（不查“的地得”）" : "已切换至专业 RoFormer", true);
                 });
 
                 Runnable jumpToApp = () -> {
@@ -1997,18 +1998,19 @@ jobs:
             }
 
             private void startInference(String text, String fileId) {
-                boolean fast = sp.getBoolean("is_fast_mode", false); String prefix = fast ? "fast_" : "pro_";
-                float storedTemperature = MainActivity.parseFloatSafe(sp.getString(prefix + "temp", "1.0"), Float.NaN);
+                boolean fast = sp.getBoolean("is_fast_mode", false);
+                float storedTemperature = MainActivity.parseFloatSafe(sp.getString("pro_temp", "1.0"), Float.NaN);
                 if (!fast && !MainActivity.isTemperatureValid(storedTemperature)) {
                     storedTemperature = 1f;
                     sp.edit().putString("pro_temp", "1.0").apply();
-                    Toast.makeText(this, "旧温度设置已恢复为1.0（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "温度参数无效，已自动恢复为1.0（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
                 }
                 final float temperature = fast ? 1f : storedTemperature;
-                if (!fast && (MainActivity.proModule == null || !MainActivity.proVocabReady)) { Toast.makeText(this, "专业 RoFormerV2 未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return; }
-                float tDe = MainActivity.parseFloatSafe(sp.getString(prefix + "th1", fast ? "0.80" : "0.70"), fast ? 0.80f : 0.70f);
-                float tDi = MainActivity.parseFloatSafe(sp.getString(prefix + "th2", fast ? "0.80" : "0.75"), fast ? 0.80f : 0.75f);
-                float tDe3 = MainActivity.parseFloatSafe(sp.getString(prefix + "th3", fast ? "0.80" : "0.75"), fast ? 0.80f : 0.75f);
+                if (!fast && (MainActivity.proModule == null || !MainActivity.proVocabReady)) { Toast.makeText(this, "专业 RoFormer 未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return; }
+                // 极速模式不使用模型，但仍沿用专业模式的参数值，避免切换模式时数字跳变。
+                float tDe = MainActivity.parseFloatSafe(sp.getString("pro_th1", "0.75"), 0.75f);
+                float tDi = MainActivity.parseFloatSafe(sp.getString("pro_th2", "0.70"), 0.70f);
+                float tDe3 = MainActivity.parseFloatSafe(sp.getString("pro_th3", "0.72"), 0.72f);
                 isChecking = true; isInterruptRequested = false; btnFloatSwitch.setEnabled(false); lastErrorShownAt = 0;
                 synchronized (errorStatusLock) { visibleErrorLines.clear(); errorStatusFlushScheduled = false; }
                 AppExecutors.MAIN.removeCallbacks(errorStatusFlushRunnable);
@@ -2215,14 +2217,15 @@ jobs:
                 QuantifierRule(String primary, String allowed) { primaryQuant = primary; allowedQuants = allowed; }
             }
             public static class GramRule {
-                public final Pattern pattern; public final String[][] options;
-                GramRule(String regex, String[][] options) { pattern = Pattern.compile(regex); this.options = options; }
+                public final Pattern pattern; public final String[][] options; public final boolean professionalOnly;
+                GramRule(String regex, String[][] options, boolean professionalOnly) { pattern = Pattern.compile(regex); this.options = options; this.professionalOnly = professionalOnly; }
             }
             public static final Map<Character, QuantifierRule> quantRules = new HashMap<>();
             public static final List<GramRule> gramRules = new ArrayList<>();
             private static boolean rulesAttempted;
 
-            private static void addRule(String regex, String[][] options) { gramRules.add(new GramRule(regex, options)); }
+            private static void addRule(String regex, String[][] options) { gramRules.add(new GramRule(regex, options, false)); }
+            private static void addProfessionalRule(String regex, String[][] options) { gramRules.add(new GramRule(regex, options, true)); }
 
             public static synchronized void ensureRulesLoaded() {
                 if (rulesAttempted) return;
@@ -2389,6 +2392,40 @@ jobs:
                     // 参考 LanguageTool 的动宾搭配思路，但只处理中心词明确且到边界的高确定性结构。
                     // ‘执行义务/职责/承诺/诺言’统一为‘履行……’，不会碰‘执行义务教育政策’这类后面仍有中心词的正常表达。
                     addRule("(执行)(了?[^，,。；;！？!?：:\\n]{0,12}?)(义务|职责|承诺|诺言)(?=[了着过的所，,。；;！？!?：:、…\\n]|$)", new String[][]{{"履行", null, "搭配不当"}});
+
+                    // 状态副词修饰动作“响”时用“地”。只在“响”后紧接动态助词、补语或分句边界时触发，
+                    // 因此“断断续续的响声/响动/响铃声/响应信号”等名词结构不会被误改。
+                    String intermittentAdverbs = "断断续续|时断时续|一阵一阵|一声一声|接连不断|连续不断|时有时无|忽高忽低|忽远忽近";
+                    addProfessionalRule("(" + intermittentAdverbs + ")([ 　]*)([的得])(?=[ 　]*响(?=[着了过得个起下不又还，,。；;！？!?：:、…\\n]|$))", new String[][]{{null, "地", "状态副词修饰动作“响”，应用“地”"}});
+
+                    // “熟悉”直接修饰这些明确的名词或名词短语时用“的”。词表刻意不含“形/理/点/区/图/铁”等，
+                    // 保护“熟悉地形、熟悉地理、熟悉地点、熟悉地图、熟悉地铁系统”等正常动宾结构。
+                    String familiarNounHeads = "(?:操作(?:步骤|流程|方法|规范|界面|系统)|工作(?:步骤|流程|环境|内容|方法|岗位)|专业(?:领域|知识|术语|课程)|步骤|流程|方法|规则|环境|声音|面孔|面容|脸庞|身影|场景|画面|气味|味道|旋律|节奏|语言|文字|名字|名称|感觉|风格|方式|系统|界面|功能|内容|知识|业务|领域|专业|课程|教材|设备|工具|软件|代码|道路|路线|街道|城市|房间)";
+                    addProfessionalRule("(熟悉)([ 　]*)([地得])(?=[ 　]*" + familiarNounHeads + ")", new String[][]{{null, "的", "“熟悉”修饰名词，应用“的”"}});
+
+                    // 情绪形容词直接修饰这些明确名词时用“的”。只收录中心词清晰的名词，
+                    // 不碰“开心地笑、幸福地生活”等正常状语结构。
+                    String emotionNounModifiers = "开心|高兴|快乐|幸福|悲伤|难过|痛苦|愤怒|惊讶|紧张|焦虑|无奈";
+                    String emotionNounHeads = "笑容|表情|样子|模样|神情|心情|时刻|事情|日子|回忆";
+                    addProfessionalRule("(" + emotionNounModifiers + ")([ 　]*)([地得])(?=[ 　]*(?:" + emotionNounHeads + "))", new String[][]{{null, "的", "情绪词修饰名词，应用“的”"}});
+
+                    // 方位词直接修饰自然现象、场景等明确名词时用“的”。中心词采用封闭白名单，
+                    // 因此“门外地面、窗外地铁”等词边界相邻的正常表达不会被拆开误改。
+                    String locationNounModifiers = "门外|窗外|屋外|室外|户外|房外|院外|楼外|校外|城外|车外|站外";
+                    String locationNounHeads = "冷风|寒风|风声|雨声|雪景|景色|声音|响声|脚步声|灯光|阳光|月光|空气|温度|天气|人群|车辆|道路|街道|树木|花草|景象|情况|环境|世界";
+                    addProfessionalRule("(" + locationNounModifiers + ")([ 　]*)([地得])(?=[ 　]*(?:" + locationNounHeads + "))", new String[][]{{null, "的", "方位词修饰名词，应用“的”"}});
+
+                    // 方式词后误用“得”且紧接明确动作时改为“地”。这里只接管“得”，
+                    // 不处理可能名词化的“耐心的等待”，避免把合法定中结构一概改掉。
+                    String mannerModifiers = "耐心|认真|仔细|专心|用心|细心|热心|诚心|虚心|诚恳|礼貌|友好|冷静|平静|从容|谨慎|小心|努力|积极|主动|自觉";
+                    String mannerActions = "等待|倾听|听取|解释|说明|回答|答复|劝说|安慰|指导|教导|检查|核对|阅读|观察|处理|解决|分析|研究|学习|工作|准备|完成|记录|整理|操作|练习|思考|考虑|交流|沟通";
+                    addProfessionalRule("(" + mannerModifiers + ")([ 　]*)(得)(?=[ 　]*(?:" + mannerActions + "))", new String[][]{{null, "地", "方式词修饰动作，应用“地”"}});
+
+                    // “高兴的跳了起来”中“的”处于明确的动态动作之前，应改为“地”。
+                    // 刻意不接管“得”：如“激动得跳了起来”可表示激动到跳起来，是合法补语结构。
+                    String emotionActionModifiers = "高兴|开心|兴奋|激动";
+                    String emotionDynamicActions = "(?:跳(?:了|起|上|下)|笑(?:了|起|出|着)|喊(?:了|起|出)|说(?:道|着|了)|跑(?:了|起|出)|拍(?:起|着)|挥(?:了|起|着))";
+                    addProfessionalRule("(" + emotionActionModifiers + ")([ 　]*)(的)(?=[ 　]*" + emotionDynamicActions + ")", new String[][]{{null, "地", "情绪词修饰动作，应用“地”"}});
 
                     String locations = "家|家里|家中|家外|卧室|卧房|厨房|客厅|卫生间|洗手间|厕所|茅房|阳台|书房|餐厅|饭厅|浴室|走廊|走道|院子|庭院|地|车|超市|商场|商店|菜市场|农贸市场|便利店|小卖部|饭店|酒店|旅馆|宾馆|招待所|餐馆|食堂|咖啡厅|咖啡馆|酒吧|网吧|电影院|戏院|剧院|银行|邮局|理发店|药店|诊所|门|商铺|店|医院|学校|幼儿园|小学|中学|初中|高中|大学|教室|图书馆|操场|宿舍|办公楼|公司|办公室|工厂|厂里|车间|会议室|派出所|警察局|公安局|消防队|法院|政府|监狱|看守所|基地|营地|阵地|车站|火车站|高铁站|地铁站|公交站|客运站|飞机场|机场|码头|港口|停车场|加油站|收费站|高速上|马路上|街上|路上|十字路口|桥上|桥下|隧道里|铁轨上|公园|动物园|植物园|游乐场|游乐园|广场|体育馆|体育场|游泳池|健身房|博物馆|展览馆|美术馆|海|沙滩|海岸|山上|山下|山顶|树林|森林|湖边|河边|江边|水里|田里|农田|地里|村|乡|农村|城里|城市|市区|郊区|景区|野外|这里|那里|哪里|这儿|那儿|哪儿|上面|下面|里面|外面|上边|下边|里边|外边|左边|右边|前面|后面|旁边|附近|远处|高处|低处|深处|内部|外部|中心|中间|顶上|底下|背后|面前";
                     addRule("(再)( *)(" + locations + ")", new String[][]{{"在", null}});
@@ -3270,14 +3307,37 @@ jobs:
                 @Override public void onStopTrackingTouch(android.widget.SeekBar seekBar) {}
             }
 
+            private void migrateProfessionalThresholdDefaults() {
+                if (sp.getBoolean("pro_threshold_defaults_3_2_1", false)) return;
+                boolean missingAll = !sp.contains("pro_th1") && !sp.contains("pro_th2") && !sp.contains("pro_th3");
+                float oldDe = parseFloatSafe(sp.getString("pro_th1", "0.70"), Float.NaN);
+                float oldDi = parseFloatSafe(sp.getString("pro_th2", "0.75"), Float.NaN);
+                float oldDe3 = parseFloatSafe(sp.getString("pro_th3", "0.75"), Float.NaN);
+                boolean stillLegacyDefaults = Math.abs(oldDe - 0.70f) < 0.0001f
+                        && Math.abs(oldDi - 0.75f) < 0.0001f
+                        && Math.abs(oldDe3 - 0.75f) < 0.0001f;
+                SharedPreferences.Editor editor = sp.edit().putBoolean("pro_threshold_defaults_3_2_1", true);
+                if (missingAll || stillLegacyDefaults) {
+                    editor.putString("pro_th1", "0.75")
+                            .putString("pro_th2", "0.70")
+                            .putString("pro_th3", "0.72");
+                }
+                editor.apply();
+            }
+
             private void loadSettings(boolean fast) {
-                String prefix = fast ? "fast_" : "pro_";
-                String temperature = sp.getString(prefix + "temp", fast ? "1.2" : "1.0");
-                if (!fast && !isTemperatureValid(parseFloatSafe(temperature, Float.NaN))) {
+                migrateProfessionalThresholdDefaults();
+                String temperature = sp.getString("pro_temp", "1.0");
+                if (!isTemperatureValid(parseFloatSafe(temperature, Float.NaN))) {
                     temperature = "1.0";
                     sp.edit().putString("pro_temp", temperature).apply();
+                    Toast.makeText(this, "温度参数无效，已自动恢复为1.0（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
                 }
-                editTemp.setText(temperature); editThreshDe1.setText(sp.getString(prefix + "th1", fast ? "0.80" : "0.70")); editThreshDe2.setText(sp.getString(prefix + "th2", fast ? "0.80" : "0.75")); editThreshDe3.setText(sp.getString(prefix + "th3", fast ? "0.80" : "0.75"));
+                // 两种模式显示同一组专业参数；极速模式只禁用并置灰，不再换成另一套数字。
+                editTemp.setText(temperature);
+                editThreshDe1.setText(sp.getString("pro_th1", "0.75"));
+                editThreshDe2.setText(sp.getString("pro_th2", "0.70"));
+                editThreshDe3.setText(sp.getString("pro_th3", "0.72"));
                 boolean professional = !fast;
                 for (EditText field : new EditText[]{editTemp, editThreshDe1, editThreshDe2, editThreshDe3}) {
                     field.setEnabled(professional);
@@ -3286,13 +3346,13 @@ jobs:
             }
 
             private void saveSettings(boolean fast) {
-                String prefix = fast ? "fast_" : "pro_";
+                if (fast) return;
                 SharedPreferences.Editor editor = sp.edit()
-                        .putString(prefix + "th1", editThreshDe1.getText().toString())
-                        .putString(prefix + "th2", editThreshDe2.getText().toString())
-                        .putString(prefix + "th3", editThreshDe3.getText().toString());
+                        .putString("pro_th1", editThreshDe1.getText().toString())
+                        .putString("pro_th2", editThreshDe2.getText().toString())
+                        .putString("pro_th3", editThreshDe3.getText().toString());
                 float temperature = parseFloatSafe(editTemp.getText().toString(), Float.NaN);
-                if (fast || isTemperatureValid(temperature)) editor.putString(prefix + "temp", editTemp.getText().toString());
+                if (isTemperatureValid(temperature)) editor.putString("pro_temp", editTemp.getText().toString());
                 editor.apply();
             }
 
@@ -3762,7 +3822,7 @@ jobs:
             }
 
             private void showHelp() {
-                String text = "【模式介绍】\n极速（不检查的/地/得）：纠错时不调用神经网络推理，也不检查“的/地/得”；仅运行错词库、自定义规则、语病规则和量词规则。速度最快，适合只想快速检查其他错别字与语病的场景。\n\n专业（RoFormerV2）：使用 QInt8 三分类模型专门检查“的/地/得”，准确率更高，但推理速度比极速模式慢。\n两种模式都支持错词库、自定义规则、语病规则和量词规则。\n注：不同手机的速度会有差异；模型也可能出现少量误判。\n\n【温度参数（仅专业模式）】\n控制AI判断的自信（果断）程度。\n• 允许范围：0.5～2.0；默认1.0。\n• 值越低（如0.5）：概率分布越尖锐，模型更激进，修改量可能上升。\n• 值越高（如2.0）：概率分布越平缓，模型更保守，修改量可能下降。\n• 温度0不再用于关闭推理；低于0.5或高于2.0时无法开始专业纠错。\n\n【置信度拦截阈值（仅专业模式）】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能会导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：1.在“原始文本”框输入例如“慢慢地”，直接提交。等效于白名单，系统在遇到该词后不会再修改。\n  2.在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义规则优先级高于内置规则和专业模型。\n\n【悬浮窗】\n开启后支持后台随时随地纠错。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
+                String text = "【模式介绍】\n极速（不检查“的/地/得”）：纠错时不调用神经网络推理，因此不检查“的/地/得”；仅运行系统内置的错词库和规则。速度最快（毫秒级），适合只想快速检查其他错别字与语病的场景。\n\n专业（RoFormerV2）：专门纠错“的地得”，推理速度依然很快，只是相比极速会慢一点（秒级）。\n两种模式都支持系统内置的所有纠错规则。\n注：不同手机的速度会有差异；模型也可能出现极少量误判，这是神经网络的通病，在所难免。\n\n一般建议始终使用专业模式，除非你对“的地得”运用得如火纯青。\n\n【温度参数（仅专业模式）】\n控制AI判断的自信（果断）程度。\n• 允许范围：0.5～2.0；默认1.0。\n• 值越低（如0.5）：概率分布越尖锐，模型更激进，修改量可能上升。\n• 值越高（如2.0）：概率分布越平缓，模型更保守，修改量可能下降。\n• 温度低于0.5或高于2.0时系统会禁止纠错。\n\n【置信度拦截阈值（仅专业模式）】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n• 默认值：的0.75、地0.70、得0.72。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能会导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：1.在“原始文本”框输入例如“慢慢地”，直接提交。等效于白名单，系统在遇到该词后不会再修改。\n  2.在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义规则优先级高于内置规则和专业模型。\n\n【悬浮窗】\n开启后支持后台随时随地纠错。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                 int ui = Math.max(-2, Math.min(2, sp.getInt("font_offset_sys", 0))); TextView view = new TextView(this); view.setText(text); view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + ui); view.setTextColor(0xFF333333); view.setLineSpacing(0, 1.2f); int padding = (int) (20 * getResources().getDisplayMetrics().density); view.setPadding(padding, padding / 2, padding, 0); ScrollView scroll = new ScrollView(this); scroll.addView(view); new AlertDialog.Builder(this).setTitle("使用说明").setView(scroll).setPositiveButton("知道了", null).show();
             }
 
@@ -3807,9 +3867,10 @@ jobs:
                 if (!fast) {
                     temperature = parseFloatSafe(editTemp.getText().toString(), Float.NaN);
                     if (!isTemperatureValid(temperature)) {
-                        Toast.makeText(this, "温度参数只能设置在0.5～2.0之间", Toast.LENGTH_LONG).show();
-                        editTemp.requestFocus();
-                        return;
+                        temperature = 1f;
+                        editTemp.setText("1.0");
+                        sp.edit().putString("pro_temp", "1.0").apply();
+                        Toast.makeText(this, "温度参数无效，已自动恢复为1.0（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
                     }
                     if (proModule == null || !proVocabReady) {
                         Toast.makeText(this, "模型仍在加载或环境异常，请稍后重试", Toast.LENGTH_SHORT).show();
@@ -4049,7 +4110,7 @@ jobs:
             private void doInference(boolean fastMode, float temperature) {
                 String text = inputText.getText().toString(); if (text.isEmpty()) { isCheckingMain = false; btnCheck.setText("开始纠错"); return; }
                 btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
-                float thresholdDe = parseFloatSafe(editThreshDe1.getText().toString(), .70f), thresholdDi = parseFloatSafe(editThreshDe2.getText().toString(), .75f), thresholdDe3 = parseFloatSafe(editThreshDe3.getText().toString(), .75f);
+                float thresholdDe = parseFloatSafe(editThreshDe1.getText().toString(), .75f), thresholdDi = parseFloatSafe(editThreshDe2.getText().toString(), .70f), thresholdDe3 = parseFloatSafe(editThreshDe3.getText().toString(), .72f);
                 AppExecutors.INFERENCE.execute(() -> {
                     try {
                         AppExecutors.MAIN.post(() -> { getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.VISIBLE); progressBar.setProgress(0); });
