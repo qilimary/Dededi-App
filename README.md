@@ -1,1 +1,0 @@
-# Dededi-App
