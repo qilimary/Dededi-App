@@ -1272,6 +1272,7 @@ jobs:
         import java.util.Locale;
         import java.util.concurrent.ThreadLocalRandom;
         import java.util.regex.Matcher;
+        import java.util.regex.Pattern;
 
         public final class CorrectionCore {
             private static final String[] LABELS = {"的", "地", "得"};
@@ -1446,6 +1447,7 @@ jobs:
                         position += length;
                     }
                     markIgnoreWords(inferText, ignored);
+                    markProtectedTargets(inferText, ignored);
 
                     boolean hasTarget = false;
                     for (int i = 0; i < inferText.length(); i++) if (!ignored[i] && isTarget(inferText.charAt(i))) { hasTarget = true; break; }
@@ -1530,6 +1532,15 @@ jobs:
                     while (index >= 0) {
                         Arrays.fill(ignored, index, Math.min(ignored.length, index + word.length()), true);
                         index = text.indexOf(word, index + 1);
+                    }
+                }
+            }
+            private static void markProtectedTargets(String text, boolean[] ignored) {
+                for (Pattern pattern : MainActivity.protectedTargetPatterns) {
+                    Matcher matcher = pattern.matcher(text);
+                    while (matcher.find()) {
+                        int index = matcher.start(1);
+                        if (index >= 0 && index < ignored.length && isTarget(text.charAt(index))) ignored[index] = true;
                     }
                 }
             }
@@ -2222,10 +2233,12 @@ jobs:
             }
             public static final Map<Character, QuantifierRule> quantRules = new HashMap<>();
             public static final List<GramRule> gramRules = new ArrayList<>();
+            public static final List<Pattern> protectedTargetPatterns = new ArrayList<>();
             private static boolean rulesAttempted;
 
             private static void addRule(String regex, String[][] options) { gramRules.add(new GramRule(regex, options, false)); }
             private static void addProfessionalRule(String regex, String[][] options) { gramRules.add(new GramRule(regex, options, true)); }
+            private static void addProtectedTargetPattern(String regex) { protectedTargetPatterns.add(Pattern.compile(regex)); }
 
             public static synchronized void ensureRulesLoaded() {
                 if (rulesAttempted) return;
@@ -2396,7 +2409,8 @@ jobs:
                     // 状态副词修饰动作“响”时用“地”。只在“响”后紧接动态助词、补语或分句边界时触发，
                     // 因此“断断续续的响声/响动/响铃声/响应信号”等名词结构不会被误改。
                     String intermittentAdverbs = "断断续续|时断时续|一阵一阵|一声一声|接连不断|连续不断|时有时无|忽高忽低|忽远忽近";
-                    addProfessionalRule("(" + intermittentAdverbs + ")([ 　]*)([的得])(?=[ 　]*响(?=[着了过得个起下不又还，,。；;！？!?：:、…\\n]|$))", new String[][]{{null, "地", "状态副词修饰动作“响”，应用“地”"}});
+                    addProfessionalRule("(" + intermittentAdverbs + ")([ 　]*)([的得])(?=[ 　]*响(?=[着了过得个起下不又还并且而但却才就仍，,。；;！？!?：:、…\\n]|$))", new String[][]{{null, "地", "状态副词修饰动作“响”，应用“地”"}});
+                    addProfessionalRule("(" + intermittentAdverbs + ")([ 　]*)([地得])(?=[ 　]*(?:响声|响动|响铃声|声音|声响))", new String[][]{{null, "的", "状态词修饰声音名词，应用“的”"}});
 
                     // “熟悉”直接修饰这些明确的名词或名词短语时用“的”。词表刻意不含“形/理/点/区/图/铁”等，
                     // 保护“熟悉地形、熟悉地理、熟悉地点、熟悉地图、熟悉地铁系统”等正常动宾结构。
@@ -2420,12 +2434,37 @@ jobs:
                     String mannerModifiers = "耐心|认真|仔细|专心|用心|细心|热心|诚心|虚心|诚恳|礼貌|友好|冷静|平静|从容|谨慎|小心|努力|积极|主动|自觉";
                     String mannerActions = "等待|倾听|听取|解释|说明|回答|答复|劝说|安慰|指导|教导|检查|核对|阅读|观察|处理|解决|分析|研究|学习|工作|准备|完成|记录|整理|操作|练习|思考|考虑|交流|沟通";
                     addProfessionalRule("(" + mannerModifiers + ")([ 　]*)(得)(?=[ 　]*(?:" + mannerActions + "))", new String[][]{{null, "地", "方式词修饰动作，应用“地”"}});
+                    addProfessionalRule("(耐心|认真|仔细|专心|用心|细心|谨慎|小心)([ 　]*)(得)(?=[ 　]*(?:放置|放进|放入|收进|装进|摆放|安放))", new String[][]{{null, "地", "方式词修饰放置动作，应用“地”"}});
 
                     // “高兴的跳了起来”中“的”处于明确的动态动作之前，应改为“地”。
                     // 刻意不接管“得”：如“激动得跳了起来”可表示激动到跳起来，是合法补语结构。
                     String emotionActionModifiers = "高兴|开心|兴奋|激动";
                     String emotionDynamicActions = "(?:跳(?:了|起|上|下)|笑(?:了|起|出|着)|喊(?:了|起|出)|说(?:道|着|了)|跑(?:了|起|出)|拍(?:起|着)|挥(?:了|起|着))";
                     addProfessionalRule("(" + emotionActionModifiers + ")([ 　]*)(的)(?=[ 　]*" + emotionDynamicActions + ")", new String[][]{{null, "地", "情绪词修饰动作，应用“地”"}});
+
+                    // 1007 条边界压力集新增的高精度保护。保护规则只屏蔽模型对命中字的推理，
+                    // 不直接产生“纠错”，因此不会在界面中制造虚假的修改记录。
+                    String regularNounHeads = "(?:生活方式|作息时间|变化过程|运动轨迹|排列方式|分布规律|生活|作息|节奏|周期|模式|结构|图案|纹理|声音|响声|信号|脉冲|数据|曲线|现象|过程|轨迹|形态|组织|饮食|睡眠|步伐|脚步|运动|活动|变化|波动|起伏|振动|震动|抖动|跳动|呼吸|心跳|脉搏|排列|分布|闪烁|敲击|摆动|转动)";
+                    String resultVerbs = "(?:插|扎|勒|压|挤|卡|塞|夹|顶|硌|磨|裹|捆|缠|撑)";
+                    String resultSubjects = "(?:袜子|袜口|鞋袜|鞋面|衣服|衣料|布料|皮肤|脚底|脚背|脚腕|手腕|伤口|肌肉|绳子|带子|木头|木板|石头|管口|他|她|它|人)";
+                    String resultSignals = "(?:直|都|也|已经|快|几乎|差点|深深|完全|紧紧|明显|生疼|发麻|发疼|发红|破了|陷入|陷进|陷得|起了|变得|喘不过气|动不了)";
+                    String textureQualities = "(?:柔软|细腻|坚硬|粗糙|轻薄|柔韧|顺滑|松散|绵密|光滑|冰凉|厚实|温润|干涩|黏腻|蓬松|紧实|均匀|致密|疏松|弹性|韧性|硬度|软硬|粗细)";
+                    String fixedModifiers = "(?:营地|质地|地拉那|地中海|地衣|地黄|地缘|彼得|圣彼得堡|的黎波里|的里雅斯特|的的喀喀湖|巴尔的摩|蒙得维的亚|塞得港|得荣县)";
+                    String fixedNounHeads = "(?:研究员|研究中心|资料|样本|气候|街道|港口|灯光|补给|照明|结构|触感|差异|特征|条目|叶片|覆盖率|编号|记录|论文|天气|货轮|冬夜|航线|数据|报告|土壤|价格|来源|用途)";
+
+                    addProtectedTargetPattern("规律(的)(?=[ 　]*" + regularNounHeads + "(?=[的与和及、，,。；;！？!?：:\\n]|$))");
+                    addProtectedTargetPattern("[“‘\\\"]规律(的)(?=[”’\\\"])");
+                    addProtectedTargetPattern("[“‘\\\"]([的地得])(?=[”’\\\"])");
+                    addProtectedTargetPattern(resultVerbs + "(得)(?=[ 　]*" + resultSubjects + "[^，,。；;！？!?：:\\n]{0,12}" + resultSignals + ")");
+                    addProtectedTargetPattern("质地(的)(?=[ 　]*" + textureQualities + ")");
+                    addProtectedTargetPattern(fixedModifiers + "(的)(?=[ 　]*" + fixedNounHeads + ")");
+                    addProtectedTargetPattern(resultVerbs + "(的)(?=[ 　]*" + resultSubjects + "[ 　]*(?:都|也)?[ 　]*(?:已经|已)?[ 　]*(?:送走|入库|编号|消毒|打包|洗净|复检|拆下|收好|拍照|归档|更换))");
+
+                    // 只有结构足够明确时才主动纠错；“V 的/得 N”存在定语与结果补语歧义，
+                    // 因此正确的“得”只做保护，不把所有“的”反向硬改成“得”。
+                    addProfessionalRule("((?:一种|这种|那种|某种|保持(?:着)?|维持(?:着)?|形成(?:了)?|呈现(?:出)?|记录(?:了)?|显示(?:出)?|观察到|发现|存在(?:着)?|具有)[^，,。；;！？!?：:\\n]{0,8}?规律)([ 　]*)([地得])(?=[ 　]*" + regularNounHeads + "(?=[的与和及、，,。；;！？!?：:\\n]|$))", new String[][]{{null, "的", "名词短语中的“规律”应用“的”"}});
+                    addProfessionalRule("(" + fixedModifiers + ")([ 　]*)([地得])(?=[ 　]*" + fixedNounHeads + ")", new String[][]{{null, "的", "专名或固定术语修饰名词，应用“的”"}});
+                    addProfessionalRule("(质地)([ 　]*)([地得])(?=[ 　]*" + textureQualities + ")", new String[][]{{null, "的", "“质地”后的性质名词化结构应用“的”"}});
 
                     String locations = "家|家里|家中|家外|卧室|卧房|厨房|客厅|卫生间|洗手间|厕所|茅房|阳台|书房|餐厅|饭厅|浴室|走廊|走道|院子|庭院|地|车|超市|商场|商店|菜市场|农贸市场|便利店|小卖部|饭店|酒店|旅馆|宾馆|招待所|餐馆|食堂|咖啡厅|咖啡馆|酒吧|网吧|电影院|戏院|剧院|银行|邮局|理发店|药店|诊所|门|商铺|店|医院|学校|幼儿园|小学|中学|初中|高中|大学|教室|图书馆|操场|宿舍|办公楼|公司|办公室|工厂|厂里|车间|会议室|派出所|警察局|公安局|消防队|法院|政府|监狱|看守所|基地|营地|阵地|车站|火车站|高铁站|地铁站|公交站|客运站|飞机场|机场|码头|港口|停车场|加油站|收费站|高速上|马路上|街上|路上|十字路口|桥上|桥下|隧道里|铁轨上|公园|动物园|植物园|游乐场|游乐园|广场|体育馆|体育场|游泳池|健身房|博物馆|展览馆|美术馆|海|沙滩|海岸|山上|山下|山顶|树林|森林|湖边|河边|江边|水里|田里|农田|地里|村|乡|农村|城里|城市|市区|郊区|景区|野外|这里|那里|哪里|这儿|那儿|哪儿|上面|下面|里面|外面|上边|下边|里边|外边|左边|右边|前面|后面|旁边|附近|远处|高处|低处|深处|内部|外部|中心|中间|顶上|底下|背后|面前";
                     addRule("(再)( *)(" + locations + ")", new String[][]{{"在", null}});
@@ -2467,7 +2506,7 @@ jobs:
 
             public static final String NUMS = "一二两三四五六七八九十百千万这那几某";
             public static final String KNOWN_QUANTS = "个只条头匹辆部台口尾座把本名位";
-            public static final String[] IGNORE_WORDS = {"地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地", "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面", "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "取得", "赢得", "免得", "懒得", "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地", "如鱼得水", "留得", "留的", "拍立得", "坏的", "使得", "余地", "厕所的", "睡觉的", "腰的"};
+            public static final String[] IGNORE_WORDS = {"地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地", "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面", "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "取得", "赢得", "免得", "懒得", "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地", "如鱼得水", "留得", "留的", "拍立得", "坏的", "使得", "余地", "厕所的", "睡觉的", "腰的", "营地", "质地", "地中海", "地衣", "地黄", "地锦草", "地鳖虫", "地骨皮", "地钱", "地木耳", "地磁", "地基", "地漏", "地头", "地脚线", "地缘", "地处", "地上", "地理", "的卢马", "得分", "得主", "得票", "得法", "彼得", "圣彼得堡", "的黎波里", "的里雅斯特", "的的喀喀湖", "巴尔的摩", "蒙得维的亚", "地拉那", "塞得港", "得荣县", "经得起", "经得住"};
             public static final String[] WHITE_LIST = {"枝丫", "图书管理", "图书管控", "图书监管", "图书管制"};
 
             public static boolean isSafeCharAfterNoun(char c) {
