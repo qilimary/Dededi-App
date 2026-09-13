@@ -3359,23 +3359,47 @@ jobs:
                 return Color.HSVToColor(Color.alpha(color), hsv);
             }
 
-            private int randomGradientColor() {
-                java.util.Random random = new java.util.Random();
-                float[] hsv = new float[]{random.nextInt(360), 0.18f + random.nextFloat() * 0.38f, 0.90f + random.nextFloat() * 0.08f};
-                return Color.HSVToColor(hsv);
+            private int[][] gradientPresetPalettes() {
+                return new int[][]{
+                        new int[]{Color.parseColor("#FFF4D8"), Color.parseColor("#FFE7CF"), Color.parseColor("#F9E8D9"), Color.parseColor("#F6F2E8")},
+                        new int[]{Color.parseColor("#EAF7E8"), Color.parseColor("#DDF4E4"), Color.parseColor("#D8F0EC"), Color.parseColor("#EAF6F8")},
+                        new int[]{Color.parseColor("#EAF2FF"), Color.parseColor("#DCEBFF"), Color.parseColor("#D8F4FF"), Color.parseColor("#E9FBFF")},
+                        new int[]{Color.parseColor("#FFE9E7"), Color.parseColor("#FFE2EF"), Color.parseColor("#F7E3FF"), Color.parseColor("#EEF0FF")},
+                        new int[]{Color.parseColor("#FDF0D8"), Color.parseColor("#F8EDCA"), Color.parseColor("#E6F0C9"), Color.parseColor("#D8F0D5"), Color.parseColor("#DDEFFF")},
+                        new int[]{Color.parseColor("#FFE1C7"), Color.parseColor("#FFCDB8"), Color.parseColor("#FFB8BF"), Color.parseColor("#DDBBFF")},
+                        new int[]{Color.parseColor("#D9F2FF"), Color.parseColor("#CBE9FF"), Color.parseColor("#C7E1FF"), Color.parseColor("#D7DAFF"), Color.parseColor("#ECE1FF")},
+                        new int[]{Color.parseColor("#E2F7EF"), Color.parseColor("#D2F5E1"), Color.parseColor("#C6EFDA"), Color.parseColor("#DDF8F1")},
+                        new int[]{Color.parseColor("#FFF1DF"), Color.parseColor("#FFF6E6"), Color.parseColor("#F2F5E9"), Color.parseColor("#E9F6F0"), Color.parseColor("#E9F1FB")},
+                        new int[]{Color.parseColor("#FCE6EE"), Color.parseColor("#F6E4F7"), Color.parseColor("#EDE6FF"), Color.parseColor("#E3EEFF")},
+                        new int[]{Color.parseColor("#FFF2CC"), Color.parseColor("#FBEAB0"), Color.parseColor("#E6F1BA"), Color.parseColor("#CFEFCF"), Color.parseColor("#CFE6FF")},
+                        new int[]{Color.parseColor("#E7F5FF"), Color.parseColor("#D8F1FF"), Color.parseColor("#D7F7F5"), Color.parseColor("#E7F8E8"), Color.parseColor("#F6F9EA")},
+                        new int[]{Color.parseColor("#FFE3D5"), Color.parseColor("#FFE9D0"), Color.parseColor("#FFF0DA"), Color.parseColor("#F6F0E8")},
+                        new int[]{Color.parseColor("#E7ECFF"), Color.parseColor("#DDE7FF"), Color.parseColor("#DDEFFF"), Color.parseColor("#E4F5FF"), Color.parseColor("#EEF8FF")}
+                };
             }
 
             private void randomizeGradientSkinPalette() {
-                sp.edit()
-                        .putInt("skin_gradient_1", randomGradientColor())
-                        .putInt("skin_gradient_2", randomGradientColor())
-                        .putInt("skin_gradient_3", randomGradientColor())
-                        .apply();
+                int[][] presets = gradientPresetPalettes();
+                int[] picked = presets[new java.util.Random().nextInt(presets.length)];
+                android.content.SharedPreferences.Editor editor = sp.edit();
+                editor.putInt("skin_gradient_count", picked.length);
+                for (int i = 0; i < 5; i++) {
+                    if (i < picked.length) editor.putInt("skin_gradient_" + (i + 1), picked[i]);
+                    else editor.remove("skin_gradient_" + (i + 1));
+                }
+                editor.apply();
             }
 
             private int[] getGradientSkinPalette(boolean night) {
-                if (!sp.contains("skin_gradient_1") || !sp.contains("skin_gradient_2") || !sp.contains("skin_gradient_3")) randomizeGradientSkinPalette();
-                int[] colors = new int[]{sp.getInt("skin_gradient_1", Color.parseColor("#FFF0CF")), sp.getInt("skin_gradient_2", Color.parseColor("#E9F7E9")), sp.getInt("skin_gradient_3", Color.parseColor("#ECEBFF"))};
+                int count = sp.getInt("skin_gradient_count", 0);
+                if (count < 4 || !sp.contains("skin_gradient_1") || !sp.contains("skin_gradient_2") || !sp.contains("skin_gradient_3")) {
+                    randomizeGradientSkinPalette();
+                    count = sp.getInt("skin_gradient_count", 4);
+                }
+                count = Math.max(4, Math.min(5, count));
+                int[] fallbacks = new int[]{Color.parseColor("#FFF0CF"), Color.parseColor("#E9F7E9"), Color.parseColor("#ECEBFF"), Color.parseColor("#D9F4FF"), Color.parseColor("#FFF7E5")};
+                int[] colors = new int[count];
+                for (int i = 0; i < count; i++) colors[i] = sp.getInt("skin_gradient_" + (i + 1), fallbacks[i]);
                 if (night) for (int i = 0; i < colors.length; i++) colors[i] = blendColor(colors[i], Color.BLACK, 0.78f);
                 return colors;
             }
@@ -3911,6 +3935,8 @@ jobs:
                 if (!isInputEditorOpen) return;
                 String current = expandedInputEditText == null ? "" : expandedInputEditText.getText().toString();
                 String original = originalInputEditorText == null ? "" : originalInputEditorText;
+                // 原输入框为空时，没有旧内容需要保护：返回键直接保存当前输入，不再弹确认。
+                if (original.isEmpty()) { closeInputEditor(true); return; }
                 if (current.equals(original)) { closeInputEditor(false); return; }
                 new android.app.AlertDialog.Builder(this)
                         .setMessage("是否保存刚才的编辑操作？")
