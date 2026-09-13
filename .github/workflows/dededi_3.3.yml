@@ -3361,7 +3361,7 @@ jobs:
                 textSeek.setOnSeekBarChangeListener(new SimpleSeekListener() { @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) { int offset = progress - 4; textLabel.setText("正文字号 (输入/输出等): " + (15 + offset)); updateFontSize(offset, systemSeek.getProgress() - 2); } });
                 systemSeek.setOnSeekBarChangeListener(new SimpleSeekListener() { @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) { int offset = progress - 2; systemLabel.setText("系统字号 (按钮/标题等): " + (offset > 0 ? "+" + offset : offset)); updateFontSize(textSeek.getProgress() - 4, offset); } });
 
-                LinearLayout skinRow = new LinearLayout(this); skinRow.setOrientation(LinearLayout.HORIZONTAL); skinRow.setGravity(Gravity.CENTER); skinRow.setPadding(0, (int) (6 * density), 0, (int) (4 * density));
+                LinearLayout skinRow = new LinearLayout(this); skinRow.setOrientation(LinearLayout.HORIZONTAL); skinRow.setGravity(android.view.Gravity.CENTER); skinRow.setPadding(0, (int) (6 * density), 0, (int) (4 * density));
                 final String[] skinKeys = new String[]{"default", "egg", "green", "blue", "gradient"};
                 final android.widget.ImageButton[] skinButtons = new android.widget.ImageButton[skinKeys.length];
                 Runnable refreshSkinSelection = () -> {
