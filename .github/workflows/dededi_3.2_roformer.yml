@@ -43,12 +43,15 @@ jobs:
     - name: Download and Validate RoFormerV2 Pro Model
       run: |
         set -euo pipefail
-        MODEL_FOLDER_URL="https://drive.google.com/drive/folders/1ZN4esCrLkyuFYGqGgeDZfS6BnTN2IMTU"
+        MODEL_FILE_ID="1gtPR_bEo_wEbS9iioCXRHN-h9u_pRW3_"
         MODEL_DIR="roformer_v2_mobile"
 
-        echo "正在从 Google Drive 下载 02_mobile_legacy_qint8 专业模型..."
-        gdown --folder "$MODEL_FOLDER_URL" --remaining-ok --no-cookies -O "$MODEL_DIR"
-        test -s "$MODEL_DIR/dededi_mobile.ptl"
+        echo "正在从 Google Drive 下载 E3-EMA mobile_qint8 专业模型..."
+        gdown "$MODEL_FILE_ID" --no-cookies -O roformer_v2_mobile.zip
+        test -s roformer_v2_mobile.zip
+        mkdir -p "$MODEL_DIR"
+        unzip -oq roformer_v2_mobile.zip -d "$MODEL_DIR"
+        test -s "$MODEL_DIR/dededi_mobile_qint8.ptl"
         test -s "$MODEL_DIR/deploy_info.json"
         test -s "$MODEL_DIR/vocab.txt"
 
@@ -63,14 +66,14 @@ jobs:
         from torch.jit.mobile import _load_for_lite_interpreter
 
         root = Path('roformer_v2_mobile')
-        model_path = root / 'dededi_mobile.ptl'
+        model_path = root / 'dededi_mobile_qint8.ptl'
         vocab_path = root / 'vocab.txt'
         info_path = root / 'deploy_info.json'
 
         expected_hashes = {
-            model_path: 'd95812cd7ce9d7cfa9509244706bc5eebdbfee100abd89ed13915b3f74047cd5',
+            model_path: 'b4c5bc20888ffe304ead8923ba62dd73f75e3a89870ec995f765daee9aa285be',
             vocab_path: '722b0e17d2c0d35a835811967e74f1ec3203c885bade5cd523086594e3d0b29e',
-            info_path: '9137b6b8f937470ffa1d54cc7c3485b3f877e8bc9a7382f331f39b7350d659e9',
+            info_path: 'd214e82368d46310a353d30567fcf07094c110f03e4d7cf4828938ce218a738c',
         }
         for path, expected in expected_hashes.items():
             if not path.is_file() or path.stat().st_size == 0:
@@ -149,7 +152,7 @@ jobs:
             json.dumps(vocab, ensure_ascii=False, separators=(',', ':')),
             encoding='utf-8',
         )
-        print(f'RoFormerV2 校验通过：Torch={torch.__version__}，词表={len(vocab)}，输出=[B,L,3]。')
+        print(f'RoFormerV2 E3-EMA 校验通过：Torch={torch.__version__}，词表={len(vocab)}，输出=[B,L,3]。')
         EOF
         python validate_roformer.py
 
@@ -1149,19 +1152,19 @@ jobs:
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:background="@color/card_bg" android:padding="8dp" android:layout_marginBottom="10dp">
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="温度参数" android:textSize="11sp" android:textColor="@color/text_secondary"/>
-                            <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.0" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                            <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.1" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom"><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="的" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/></LinearLayout>
-                            <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.75" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                            <EditText android:id="@+id/editThreshDe1" android:layout_width="50dp" android:layout_height="36dp" android:text="0.76" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom"><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="地" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/></LinearLayout>
-                            <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.70" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                            <EditText android:id="@+id/editThreshDe2" android:layout_width="50dp" android:layout_height="36dp" android:text="0.72" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <LinearLayout android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="bottom"><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="得" android:textSize="12sp" android:textStyle="bold" android:textColor="@color/text_primary"/><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="阈值" android:textSize="10sp" android:textColor="@color/text_secondary" android:layout_marginBottom="1dp"/></LinearLayout>
-                            <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.72" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
+                            <EditText android:id="@+id/editThreshDe3" android:layout_width="50dp" android:layout_height="36dp" android:text="0.74" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
                         </LinearLayout>
                     </LinearLayout>
 
@@ -2010,18 +2013,18 @@ jobs:
 
             private void startInference(String text, String fileId) {
                 boolean fast = sp.getBoolean("is_fast_mode", false);
-                float storedTemperature = MainActivity.parseFloatSafe(sp.getString("pro_temp", "1.0"), Float.NaN);
+                float storedTemperature = MainActivity.parseFloatSafe(sp.getString("pro_temp", "1.1"), Float.NaN);
                 if (!fast && !MainActivity.isTemperatureValid(storedTemperature)) {
-                    storedTemperature = 1f;
-                    sp.edit().putString("pro_temp", "1.0").apply();
-                    Toast.makeText(this, "温度参数无效，已自动恢复为1.0（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
+                    storedTemperature = 1.1f;
+                    sp.edit().putString("pro_temp", "1.1").apply();
+                    Toast.makeText(this, "温度参数无效，已自动恢复为1.1（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
                 }
                 final float temperature = fast ? 1f : storedTemperature;
                 if (!fast && (MainActivity.proModule == null || !MainActivity.proVocabReady)) { Toast.makeText(this, "专业 RoFormer 未加载，请先打开一次主界面", Toast.LENGTH_SHORT).show(); return; }
                 // 极速模式不使用模型，但仍沿用专业模式的参数值，避免切换模式时数字跳变。
-                float tDe = MainActivity.parseFloatSafe(sp.getString("pro_th1", "0.75"), 0.75f);
-                float tDi = MainActivity.parseFloatSafe(sp.getString("pro_th2", "0.70"), 0.70f);
-                float tDe3 = MainActivity.parseFloatSafe(sp.getString("pro_th3", "0.72"), 0.72f);
+                float tDe = MainActivity.parseFloatSafe(sp.getString("pro_th1", "0.76"), 0.76f);
+                float tDi = MainActivity.parseFloatSafe(sp.getString("pro_th2", "0.72"), 0.72f);
+                float tDe3 = MainActivity.parseFloatSafe(sp.getString("pro_th3", "0.74"), 0.74f);
                 isChecking = true; isInterruptRequested = false; btnFloatSwitch.setEnabled(false); lastErrorShownAt = 0;
                 synchronized (errorStatusLock) { visibleErrorLines.clear(); errorStatusFlushScheduled = false; }
                 AppExecutors.MAIN.removeCallbacks(errorStatusFlushRunnable);
@@ -2406,63 +2409,55 @@ jobs:
                     // ‘执行义务/职责/承诺/诺言’统一为‘履行……’，不会碰‘执行义务教育政策’这类后面仍有中心词的正常表达。
                     addRule("(执行)(了?[^，,。；;！？!?：:\\n]{0,12}?)(义务|职责|承诺|诺言)(?=[了着过的所，,。；;！？!?：:、…\\n]|$)", new String[][]{{"履行", null, "搭配不当"}});
 
-                    // 状态副词修饰动作“响”时用“地”。只在“响”后紧接动态助词、补语或分句边界时触发，
-                    // 因此“断断续续的响声/响动/响铃声/响应信号”等名词结构不会被误改。
+                    // E3-EMA 模型已独立通过大部分旧规则专项压力测试。以下仅保留在扩大上下文
+                    // 回归中仍有失败的窄规则：间歇状态修饰动作、部分方式状语、质地性质结构、
+                    // 以及固定专名/术语修饰名词；其余旧规则交给模型判断。
                     String intermittentAdverbs = "断断续续|时断时续|一阵一阵|一声一声|接连不断|连续不断|时有时无|忽高忽低|忽远忽近";
                     addProfessionalRule("(" + intermittentAdverbs + ")([ 　]*)([的得])(?=[ 　]*响(?=[着了过得个起下不又还并且而但却才就仍，,。；;！？!?：:、…\\n]|$))", new String[][]{{null, "地", "状态副词修饰动作“响”，应用“地”"}});
-                    addProfessionalRule("(" + intermittentAdverbs + ")([ 　]*)([地得])(?=[ 　]*(?:响声|响动|响铃声|声音|声响))", new String[][]{{null, "的", "状态词修饰声音名词，应用“的”"}});
 
-                    // “熟悉”直接修饰这些明确的名词或名词短语时用“的”。词表刻意不含“形/理/点/区/图/铁”等，
-                    // 保护“熟悉地形、熟悉地理、熟悉地点、熟悉地图、熟悉地铁系统”等正常动宾结构。
-                    String familiarNounHeads = "(?:操作(?:步骤|流程|方法|规范|界面|系统)|工作(?:步骤|流程|环境|内容|方法|岗位)|专业(?:领域|知识|术语|课程)|步骤|流程|方法|规则|环境|声音|面孔|面容|脸庞|身影|场景|画面|气味|味道|旋律|节奏|语言|文字|名字|名称|感觉|风格|方式|系统|界面|功能|内容|知识|业务|领域|专业|课程|教材|设备|工具|软件|代码|道路|路线|街道|城市|房间)";
-                    addProfessionalRule("(熟悉)([ 　]*)([地得])(?=[ 　]*" + familiarNounHeads + ")", new String[][]{{null, "的", "“熟悉”修饰名词，应用“的”"}});
-
-                    // 情绪形容词直接修饰这些明确名词时用“的”。只收录中心词清晰的名词，
-                    // 不碰“开心地笑、幸福地生活”等正常状语结构。
-                    String emotionNounModifiers = "开心|高兴|快乐|幸福|悲伤|难过|痛苦|愤怒|惊讶|紧张|焦虑|无奈";
-                    String emotionNounHeads = "笑容|表情|样子|模样|神情|心情|时刻|事情|日子|回忆";
-                    addProfessionalRule("(" + emotionNounModifiers + ")([ 　]*)([地得])(?=[ 　]*(?:" + emotionNounHeads + "))", new String[][]{{null, "的", "情绪词修饰名词，应用“的”"}});
-
-                    // 方位词直接修饰自然现象、场景等明确名词时用“的”。中心词采用封闭白名单，
-                    // 因此“门外地面、窗外地铁”等词边界相邻的正常表达不会被拆开误改。
-                    String locationNounModifiers = "门外|窗外|屋外|室外|户外|房外|院外|楼外|校外|城外|车外|站外";
-                    String locationNounHeads = "冷风|寒风|风声|雨声|雪景|景色|声音|响声|脚步声|灯光|阳光|月光|空气|温度|天气|人群|车辆|道路|街道|树木|花草|景象|情况|环境|世界";
-                    addProfessionalRule("(" + locationNounModifiers + ")([ 　]*)([地得])(?=[ 　]*(?:" + locationNounHeads + "))", new String[][]{{null, "的", "方位词修饰名词，应用“的”"}});
-
-                    // 方式词后误用“得”且紧接明确动作时改为“地”。这里只接管“得”，
-                    // 不处理可能名词化的“耐心的等待”，避免把合法定中结构一概改掉。
                     String mannerModifiers = "耐心|认真|仔细|专心|用心|细心|热心|诚心|虚心|诚恳|礼貌|友好|冷静|平静|从容|谨慎|小心|努力|积极|主动|自觉";
                     String mannerActions = "等待|倾听|听取|解释|说明|回答|答复|劝说|安慰|指导|教导|检查|核对|阅读|观察|处理|解决|分析|研究|学习|工作|准备|完成|记录|整理|操作|练习|思考|考虑|交流|沟通";
                     addProfessionalRule("(" + mannerModifiers + ")([ 　]*)(得)(?=[ 　]*(?:" + mannerActions + "))", new String[][]{{null, "地", "方式词修饰动作，应用“地”"}});
-                    addProfessionalRule("(耐心|认真|仔细|专心|用心|细心|谨慎|小心)([ 　]*)(得)(?=[ 　]*(?:放置|放进|放入|收进|装进|摆放|安放))", new String[][]{{null, "地", "方式词修饰放置动作，应用“地”"}});
+                    addProfessionalRule("(请[ 　]*(?:" + mannerModifiers + "))([ 　]*)([的得])(?=[ 　]*(?:" + mannerActions + "))", new String[][]{{null, "地", "祈使句中的方式词修饰动作，应用“地”"}});
+                    addProfessionalRule("((?:他|她|它)[ 　]*准确)([ 　]*)([的得])(?=[ 　]*回答(?=[了着过，,。；;！？!?：:\\n]|$))", new String[][]{{null, "地", "“准确”修饰回答动作，应用“地”"}});
 
-                    // “高兴的跳了起来”中“的”处于明确的动态动作之前，应改为“地”。
-                    // 刻意不接管“得”：如“激动得跳了起来”可表示激动到跳起来，是合法补语结构。
                     String emotionActionModifiers = "高兴|开心|兴奋|激动";
                     String emotionDynamicActions = "(?:跳(?:了|起|上|下)|笑(?:了|起|出|着)|喊(?:了|起|出)|说(?:道|着|了)|跑(?:了|起|出)|拍(?:起|着)|挥(?:了|起|着))";
                     addProfessionalRule("(" + emotionActionModifiers + ")([ 　]*)(的)(?=[ 　]*" + emotionDynamicActions + ")", new String[][]{{null, "地", "情绪词修饰动作，应用“地”"}});
 
-                    // 1007 条边界压力集新增的高精度保护。保护规则只屏蔽模型对命中字的推理，
-                    // 不直接产生“纠错”，因此不会在界面中制造虚假的修改记录。
-                    String regularNounHeads = "(?:生活方式|作息时间|变化过程|运动轨迹|排列方式|分布规律|生活|作息|节奏|周期|模式|结构|图案|纹理|声音|响声|信号|脉冲|数据|曲线|现象|过程|轨迹|形态|组织|饮食|睡眠|步伐|脚步|运动|活动|变化|波动|起伏|振动|震动|抖动|跳动|呼吸|心跳|脉搏|排列|分布|闪烁|敲击|摆动|转动)";
+                    // 保护规则只屏蔽模型对命中字的推理，不直接产生纠错记录。
                     String resultVerbs = "(?:插|扎|勒|压|挤|卡|塞|夹|顶|硌|磨|裹|捆|缠|撑)";
-                    String resultSubjects = "(?:袜子|袜口|鞋袜|鞋面|衣服|衣料|布料|皮肤|脚底|脚背|脚腕|手腕|伤口|肌肉|绳子|带子|木头|木板|石头|管口|他|她|它|人)";
-                    String resultSignals = "(?:直|都|也|已经|快|几乎|差点|深深|完全|紧紧|明显|生疼|发麻|发疼|发红|破了|陷入|陷进|陷得|起了|变得|喘不过气|动不了)";
+                    String resultSubjects = "(?:袜子|袜口|鞋袜|鞋面|衣服|衣料|布料|皮肤|脚底|脚背|脚腕|手腕|伤口|肌肉|绳子|带子|木头|木板|石头|管口|幼苗|瓶口|电线|棚膜|货物|地砖|他|她|它|人)";
+                    String resultSignals = "(?:直|都|也|已经|快|几乎|差点|深深|完全|紧紧|明显|生疼|发麻|发疼|发红|破了|陷入|陷进|陷得|起了|变得|喘不过气|动不了|鼓了|弯不过来|晃不动)";
                     String textureQualities = "(?:柔软|细腻|坚硬|粗糙|轻薄|柔韧|顺滑|松散|绵密|光滑|冰凉|厚实|温润|干涩|黏腻|蓬松|紧实|均匀|致密|疏松|弹性|韧性|硬度|软硬|粗细)";
                     String fixedModifiers = "(?:营地|质地|地拉那|地中海|地衣|地黄|地缘|彼得|圣彼得堡|的黎波里|的里雅斯特|的的喀喀湖|巴尔的摩|蒙得维的亚|塞得港|得荣县)";
                     String fixedNounHeads = "(?:研究员|研究中心|资料|样本|气候|街道|港口|灯光|补给|照明|结构|触感|差异|特征|条目|叶片|覆盖率|编号|记录|论文|天气|货轮|冬夜|航线|数据|报告|土壤|价格|来源|用途)";
-
-                    addProtectedTargetPattern("规律(的)(?=[ 　]*" + regularNounHeads + "(?=[的与和及、，,。；;！？!?：:\\n]|$))");
-                    addProtectedTargetPattern("[“‘\\\"]规律(的)(?=[”’\\\"])");
                     addProtectedTargetPattern("[“‘\\\"]([的地得])(?=[”’\\\"])");
+                    // 这些旧白名单词只在引号内作为字面词条时仍有误判；用精确上下文保护，
+                    // 避免“心得”误伤“耐心得等待/小心得搬运”等真实错误。
+                    addProtectedTargetPattern("[“‘\\\"](?:厕所|懂|留|腰)(的)(?=[”’\\\"])");
+                    addProtectedTargetPattern("[“‘\\\"]心(得)(?=[”’\\\"])");
+                    addProtectedTargetPattern("[“‘\\\"](地)(?=处[”’\\\"])");
+                    // “开心得笑起来”等既可表示程度结果，也可能被模型当成状语；保留用户原字。
+                    addProtectedTargetPattern("(?:" + emotionActionModifiers + ")(得)(?=[ 　]*" + emotionDynamicActions + ")");
                     addProtectedTargetPattern(resultVerbs + "(得)(?=[ 　]*" + resultSubjects + "[^，,。；;！？!?：:\\n]{0,12}" + resultSignals + ")");
                     addProtectedTargetPattern("质地(的)(?=[ 　]*" + textureQualities + ")");
                     addProtectedTargetPattern(fixedModifiers + "(的)(?=[ 　]*" + fixedNounHeads + ")");
-                    addProtectedTargetPattern(resultVerbs + "(的)(?=[ 　]*" + resultSubjects + "[ 　]*(?:都|也)?[ 　]*(?:已经|已)?[ 　]*(?:送走|入库|编号|消毒|打包|洗净|复检|拆下|收好|拍照|归档|更换))");
+                    // 明确的合法状语/定语边界；只保护原字，不把相反写法强制纠正。
+                    addProtectedTargetPattern("快速(地)(?=[ 　]*增长)");
+                    addProtectedTargetPattern("反复(地)(?=[ 　]*讨论)");
+                    addProtectedTargetPattern("[“‘\\\"]规律(地)(?=[ 　]*变化[”’\\\"])");
+                    addProtectedTargetPattern("规律(的)(?=[ 　]*变化)");
+                    addProtectedTargetPattern("当地(的)(?=[ 　]*[\\u4E00-\\u9FFF])");
+                    addProtectedTargetPattern("当地(地)(?=[ 　]*(?:下|方|图|形|温|力|道|铁|质))");
+                    addProtectedTargetPattern("熟悉(地)(?=[ 　]*形)");
+                    addProtectedTargetPattern("地处[^，,。；;！？!?：:\\n]{1,8}(的)(?=[ 　]*(?:营地|村庄))");
+                    addProtectedTargetPattern("得主(的)(?=[ 　]*得票)");
+                    addProtectedTargetPattern("得当(的)(?=[ 　]*[\\u4E00-\\u9FFF])");
+                    addProtectedTargetPattern("晒(的)(?=[ 　]*衣服)");
+                    // “设备挤的衣服都已打包”属于定语结构，新模型仍可能误改为“得”。
+                    addProtectedTargetPattern(resultVerbs + "(的)(?=[ 　]*" + resultSubjects + "[ 　]*(?:都|也)?[ 　]*(?:已经|已|早已)?[ 　]*(?:送走|入库|编号|消毒|打包|洗净|复检|拆下|收好|拍照|归档|更换))");
 
-                    // 只有结构足够明确时才主动纠错；“V 的/得 N”存在定语与结果补语歧义，
-                    // 因此正确的“得”只做保护，不把所有“的”反向硬改成“得”。
-                    addProfessionalRule("((?:一种|这种|那种|某种|保持(?:着)?|维持(?:着)?|形成(?:了)?|呈现(?:出)?|记录(?:了)?|显示(?:出)?|观察到|发现|存在(?:着)?|具有)[^，,。；;！？!?：:\\n]{0,8}?规律)([ 　]*)([地得])(?=[ 　]*" + regularNounHeads + "(?=[的与和及、，,。；;！？!?：:\\n]|$))", new String[][]{{null, "的", "名词短语中的“规律”应用“的”"}});
                     addProfessionalRule("(" + fixedModifiers + ")([ 　]*)([地得])(?=[ 　]*" + fixedNounHeads + ")", new String[][]{{null, "的", "专名或固定术语修饰名词，应用“的”"}});
                     addProfessionalRule("(质地)([ 　]*)([地得])(?=[ 　]*" + textureQualities + ")", new String[][]{{null, "的", "“质地”后的性质名词化结构应用“的”"}});
 
@@ -2506,8 +2501,8 @@ jobs:
 
             public static final String NUMS = "一二两三四五六七八九十百千万这那几某";
             public static final String KNOWN_QUANTS = "个只条头匹辆部台口尾座把本名位";
-            public static final String[] IGNORE_WORDS = {"地产", "地道", "地表", "地步", "地主", "心地", "领地", "驻地", "阵地", "境地", "殖民地", "根据地", "发源地", "本地", "外地", "内地", "地下", "地面", "得罪", "得意", "得体", "心得", "舍不得", "值得", "懂得", "记得", "取得", "赢得", "免得", "懒得", "的确", "的士", "目的", "标的", "有的放矢", "众矢之的", "懂的", "倒地", "如鱼得水", "留得", "留的", "拍立得", "坏的", "使得", "余地", "厕所的", "睡觉的", "腰的", "营地", "质地", "地中海", "地衣", "地黄", "地锦草", "地鳖虫", "地骨皮", "地钱", "地木耳", "地磁", "地基", "地漏", "地头", "地脚线", "地缘", "地处", "地上", "地理", "的卢马", "得分", "得主", "得票", "得法", "彼得", "圣彼得堡", "的黎波里", "的里雅斯特", "的的喀喀湖", "巴尔的摩", "蒙得维的亚", "地拉那", "塞得港", "得荣县", "经得起", "经得住"};
-            public static final String[] WHITE_LIST = {"枝丫", "图书管理", "图书管控", "图书监管", "图书管制"};
+            public static final String[] IGNORE_WORDS = {"当地", "地中海", "地漏", "塞得港", "得法", "得当", "得体", "得主", "拍立得", "彼得", "殖民地", "的士", "打的", "出的", "出得", "有的放矢", "无的放矢", "众矢之的"};
+            public static final String[] WHITE_LIST = {"图书管理", "图书管控", "图书管制"};
 
             public static boolean isSafeCharAfterNoun(char c) {
                 if (c == '\0' || c < '\u4E00' || c > '\u9FFF') return true;
@@ -3346,8 +3341,8 @@ jobs:
                 @Override public void onStopTrackingTouch(android.widget.SeekBar seekBar) {}
             }
 
-            private void migrateProfessionalThresholdDefaults() {
-                if (sp.getBoolean("pro_threshold_defaults_3_2_1", false)) return;
+            private void migrateProfessionalDefaultsForE3Ema() {
+                if (sp.getBoolean("pro_defaults_e3ema_1", false)) return;
                 boolean missingAll = !sp.contains("pro_th1") && !sp.contains("pro_th2") && !sp.contains("pro_th3");
                 float oldDe = parseFloatSafe(sp.getString("pro_th1", "0.70"), Float.NaN);
                 float oldDi = parseFloatSafe(sp.getString("pro_th2", "0.75"), Float.NaN);
@@ -3355,28 +3350,33 @@ jobs:
                 boolean stillLegacyDefaults = Math.abs(oldDe - 0.70f) < 0.0001f
                         && Math.abs(oldDi - 0.75f) < 0.0001f
                         && Math.abs(oldDe3 - 0.75f) < 0.0001f;
-                SharedPreferences.Editor editor = sp.edit().putBoolean("pro_threshold_defaults_3_2_1", true);
-                if (missingAll || stillLegacyDefaults) {
-                    editor.putString("pro_th1", "0.75")
-                            .putString("pro_th2", "0.70")
-                            .putString("pro_th3", "0.72");
+                boolean stillPreviousDefaults = Math.abs(oldDe - 0.75f) < 0.0001f
+                        && Math.abs(oldDi - 0.70f) < 0.0001f
+                        && Math.abs(oldDe3 - 0.72f) < 0.0001f;
+                SharedPreferences.Editor editor = sp.edit().putBoolean("pro_defaults_e3ema_1", true);
+                if (missingAll || stillLegacyDefaults || stillPreviousDefaults) {
+                    editor.putString("pro_th1", "0.76")
+                            .putString("pro_th2", "0.72")
+                            .putString("pro_th3", "0.74");
                 }
+                float oldTemperature = parseFloatSafe(sp.getString("pro_temp", "1.0"), Float.NaN);
+                if (!sp.contains("pro_temp") || Math.abs(oldTemperature - 1.0f) < 0.0001f) editor.putString("pro_temp", "1.1");
                 editor.apply();
             }
 
             private void loadSettings(boolean fast) {
-                migrateProfessionalThresholdDefaults();
-                String temperature = sp.getString("pro_temp", "1.0");
+                migrateProfessionalDefaultsForE3Ema();
+                String temperature = sp.getString("pro_temp", "1.1");
                 if (!isTemperatureValid(parseFloatSafe(temperature, Float.NaN))) {
-                    temperature = "1.0";
+                    temperature = "1.1";
                     sp.edit().putString("pro_temp", temperature).apply();
-                    Toast.makeText(this, "温度参数无效，已自动恢复为1.0（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "温度参数无效，已自动恢复为1.1（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
                 }
                 // 两种模式显示同一组专业参数；极速模式只禁用并置灰，不再换成另一套数字。
                 editTemp.setText(temperature);
-                editThreshDe1.setText(sp.getString("pro_th1", "0.75"));
-                editThreshDe2.setText(sp.getString("pro_th2", "0.70"));
-                editThreshDe3.setText(sp.getString("pro_th3", "0.72"));
+                editThreshDe1.setText(sp.getString("pro_th1", "0.76"));
+                editThreshDe2.setText(sp.getString("pro_th2", "0.72"));
+                editThreshDe3.setText(sp.getString("pro_th3", "0.74"));
                 boolean professional = !fast;
                 for (EditText field : new EditText[]{editTemp, editThreshDe1, editThreshDe2, editThreshDe3}) {
                     field.setEnabled(professional);
@@ -3861,7 +3861,7 @@ jobs:
             }
 
             private void showHelp() {
-                String text = "【模式介绍】\n极速（不检查“的/地/得”）：纠错时不调用神经网络推理，因此不检查“的/地/得”；仅运行系统内置的错词库和规则。速度最快（毫秒级），适合只想快速检查其他错别字与语病的场景。\n\n专业（RoFormerV2）：专门纠错“的地得”，推理速度依然很快，只是相比极速会慢一点（秒级）。\n两种模式都支持系统内置的所有纠错规则。\n注：不同手机的速度会有差异；模型也可能出现极少量误判，这是神经网络的通病，在所难免。\n\n一般建议始终使用专业模式，除非你对“的地得”运用得如火纯青。\n\n【温度参数（仅专业模式）】\n控制AI判断的自信（果断）程度。\n• 允许范围：0.5～2.0；默认1.0。\n• 值越低（如0.5）：概率分布越尖锐，模型更激进，修改量可能上升。\n• 值越高（如2.0）：概率分布越平缓，模型更保守，修改量可能下降。\n• 温度低于0.5或高于2.0时系统会禁止纠错。\n\n【置信度拦截阈值（仅专业模式）】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n• 默认值：的0.75、地0.70、得0.72。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能会导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：1.在“原始文本”框输入例如“慢慢地”，直接提交。等效于白名单，系统在遇到该词后不会再修改。\n  2.在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义规则优先级高于内置规则和专业模型。\n\n【悬浮窗】\n开启后支持后台随时随地纠错。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
+                String text = "【模式介绍】\n极速（不检查“的/地/得”）：纠错时不调用神经网络推理，因此不检查“的/地/得”；仅运行系统内置的错词库和规则。速度最快（毫秒级），适合只想快速检查其他错别字与语病的场景。\n\n专业（RoFormerV2）：专门纠错“的地得”，推理速度依然很快，只是相比极速会慢一点（秒级）。\n两种模式都支持系统内置的所有纠错规则。\n注：不同手机的速度会有差异；模型也可能出现极少量误判，这是神经网络的通病，在所难免。\n\n一般建议始终使用专业模式，除非你对“的地得”运用得如火纯青。\n\n【温度参数（仅专业模式）】\n控制AI判断的自信（果断）程度。\n• 允许范围：0.5～2.0；默认1.1。\n• 值越低（如0.5）：概率分布越尖锐，模型更激进，修改量可能上升。\n• 值越高（如2.0）：概率分布越平缓，模型更保守，修改量可能下降。\n• 温度低于0.5或高于2.0时系统会禁止纠错。\n\n【置信度拦截阈值（仅专业模式）】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n• 默认值：的0.76、地0.72、得0.74。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能会导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：1.在“原始文本”框输入例如“慢慢地”，直接提交。等效于白名单，系统在遇到该词后不会再修改。\n  2.在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义规则优先级高于内置规则和专业模型。\n\n【悬浮窗】\n开启后支持后台随时随地纠错。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                 int ui = Math.max(-2, Math.min(2, sp.getInt("font_offset_sys", 0))); TextView view = new TextView(this); view.setText(text); view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + ui); view.setTextColor(0xFF333333); view.setLineSpacing(0, 1.2f); int padding = (int) (20 * getResources().getDisplayMetrics().density); view.setPadding(padding, padding / 2, padding, 0); ScrollView scroll = new ScrollView(this); scroll.addView(view); new AlertDialog.Builder(this).setTitle("使用说明").setView(scroll).setPositiveButton("知道了", null).show();
             }
 
@@ -3906,10 +3906,10 @@ jobs:
                 if (!fast) {
                     temperature = parseFloatSafe(editTemp.getText().toString(), Float.NaN);
                     if (!isTemperatureValid(temperature)) {
-                        temperature = 1f;
-                        editTemp.setText("1.0");
-                        sp.edit().putString("pro_temp", "1.0").apply();
-                        Toast.makeText(this, "温度参数无效，已自动恢复为1.0（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
+                        temperature = 1.1f;
+                        editTemp.setText("1.1");
+                        sp.edit().putString("pro_temp", "1.1").apply();
+                        Toast.makeText(this, "温度参数无效，已自动恢复为1.1（允许范围0.5～2.0）", Toast.LENGTH_LONG).show();
                     }
                     if (proModule == null || !proVocabReady) {
                         Toast.makeText(this, "模型仍在加载或环境异常，请稍后重试", Toast.LENGTH_SHORT).show();
@@ -4149,7 +4149,7 @@ jobs:
             private void doInference(boolean fastMode, float temperature) {
                 String text = inputText.getText().toString(); if (text.isEmpty()) { isCheckingMain = false; btnCheck.setText("开始纠错"); return; }
                 btnCopy.setEnabled(false); btnSaveTxt.setEnabled(false);
-                float thresholdDe = parseFloatSafe(editThreshDe1.getText().toString(), .75f), thresholdDi = parseFloatSafe(editThreshDe2.getText().toString(), .70f), thresholdDe3 = parseFloatSafe(editThreshDe3.getText().toString(), .72f);
+                float thresholdDe = parseFloatSafe(editThreshDe1.getText().toString(), .76f), thresholdDi = parseFloatSafe(editThreshDe2.getText().toString(), .72f), thresholdDe3 = parseFloatSafe(editThreshDe3.getText().toString(), .74f);
                 AppExecutors.INFERENCE.execute(() -> {
                     try {
                         AppExecutors.MAIN.post(() -> { getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); progressBar.setVisibility(View.VISIBLE); progressBar.setProgress(0); });
