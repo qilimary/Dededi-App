@@ -3810,7 +3810,7 @@ jobs:
                 Editable editable = expandedInputEditText.getText(); if (editable == null || editable.length() == 0) return;
                 pushState(inputUndoStack, new EditorState(new SpannableStringBuilder(editable), expandedInputEditText.getSelectionStart())); inputRedoStack.clear();
                 String text = editable.toString(); String[] lines = text.split("\\n", -1); StringBuilder out = new StringBuilder(text.length() + lines.length * 2);
-                for (int i = 0; i < lines.length; i++) { String line = lines[i]; int first = 0; while (first < line.length() && (line.charAt(first) == ' ' || line.charAt(first) == '\\t' || line.charAt(first) == '\\u3000')) first++; if (first < line.length()) out.append("　　").append(line.substring(first)); if (i + 1 < lines.length) out.append('\\n'); }
+                for (int i = 0; i < lines.length; i++) { String line = lines[i]; int first = 0; while (first < line.length() && (line.charAt(first) == ' ' || line.charAt(first) == '\t' || line.charAt(first) == '\u3000')) first++; if (first < line.length()) out.append("　　").append(line.substring(first)); if (i + 1 < lines.length) out.append('\n'); }
                 isInputEditorSelfModifying = true; expandedInputEditText.setText(out.toString()); expandedInputEditText.setSelection(expandedInputEditText.length()); isInputEditorSelfModifying = false; tvInputEditorWordCount.setText(countLettersOrDigits(expandedInputEditText.getText(), 0, expandedInputEditText.length()) + " 字"); sp.edit().putString("sync_text", out.toString()).apply();
             }
 
