@@ -517,6 +517,12 @@ jobs:
         </vector>
         EOF
 
+        cat << 'EOF' > app/src/main/res/drawable/ic_skin_shirt.xml
+        <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+            <path android:fillColor="#2196F3" android:pathData="M8.2,3.3L10,2.5c0.45,0.9 1.1,1.35 2,1.35s1.55,-0.45 2,-1.35l1.8,0.8 4.1,2.45 -2.15,4.05 -2.35,-1.15V21H8.6V8.65L6.25,9.8 4.1,5.75z"/>
+        </vector>
+        EOF
+
         cat << 'EOF' > app/src/main/res/drawable/circle_bg.xml
         <?xml version="1.0" encoding="utf-8"?>
         <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><solid android:color="#2196F3"/></shape>
@@ -1056,12 +1062,12 @@ jobs:
             android:id="@+id/drawerLayout" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/bg_color">
 
             <FrameLayout android:id="@+id/mainContentFrame" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/bg_color">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="14dp" android:background="@color/bg_color">
+                <LinearLayout android:id="@+id/mainBody" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="14dp" android:background="@color/bg_color">
                     <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp">
                         <TextView android:id="@+id/tvTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="“的地得”纠错AI Pro" android:textSize="20sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_alignParentStart="true" android:layout_centerVertical="true" android:clickable="true" android:focusable="true"/>
                         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_alignParentEnd="true" android:layout_centerVertical="true" android:gravity="center_vertical">
                             <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnFloat" android:layout_width="24dp" android:layout_height="24dp" android:layout_marginEnd="8dp" android:text="✓" android:textSize="12sp" android:background="@drawable/circle_btn_bg" android:textColor="#FFFFFF" android:stateListAnimator="@null" android:padding="0dp"/>
-                            <Button android:id="@+id/btnFont" android:layout_width="32dp" android:layout_height="32dp" android:text="A" android:textStyle="bold" android:textSize="18sp" android:background="@null" android:textColor="#2196F3" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
+                            <Button android:id="@+id/btnFont" android:layout_width="32dp" android:layout_height="32dp" android:text="A" android:textStyle="bold" android:textSize="17sp" android:background="@null" android:textColor="#2196F3" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                             <Button android:id="@+id/btnMenu" android:layout_width="32dp" android:layout_height="32dp" android:text="≡" android:textSize="14sp" android:backgroundTint="#BDBDBD" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:layout_marginStart="8dp"/>
                         </LinearLayout>
                     </RelativeLayout>
@@ -1071,7 +1077,7 @@ jobs:
                         <RadioButton android:id="@+id/rbPro" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="专业（RoFormer）" android:checked="true" android:textColor="@color/text_primary" android:textSize="14sp"/>
                     </RadioGroup>
 
-                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:background="@color/card_bg" android:padding="8dp" android:layout_marginBottom="10dp">
+                    <LinearLayout android:id="@+id/paramsCard" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:background="@color/card_bg" android:padding="8dp" android:layout_marginBottom="10dp">
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="温度参数" android:textSize="11sp" android:textColor="@color/text_secondary"/>
                             <EditText android:id="@+id/editTemp" android:layout_width="50dp" android:layout_height="36dp" android:text="1.1" android:textColor="@color/text_primary" android:textSize="13sp" android:inputType="numberDecimal" android:gravity="center" android:background="@null"/>
@@ -1091,7 +1097,8 @@ jobs:
                     </LinearLayout>
 
                     <RelativeLayout android:layout_width="match_parent" android:layout_height="140dp" android:layout_marginBottom="10dp">
-                        <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="match_parent" android:hint="输入或粘贴文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg" android:padding="12dp" android:paddingBottom="24dp" android:textSize="15sp" android:scrollbars="vertical"/>
+                        <EditText android:id="@+id/inputText" android:layout_width="match_parent" android:layout_height="match_parent" android:hint="输入或粘贴文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@color/card_bg" android:padding="12dp" android:paddingEnd="42dp" android:paddingBottom="24dp" android:textSize="15sp" android:scrollbars="vertical"/>
+                        <Button android:id="@+id/btnInputExpand" android:layout_width="36dp" android:layout_height="36dp" android:layout_alignParentTop="true" android:layout_alignParentEnd="true" android:layout_marginTop="2dp" android:layout_marginEnd="2dp" android:text="⛶" android:textSize="18sp" android:textColor="#2196F3" android:background="?android:attr/selectableItemBackgroundBorderless" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp" android:contentDescription="展开输入框"/>
                         <TextView android:id="@+id/tvWordCount" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_alignParentBottom="true" android:layout_alignParentEnd="true" android:layout_marginEnd="8dp" android:layout_marginBottom="6dp" android:text="0 字" android:textColor="#9E9E9E" android:textSize="11sp"/>
                     </RelativeLayout>
 
@@ -1114,9 +1121,26 @@ jobs:
                     </FrameLayout>
                 </LinearLayout>
 
+                <FrameLayout android:id="@+id/inputEditorOverlay" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/bg_color" android:visibility="gone" android:clickable="true" android:focusable="true" android:elevation="11dp">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+                        <LinearLayout android:id="@+id/inputEditorToolbar" android:layout_width="match_parent" android:layout_height="50dp" android:orientation="horizontal" android:gravity="center_vertical" android:background="@color/card_bg" android:elevation="4dp">
+                            <Button android:id="@+id/btnInputEditorCollapse" android:layout_width="50dp" android:layout_height="50dp" android:text="↓" android:textColor="#03A9F4" android:textSize="21sp" android:background="?android:attr/selectableItemBackgroundBorderless" android:textStyle="bold" android:focusable="false" android:padding="0dp"/>
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="输入编辑" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold"/>
+                            <Button android:id="@+id/btnInputEditorIndent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minWidth="52dp" android:minHeight="38dp" android:paddingHorizontal="8dp" android:layout_marginEnd="3dp" android:text="缩进" android:textColor="#FFFFFF" android:textSize="13sp" android:backgroundTint="#2196F3"/>
+                            <Button android:id="@+id/btnInputEditorUndo" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minWidth="48dp" android:minHeight="38dp" android:paddingHorizontal="7dp" android:layout_marginEnd="3dp" android:text="撤销" android:textColor="#FFFFFF" android:textSize="13sp" android:backgroundTint="#2196F3"/>
+                            <Button android:id="@+id/btnInputEditorRedo" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minWidth="48dp" android:minHeight="38dp" android:paddingHorizontal="7dp" android:layout_marginEnd="3dp" android:text="还原" android:textColor="#FFFFFF" android:textSize="13sp" android:backgroundTint="#2196F3"/>
+                            <Button android:id="@+id/btnInputEditorDone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minWidth="48dp" android:minHeight="38dp" android:paddingHorizontal="7dp" android:layout_marginEnd="6dp" android:text="完成" android:textColor="#FFFFFF" android:textSize="13sp" android:backgroundTint="#4CAF50"/>
+                        </LinearLayout>
+                        <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
+                            <EditText android:id="@+id/expandedInputEditText" android:layout_width="match_parent" android:layout_height="match_parent" android:hint="输入或粘贴文本..." android:textColorHint="@color/text_secondary" android:textColor="@color/text_primary" android:gravity="top|start" android:background="@null" android:padding="16dp" android:paddingEnd="34dp" android:paddingBottom="30dp" android:textSize="15sp" android:lineSpacingExtra="4dp" android:scrollbars="vertical"/>
+                            <TextView android:id="@+id/tvInputEditorWordCount" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|end" android:layout_marginEnd="12dp" android:layout_marginBottom="8dp" android:text="0 字" android:textColor="#9E9E9E" android:textSize="11sp"/>
+                        </FrameLayout>
+                    </LinearLayout>
+                </FrameLayout>
+
                 <FrameLayout android:id="@+id/expandedEditorOverlay" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/bg_color" android:visibility="gone" android:clickable="true" android:focusable="true" android:elevation="10dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="50dp" android:orientation="horizontal" android:gravity="center_vertical" android:background="@color/card_bg" android:elevation="4dp">
+                        <LinearLayout android:id="@+id/outputEditorToolbar" android:layout_width="match_parent" android:layout_height="50dp" android:orientation="horizontal" android:gravity="center_vertical" android:background="@color/card_bg" android:elevation="4dp">
                             <Button android:id="@+id/btnEditorCollapse" android:layout_width="50dp" android:layout_height="50dp" android:text="↓" android:textColor="#03A9F4" android:textSize="21sp" android:background="?android:attr/selectableItemBackgroundBorderless" android:textStyle="bold" android:focusable="false" android:padding="0dp"/>
                             <Space android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
                             <Button android:id="@+id/btnEditorIndent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minWidth="52dp" android:minHeight="38dp" android:paddingHorizontal="9dp" android:layout_marginEnd="4dp" android:text="首行缩进" android:textColor="#FFFFFF" android:textSize="13.5sp" android:backgroundTint="#2196F3"/>
@@ -3226,8 +3250,8 @@ jobs:
                 return result;
             }
 
-            private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3, expandedEditText;
-            private TextView outputText, tvWordCount;
+            private EditText inputText, editTemp, editThreshDe1, editThreshDe2, editThreshDe3, expandedEditText, expandedInputEditText;
+            private TextView outputText, tvWordCount, tvInputEditorWordCount;
             private ScrollView scrollView, editorScrollView;
             private ProgressBar progressBar;
             private Button btnCheck, btnCopy, btnSaveTxt, btnPaste, btnClear, btnImport;
@@ -3235,14 +3259,14 @@ jobs:
             private RadioGroup rgMode;
             private DrawerLayout drawerLayout;
             private SharedPreferences sp;
-            private boolean currentIsFast, hasStartedChecking, autoScrollEnabled = true, isTouchingScrollView, isTyposExpanded, isRestoringHistory, isManuallyEditedOut, originalIsManuallyEdited, isEditorSelfModifying, firstEditorCursorTapPending;
+            private boolean currentIsFast, hasStartedChecking, autoScrollEnabled = true, isTouchingScrollView, isTyposExpanded, isRestoringHistory, isManuallyEditedOut, originalIsManuallyEdited, isEditorSelfModifying, firstEditorCursorTapPending, isInputEditorOpen, isInputEditorSelfModifying;
             private volatile boolean isCheckingMain, modelsLoading;
             private int saveFormat;
-            private String pendingSaveText = "", lastSavedHistoryFileId, editingTypoKey, originalEditorText = "";
+            private String pendingSaveText = "", lastSavedHistoryFileId, editingTypoKey, originalEditorText = "", originalInputEditorText = "";
             private SpannableStringBuilder lastEditorSpannable;
-            private final Stack<EditorState> editorUndoStack = new Stack<>(), editorRedoStack = new Stack<>();
+            private final Stack<EditorState> editorUndoStack = new Stack<>(), editorRedoStack = new Stack<>(), inputUndoStack = new Stack<>(), inputRedoStack = new Stack<>();
             private final List<ClauseLink> currentClauseLinks = new ArrayList<>();
-            private View expandedEditorOverlay;
+            private View expandedEditorOverlay, inputEditorOverlay;
 
             private void pushState(Stack<EditorState> stack, EditorState state) {
                 stack.push(state);
@@ -3275,30 +3299,94 @@ jobs:
                 if (inputText != null) inputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, inputSize);
                 if (outputText != null) outputText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, outputSize);
                 if (expandedEditText != null) expandedEditText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, outputSize);
+                if (expandedInputEditText != null) expandedInputEditText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, inputSize);
                 TextView title = findViewById(R.id.tvTitle); if (title != null) title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 20 + ui);
                 if (rbFast != null) rbFast.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + ui); if (rbPro != null) rbPro.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + ui);
                 if (btnCheck != null) btnCheck.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16 + ui);
                 for (Button button : new Button[]{btnImport, btnPaste, btnClear, btnCopy, btnSaveTxt}) if (button != null) button.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13 + ui);
                 if (tvWordCount != null) tvWordCount.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11 + ui);
                 for (int id : new int[]{R.id.btnEditorIndent, R.id.btnEditorUndo, R.id.btnEditorRedo, R.id.btnEditorSave}) { Button button = findViewById(id); if (button != null) button.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f + ui); }
+                for (int id : new int[]{R.id.btnInputEditorIndent, R.id.btnInputEditorUndo, R.id.btnInputEditorRedo, R.id.btnInputEditorDone}) { Button button = findViewById(id); if (button != null) button.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f + ui); }
+                if (tvInputEditorWordCount != null) tvInputEditorWordCount.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11 + ui);
+            }
+
+            private android.graphics.drawable.GradientDrawable solidSkinDrawable(int color, float radiusDp) {
+                android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
+                drawable.setColor(color); drawable.setCornerRadius(radiusDp * getResources().getDisplayMetrics().density); return drawable;
+            }
+
+            private android.graphics.drawable.GradientDrawable gradientSkinDrawable(int[] colors) {
+                android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, colors);
+                drawable.setGradientType(android.graphics.drawable.GradientDrawable.LINEAR_GRADIENT); return drawable;
+            }
+
+            private int skinAccent(String skin) {
+                if ("egg".equals(skin)) return Color.parseColor("#E1A62E");
+                if ("green".equals(skin)) return Color.parseColor("#58A66A");
+                if ("blue".equals(skin)) return Color.parseColor("#63A7D8");
+                if ("gradient".equals(skin)) return Color.parseColor("#8A79D6");
+                return Color.parseColor("#90A4AE");
+            }
+
+            private void applySkin(String skin) {
+                boolean night = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+                int bg, card;
+                int[] gradient = null;
+                if ("egg".equals(skin)) { bg = Color.parseColor(night ? "#292417" : "#FFF3C9"); card = Color.parseColor(night ? "#342D1B" : "#FFF9E6"); }
+                else if ("green".equals(skin)) { bg = Color.parseColor(night ? "#17271B" : "#E6F5E7"); card = Color.parseColor(night ? "#203423" : "#F5FFF4"); }
+                else if ("blue".equals(skin)) { bg = Color.parseColor(night ? "#17232D" : "#E8F4FB"); card = Color.parseColor(night ? "#1F303C" : "#F5FBFF"); }
+                else if ("gradient".equals(skin)) { bg = Color.parseColor(night ? "#23242C" : "#F7F1E8"); card = Color.parseColor(night ? "#2B2D36" : "#FFFDF8"); gradient = night ? new int[]{Color.parseColor("#2B241D"), Color.parseColor("#1B2B25"), Color.parseColor("#24243A")} : new int[]{Color.parseColor("#FFF0CF"), Color.parseColor("#E9F7E9"), Color.parseColor("#ECEBFF")}; }
+                else { bg = androidx.core.content.ContextCompat.getColor(this, R.color.bg_color); card = androidx.core.content.ContextCompat.getColor(this, R.color.card_bg); }
+
+                int[] backgroundIds = new int[]{R.id.mainContentFrame, R.id.mainBody, R.id.drawerContent, R.id.inputEditorOverlay, R.id.expandedEditorOverlay};
+                for (int id : backgroundIds) { View view = findViewById(id); if (view != null) view.setBackground(gradient != null ? gradientSkinDrawable(gradient.clone()) : solidSkinDrawable(bg, 0)); }
+                int[] cardIds = new int[]{R.id.paramsCard, R.id.inputText, R.id.outputText, R.id.inputEditorToolbar, R.id.outputEditorToolbar};
+                for (int id : cardIds) { View view = findViewById(id); if (view != null) view.setBackground(solidSkinDrawable(card, (id == R.id.inputText || id == R.id.outputText || id == R.id.paramsCard) ? 8 : 0)); }
+
+                androidx.core.view.WindowInsetsControllerCompat controller = androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+                boolean lightBars = !night || !"default".equals(skin);
+                controller.setAppearanceLightStatusBars(lightBars); controller.setAppearanceLightNavigationBars(lightBars);
+                if (android.os.Build.VERSION.SDK_INT < 35) { getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg); }
             }
 
             private void showFontSizeDialog() {
                 int textOffset = sp.getInt("font_offset_text", 0), systemOffset = sp.getInt("font_offset_sys", 0);
-                LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(60, 50, 60, 30);
+                float density = getResources().getDisplayMetrics().density;
+                LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding((int) (24 * density), (int) (20 * density), (int) (24 * density), (int) (12 * density));
                 TextView title = new TextView(this); title.setText("调节字体大小"); title.setTextSize(18f); title.setTextColor(Color.BLACK); title.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
-                TextView textLabel = new TextView(this); textLabel.setText("正文字号 (输入/输出/便签): " + (15 + textOffset)); textLabel.setTextSize(14f); textLabel.setTextColor(0xFF666666); textLabel.setPadding(0, 35, 0, 10);
-                android.widget.SeekBar textSeek = new android.widget.SeekBar(this); textSeek.setMax(14); textSeek.setProgress(textOffset + 4); textSeek.setPadding(20, 10, 20, 40);
-                TextView systemLabel = new TextView(this); systemLabel.setText("系统字号 (按钮/标题等): " + (systemOffset > 0 ? "+" + systemOffset : systemOffset)); systemLabel.setTextSize(14f); systemLabel.setTextColor(0xFF666666); systemLabel.setPadding(0, 10, 0, 10);
-                android.widget.SeekBar systemSeek = new android.widget.SeekBar(this); systemSeek.setMax(4); systemSeek.setProgress(systemOffset + 2); systemSeek.setPadding(20, 10, 20, 40);
+                TextView textLabel = new TextView(this); textLabel.setText("正文字号 (输入/输出/便签): " + (15 + textOffset)); textLabel.setTextSize(14f); textLabel.setTextColor(0xFF666666); textLabel.setPadding(0, (int) (18 * density), 0, (int) (4 * density));
+                android.widget.SeekBar textSeek = new android.widget.SeekBar(this); textSeek.setMax(14); textSeek.setProgress(textOffset + 4); textSeek.setPadding((int) (8 * density), 0, (int) (8 * density), (int) (10 * density));
+                TextView systemLabel = new TextView(this); systemLabel.setText("系统字号 (按钮/标题等): " + (systemOffset > 0 ? "+" + systemOffset : systemOffset)); systemLabel.setTextSize(14f); systemLabel.setTextColor(0xFF666666); systemLabel.setPadding(0, (int) (6 * density), 0, (int) (4 * density));
+                android.widget.SeekBar systemSeek = new android.widget.SeekBar(this); systemSeek.setMax(4); systemSeek.setProgress(systemOffset + 2); systemSeek.setPadding((int) (8 * density), 0, (int) (8 * density), (int) (10 * density));
                 textSeek.setOnSeekBarChangeListener(new SimpleSeekListener() { @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) { int offset = progress - 4; textLabel.setText("正文字号 (输入/输出等): " + (15 + offset)); updateFontSize(offset, systemSeek.getProgress() - 2); } });
                 systemSeek.setOnSeekBarChangeListener(new SimpleSeekListener() { @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) { int offset = progress - 2; systemLabel.setText("系统字号 (按钮/标题等): " + (offset > 0 ? "+" + offset : offset)); updateFontSize(textSeek.getProgress() - 4, offset); } });
+
+                LinearLayout skinRow = new LinearLayout(this); skinRow.setOrientation(LinearLayout.HORIZONTAL); skinRow.setGravity(Gravity.CENTER); skinRow.setPadding(0, (int) (6 * density), 0, (int) (4 * density));
+                final String[] skinKeys = new String[]{"default", "egg", "green", "blue", "gradient"};
+                final android.widget.ImageButton[] skinButtons = new android.widget.ImageButton[skinKeys.length];
+                Runnable refreshSkinSelection = () -> {
+                    String selected = sp.getString("ui_skin", "default");
+                    for (int i = 0; i < skinButtons.length; i++) {
+                        android.widget.ImageButton button = skinButtons[i]; if (button == null) continue;
+                        boolean active = skinKeys[i].equals(selected);
+                        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable(); bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                        bg.setColor(active ? 0x183F51B5 : Color.TRANSPARENT); bg.setStroke((int) ((active ? 2 : 1) * density), active ? skinAccent(skinKeys[i]) : 0x22000000); button.setBackground(bg);
+                    }
+                };
+                for (int i = 0; i < skinKeys.length; i++) {
+                    final String key = skinKeys[i];
+                    android.widget.ImageButton choice = new android.widget.ImageButton(this); skinButtons[i] = choice; choice.setImageResource(R.drawable.ic_skin_shirt); choice.setColorFilter(skinAccent(key)); choice.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE); choice.setPadding((int) (9 * density), (int) (9 * density), (int) (9 * density), (int) (9 * density)); choice.setContentDescription("界面皮肤");
+                    LinearLayout.LayoutParams choiceParams = new LinearLayout.LayoutParams((int) (46 * density), (int) (46 * density)); choiceParams.setMargins((int) (4 * density), 0, (int) (4 * density), 0); skinRow.addView(choice, choiceParams);
+                    choice.setOnClickListener(v -> { sp.edit().putString("ui_skin", key).apply(); applySkin(key); refreshSkinSelection.run(); });
+                }
+                refreshSkinSelection.run();
+
                 Button done = new Button(this); done.setText("完成"); done.setTextColor(0xFF2196F3); done.setBackgroundColor(Color.TRANSPARENT); LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); doneParams.gravity = android.view.Gravity.END; done.setLayoutParams(doneParams);
-                layout.addView(title); layout.addView(textLabel); layout.addView(textSeek); layout.addView(systemLabel); layout.addView(systemSeek); layout.addView(done);
+                layout.addView(title); layout.addView(textLabel); layout.addView(textSeek); layout.addView(systemLabel); layout.addView(systemSeek); layout.addView(skinRow); layout.addView(done);
                 android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this).setView(layout).create();
                 Runnable persist = () -> sp.edit().putInt("font_offset_text", textSeek.getProgress() - 4).putInt("font_offset_sys", systemSeek.getProgress() - 2).apply();
                 done.setOnClickListener(v -> { persist.run(); dialog.dismiss(); }); dialog.setOnCancelListener(d -> persist.run()); dialog.show();
-                WindowManager.LayoutParams params = new WindowManager.LayoutParams(); params.copyFrom(dialog.getWindow().getAttributes()); params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85f); params.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL; params.y = (int) (getResources().getDisplayMetrics().heightPixels * 0.15f); dialog.getWindow().setAttributes(params);
+                WindowManager.LayoutParams params = new WindowManager.LayoutParams(); params.copyFrom(dialog.getWindow().getAttributes()); params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85f); params.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL; params.y = (int) (getResources().getDisplayMetrics().heightPixels * 0.12f); dialog.getWindow().setAttributes(params);
                 android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable(); background.setColor(Color.WHITE); background.setCornerRadius(16f); dialog.getWindow().setBackgroundDrawable(background);
             }
 
@@ -3426,9 +3514,10 @@ jobs:
                 editTemp = findViewById(R.id.editTemp); editThreshDe1 = findViewById(R.id.editThreshDe1); editThreshDe2 = findViewById(R.id.editThreshDe2); editThreshDe3 = findViewById(R.id.editThreshDe3);
                 btnCheck = findViewById(R.id.btnCheck); btnImport = findViewById(R.id.btnImport); btnPaste = findViewById(R.id.btnPaste); btnClear = findViewById(R.id.btnClear); btnCopy = findViewById(R.id.btnCopy); btnSaveTxt = findViewById(R.id.btnSaveTxt);
                 rbFast = findViewById(R.id.rbFast); rbPro = findViewById(R.id.rbPro); rgMode = findViewById(R.id.rgMode); expandedEditorOverlay = findViewById(R.id.expandedEditorOverlay); expandedEditText = findViewById(R.id.expandedEditText); editorScrollView = findViewById(R.id.editorScrollView);
-                TextView title = findViewById(R.id.tvTitle); Button menu = findViewById(R.id.btnMenu), font = findViewById(R.id.btnFont); View floatButton = findViewById(R.id.btnFloat);
-                font.setOnClickListener(v -> showFontSizeDialog()); updateFontSize(sp.getInt("font_offset_text", 0), sp.getInt("font_offset_sys", 0));
-                setupScrollControls(); setupEditor(); setupInputWatcher();
+                inputEditorOverlay = findViewById(R.id.inputEditorOverlay); expandedInputEditText = findViewById(R.id.expandedInputEditText); tvInputEditorWordCount = findViewById(R.id.tvInputEditorWordCount);
+                TextView title = findViewById(R.id.tvTitle); Button menu = findViewById(R.id.btnMenu), font = findViewById(R.id.btnFont), inputExpand = findViewById(R.id.btnInputExpand); View floatButton = findViewById(R.id.btnFloat);
+                font.setOnClickListener(v -> showFontSizeDialog()); inputExpand.setOnClickListener(v -> openInputEditor()); updateFontSize(sp.getInt("font_offset_text", 0), sp.getInt("font_offset_sys", 0)); applySkin(sp.getString("ui_skin", "default"));
+                setupScrollControls(); setupEditor(); setupInputEditor(); setupInputWatcher();
                 currentIsFast = sp.getBoolean("is_fast_mode", false); rbFast.setChecked(currentIsFast); rbPro.setChecked(!currentIsFast); loadSettings(currentIsFast);
                 rgMode.setOnCheckedChangeListener((group, checkedId) -> {
                     if (checkedId == -1) return;
@@ -3675,6 +3764,61 @@ jobs:
                 if (undo && state.text.toString().equals(originalEditorText)) { isManuallyEditedOut = originalIsManuallyEdited; if (!isManuallyEditedOut) { renderFinalBlocks(); isEditorSelfModifying = true; expandedEditText.setText(lastEditorSpannable); isEditorSelfModifying = false; } }
             }
 
+            private void setupInputEditor() {
+                Button collapse = findViewById(R.id.btnInputEditorCollapse), indent = findViewById(R.id.btnInputEditorIndent), undo = findViewById(R.id.btnInputEditorUndo), redo = findViewById(R.id.btnInputEditorRedo), done = findViewById(R.id.btnInputEditorDone);
+                expandedInputEditText.addTextChangedListener(new TextWatcher() {
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                        if (isInputEditorSelfModifying) return;
+                        pushState(inputUndoStack, new EditorState(new SpannableStringBuilder(s), expandedInputEditText.getSelectionStart())); inputRedoStack.clear();
+                    }
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                    @Override public void afterTextChanged(Editable editable) {
+                        if (isInputEditorSelfModifying) return;
+                        int count = countLettersOrDigits(editable, 0, editable.length()); tvInputEditorWordCount.setText(count + " 字");
+                        sp.edit().putString("sync_text", editable.toString()).apply();
+                        if (editable.length() > 0 && !currentIsFast) warmProEngineAsync(MainActivity.this);
+                    }
+                });
+                View.OnClickListener finish = v -> closeInputEditor(true);
+                collapse.setOnClickListener(finish); done.setOnClickListener(finish);
+                indent.setOnClickListener(v -> applyInputIndent());
+                undo.setOnClickListener(v -> restoreInputEditorState(inputUndoStack, inputRedoStack));
+                redo.setOnClickListener(v -> { if (inputRedoStack.isEmpty()) Toast.makeText(this, "没有可还原的操作", Toast.LENGTH_SHORT).show(); else restoreInputEditorState(inputRedoStack, inputUndoStack); });
+            }
+
+            private void openInputEditor() {
+                if (inputEditorOverlay == null || expandedInputEditText == null) return;
+                originalInputEditorText = inputText.getText().toString();
+                int selection = Math.max(0, Math.min(inputText.getSelectionStart(), originalInputEditorText.length()));
+                isInputEditorSelfModifying = true; expandedInputEditText.setText(originalInputEditorText); expandedInputEditText.setSelection(selection); isInputEditorSelfModifying = false;
+                inputUndoStack.clear(); inputRedoStack.clear(); tvInputEditorWordCount.setText(countLettersOrDigits(expandedInputEditText.getText(), 0, expandedInputEditText.length()) + " 字");
+                drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED); inputEditorOverlay.setAlpha(0f); inputEditorOverlay.setTranslationY(100f); inputEditorOverlay.setVisibility(View.VISIBLE); inputEditorOverlay.animate().alpha(1f).translationY(0f).setDuration(180).start(); isInputEditorOpen = true;
+                expandedInputEditText.requestFocus(); expandedInputEditText.post(() -> { android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE); if (imm != null) imm.showSoftInput(expandedInputEditText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT); });
+            }
+
+            private void closeInputEditor(boolean keepChanges) {
+                if (!isInputEditorOpen || inputEditorOverlay == null) return;
+                if (keepChanges) {
+                    String value = expandedInputEditText.getText().toString(); int selection = Math.max(0, Math.min(expandedInputEditText.getSelectionStart(), value.length()));
+                    boolean old = isRestoringHistory; isRestoringHistory = true; inputText.setText(value); inputText.setSelection(Math.max(0, Math.min(selection, inputText.length()))); isRestoringHistory = old; sp.edit().putString("sync_text", value).apply();
+                }
+                android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE); if (imm != null) imm.hideSoftInputFromWindow(expandedInputEditText.getWindowToken(), 0);
+                inputEditorOverlay.animate().alpha(0f).translationY(100f).setDuration(160).withEndAction(() -> { inputEditorOverlay.setVisibility(View.GONE); isInputEditorOpen = false; drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED); }).start();
+            }
+
+            private void applyInputIndent() {
+                Editable editable = expandedInputEditText.getText(); if (editable == null || editable.length() == 0) return;
+                pushState(inputUndoStack, new EditorState(new SpannableStringBuilder(editable), expandedInputEditText.getSelectionStart())); inputRedoStack.clear();
+                String text = editable.toString(); String[] lines = text.split("\\n", -1); StringBuilder out = new StringBuilder(text.length() + lines.length * 2);
+                for (int i = 0; i < lines.length; i++) { String line = lines[i]; int first = 0; while (first < line.length() && (line.charAt(first) == ' ' || line.charAt(first) == '\\t' || line.charAt(first) == '\\u3000')) first++; if (first < line.length()) out.append("　　").append(line.substring(first)); if (i + 1 < lines.length) out.append('\\n'); }
+                isInputEditorSelfModifying = true; expandedInputEditText.setText(out.toString()); expandedInputEditText.setSelection(expandedInputEditText.length()); isInputEditorSelfModifying = false; tvInputEditorWordCount.setText(countLettersOrDigits(expandedInputEditText.getText(), 0, expandedInputEditText.length()) + " 字"); sp.edit().putString("sync_text", out.toString()).apply();
+            }
+
+            private void restoreInputEditorState(Stack<EditorState> source, Stack<EditorState> destination) {
+                if (source.isEmpty()) return; pushState(destination, new EditorState(new SpannableStringBuilder(expandedInputEditText.getText()), expandedInputEditText.getSelectionStart())); EditorState state = source.pop();
+                isInputEditorSelfModifying = true; expandedInputEditText.setText(state.text); expandedInputEditText.setSelection(Math.max(0, Math.min(state.selectionStart, expandedInputEditText.length()))); isInputEditorSelfModifying = false; tvInputEditorWordCount.setText(countLettersOrDigits(expandedInputEditText.getText(), 0, expandedInputEditText.length()) + " 字"); sp.edit().putString("sync_text", expandedInputEditText.getText().toString()).apply();
+            }
+
             private void setupInputWatcher() {
                 inputText.addTextChangedListener(new TextWatcher() {
                     int visibleCount = countLettersOrDigits(inputText.getText(), 0, inputText.length());
@@ -3795,7 +3939,7 @@ jobs:
             }
 
             private void showHelp() {
-                String text = "【模式介绍】\n极速（不检查“的/地/得”）：纠错时不调用神经网络推理，因此不检查“的/地/得”；仅运行系统内置的错词库和规则。速度最快（毫秒级），适合只想快速检查其他错别字与语病的场景。\n\n专业（RoFormerV2）：专门纠错“的地得”，推理速度依然很快，只是相比极速会慢一点（秒级）。\n两种模式都支持系统内置的所有纠错规则。\n注：不同手机的速度会有差异；模型也可能出现极少量误判，这是神经网络的通病，在所难免。\n\n一般建议始终使用专业模式，除非你对“的地得”运用得如火纯青。\n\n【温度参数（仅专业模式）】\n控制AI判断的自信（果断）程度。\n• 允许范围：0.5～2.0；默认1.1。\n• 值越低（如0.5）：概率分布越尖锐，模型更激进，修改量可能上升。\n• 值越高（如2.0）：概率分布越平缓，模型更保守，修改量可能下降。\n• 温度低于0.5或高于2.0时系统会禁止纠错。\n\n【置信度拦截阈值（仅专业模式）】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n• 默认值：的0.76、地0.72、得0.74。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n• 便签模式：长按底部纠错框区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能会导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：1.在“原始文本”框输入例如“慢慢地”，直接提交。等效于白名单，系统在遇到该词后不会再修改。\n  2.在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义规则优先级高于内置规则和专业模型。\n\n【悬浮窗】\n开启后支持后台随时随地纠错。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
+                String text = "【模式介绍】\n极速（不检查“的/地/得”）：纠错时不调用神经网络推理，因此不检查“的/地/得”；仅运行系统内置的错词库和规则。速度最快（毫秒级），适合只想快速检查其他错别字与语病的场景。\n\n专业（RoFormerV2）：专门纠错“的地得”，推理速度依然很快，只是相比极速会慢一点（秒级）。\n两种模式都支持系统内置的所有纠错规则。\n注：不同手机的速度会有差异；模型也可能出现极少量误判，这是神经网络的通病，在所难免。\n\n一般建议始终使用专业模式，除非你对“的地得”运用得如火纯青。\n\n【温度参数（仅专业模式）】\n控制AI判断的自信（果断）程度。\n• 允许范围：0.5～2.0；默认1.1。\n• 值越低（如0.5）：概率分布越尖锐，模型更激进，修改量可能上升。\n• 值越高（如2.0）：概率分布越平缓，模型更保守，修改量可能下降。\n• 温度低于0.5或高于2.0时系统会禁止纠错。\n\n【置信度拦截阈值（仅专业模式）】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n• 默认值：的0.76、地0.72、得0.74。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查完毕后，点击任意带下划线的字或词组，即可手动修改或还原回原字。\n• 输入框展开：点击输入框右上角的展开按钮，可进入全屏输入编辑，支持撤销、还原和首行缩进；收起后内容会自动同步回主输入框。\n• 便签模式：长按底部纠错结果区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 界面皮肤：点击标题栏“A”进入字体设置，底部彩色衣服可直接切换界面皮肤。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能会导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，这可能会导致使用卡顿。也不建议导入带有特定格式（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可自动带入进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：1.在“原始文本”框输入例如“慢慢地”，直接提交。等效于白名单，系统在遇到该词后不会再修改。\n  2.在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义规则优先级高于内置规则和专业模型。\n\n【悬浮窗】\n开启后支持后台随时随地纠错。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                 int ui = Math.max(-2, Math.min(2, sp.getInt("font_offset_sys", 0))); TextView view = new TextView(this); view.setText(text); view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + ui); view.setTextColor(0xFF333333); view.setLineSpacing(0, 1.2f); int padding = (int) (20 * getResources().getDisplayMetrics().density); view.setPadding(padding, padding / 2, padding, 0); ScrollView scroll = new ScrollView(this); scroll.addView(view); new AlertDialog.Builder(this).setTitle("使用说明").setView(scroll).setPositiveButton("知道了", null).show();
             }
 
@@ -3940,6 +4084,7 @@ jobs:
             }
 
             @Override public void onBackPressed() {
+                if (isInputEditorOpen && inputEditorOverlay != null && inputEditorOverlay.getVisibility() == View.VISIBLE) { closeInputEditor(true); return; }
                 if (isEditorOpen && expandedEditorOverlay != null
                         && expandedEditorOverlay.getVisibility() == View.VISIBLE) {
                     View closeButton = findViewById(R.id.btnEditorClose);
@@ -3953,7 +4098,7 @@ jobs:
 
             @Override protected void onDestroy() {
                 if (instance == this) instance = null;
-                isEditorOpen = false;
+                isEditorOpen = false; isInputEditorOpen = false;
                 super.onDestroy();
             }
 
