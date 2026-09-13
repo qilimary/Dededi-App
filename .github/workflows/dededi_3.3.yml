@@ -519,13 +519,13 @@ jobs:
 
         cat << 'EOF' > app/src/main/res/drawable/ic_skin_shirt.xml
         <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-            <path android:fillColor="#2196F3" android:pathData="M8.2,3.3L10,2.5c0.45,0.9 1.1,1.35 2,1.35s1.55,-0.45 2,-1.35l1.8,0.8 4.1,2.45 -2.15,4.05 -2.35,-1.15V21H8.6V8.65L6.25,9.8 4.1,5.75z"/>
+            <path android:fillColor="#2196F3" android:pathData="M6.7,3.4L9.7,2.3c0.45,0.9 1.15,1.35 2.3,1.35s1.85,-0.45 2.3,-1.35L17.3,3.4 20.3,5.5 18.15,9.65 16.9,9.0V21H7.1V9.0L5.85,9.65 3.7,5.5z"/>
         </vector>
         EOF
 
         cat << 'EOF' > app/src/main/res/drawable/ic_skin_shirt_gradient.xml
         <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-            <path android:fillColor="#8FA89A" android:pathData="M8.2,3.3L10,2.5c0.45,0.9 1.1,1.35 2,1.35s1.55,-0.45 2,-1.35l1.8,0.8 4.1,2.45 -2.15,4.05 -2.35,-1.15V21H8.6V8.65L6.25,9.8 4.1,5.75z"/>
+            <path android:fillColor="#8FA89A" android:pathData="M6.7,3.4L9.7,2.3c0.45,0.9 1.15,1.35 2.3,1.35s1.85,-0.45 2.3,-1.35L17.3,3.4 20.3,5.5 18.15,9.65 16.9,9.0V21H7.1V9.0L5.85,9.65 3.7,5.5z"/>
         </vector>
         EOF
 
@@ -3324,7 +3324,7 @@ jobs:
 
             private android.graphics.drawable.GradientDrawable gradientSkinDrawable(int[] colors) {
                 android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, colors);
-                drawable.setGradientType(android.graphics.drawable.GradientDrawable.LINEAR_GRADIENT); return drawable;
+                drawable.setGradientType(android.graphics.drawable.GradientDrawable.LINEAR_GRADIENT); drawable.setDither(true); return drawable;
             }
 
             private int skinAccent(String skin) {
@@ -3346,8 +3346,17 @@ jobs:
 
             private int applyDepthToColor(int color, int depth) {
                 if (depth == 0) return color;
-                float amount = Math.min(1f, Math.abs(depth) / 50f) * 0.58f;
-                return depth < 0 ? blendColor(color, Color.WHITE, amount) : blendColor(color, Color.BLACK, amount);
+                float[] hsv = new float[3];
+                Color.colorToHSV(color, hsv);
+                float amount = Math.min(1f, Math.abs(depth) / 50f);
+                if (depth > 0) {
+                    hsv[1] = Math.min(1f, hsv[1] + 0.42f * amount);
+                    hsv[2] = Math.max(0.28f, hsv[2] - 0.10f * amount);
+                } else {
+                    hsv[1] = Math.max(0f, hsv[1] - 0.18f * amount);
+                    hsv[2] = Math.min(1f, hsv[2] + 0.12f * amount);
+                }
+                return Color.HSVToColor(Color.alpha(color), hsv);
             }
 
             private int randomGradientColor() {
@@ -3380,19 +3389,37 @@ jobs:
                 else if ("blue".equals(skin)) { bg = Color.parseColor(night ? "#17232D" : "#E8F4FB"); card = Color.parseColor(night ? "#1F303C" : "#F5FBFF"); }
                 else if ("gradient".equals(skin)) { bg = Color.parseColor(night ? "#23242C" : "#F7F1E8"); card = Color.parseColor(night ? "#2B2D36" : "#FFFDF8"); gradient = getGradientSkinPalette(night); }
                 else { bg = androidx.core.content.ContextCompat.getColor(this, R.color.bg_color); card = androidx.core.content.ContextCompat.getColor(this, R.color.card_bg); }
-                int depth = sp.getInt("skin_depth", 50) - 50;
+                int depth = "default".equals(skin) ? 0 : sp.getInt("skin_depth", 50) - 50;
                 bg = applyDepthToColor(bg, depth); card = applyDepthToColor(card, depth);
                 if (gradient != null) for (int i = 0; i < gradient.length; i++) gradient[i] = applyDepthToColor(gradient[i], depth);
 
-                int[] backgroundIds = new int[]{R.id.mainContentFrame, R.id.mainBody, R.id.drawerContent, R.id.inputEditorOverlay, R.id.expandedEditorOverlay};
-                for (int id : backgroundIds) { View view = findViewById(id); if (view != null) view.setBackground(gradient != null ? gradientSkinDrawable(gradient.clone()) : solidSkinDrawable(bg, 0)); }
+                View mainContentFrame = findViewById(R.id.mainContentFrame), mainBody = findViewById(R.id.mainBody), drawerContent = findViewById(R.id.drawerContent), inputOverlay = findViewById(R.id.inputEditorOverlay), expandedOverlay = findViewById(R.id.expandedEditorOverlay);
+                if (gradient != null) {
+                    if (drawerLayout != null) drawerLayout.setBackground(gradientSkinDrawable(gradient.clone()));
+                    if (mainContentFrame != null) mainContentFrame.setBackgroundColor(Color.TRANSPARENT);
+                    if (mainBody != null) mainBody.setBackgroundColor(Color.TRANSPARENT);
+                    if (drawerContent != null) drawerContent.setBackground(gradientSkinDrawable(gradient.clone()));
+                    if (inputOverlay != null) inputOverlay.setBackground(gradientSkinDrawable(gradient.clone()));
+                    if (expandedOverlay != null) expandedOverlay.setBackground(gradientSkinDrawable(gradient.clone()));
+                } else {
+                    if (drawerLayout != null) drawerLayout.setBackground(solidSkinDrawable(bg, 0));
+                    for (int id : new int[]{R.id.mainContentFrame, R.id.mainBody, R.id.drawerContent, R.id.inputEditorOverlay, R.id.expandedEditorOverlay}) { View view = findViewById(id); if (view != null) view.setBackground(solidSkinDrawable(bg, 0)); }
+                }
                 int[] cardIds = new int[]{R.id.paramsCard, R.id.inputText, R.id.outputText, R.id.inputEditorToolbar, R.id.outputEditorToolbar};
                 for (int id : cardIds) { View view = findViewById(id); if (view != null) view.setBackground(solidSkinDrawable(card, (id == R.id.inputText || id == R.id.outputText || id == R.id.paramsCard) ? 8 : 0)); }
 
                 androidx.core.view.WindowInsetsControllerCompat controller = androidx.core.view.WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
                 boolean lightBars = !night || !"default".equals(skin);
                 controller.setAppearanceLightStatusBars(lightBars); controller.setAppearanceLightNavigationBars(lightBars);
-                if (android.os.Build.VERSION.SDK_INT < 35) { getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg); }
+                if (android.os.Build.VERSION.SDK_INT < 35) {
+                    if (gradient != null) {
+                        getWindow().setStatusBarColor(Color.TRANSPARENT);
+                        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+                    } else {
+                        getWindow().setStatusBarColor(bg);
+                        getWindow().setNavigationBarColor(bg);
+                    }
+                }
             }
 
             private void showFontSizeDialog() {
@@ -3408,6 +3435,13 @@ jobs:
                 systemSeek.setOnSeekBarChangeListener(new SimpleSeekListener() { @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) { int offset = progress - 2; systemLabel.setText("系统字号 (按钮/标题等): " + (offset > 0 ? "+" + offset : offset)); updateFontSize(textSeek.getProgress() - 4, offset); } });
 
                 LinearLayout skinRow = new LinearLayout(this); skinRow.setOrientation(LinearLayout.HORIZONTAL); skinRow.setGravity(android.view.Gravity.CENTER); skinRow.setPadding(0, (int) (6 * density), 0, (int) (2 * density));
+                TextView depthLabel = new TextView(this); depthLabel.setText("界面深浅"); depthLabel.setTextSize(13f); depthLabel.setTextColor(0xFF777777); depthLabel.setPadding(0, (int) (8 * density), 0, 0);
+                android.widget.SeekBar depthSeek = new android.widget.SeekBar(this); depthSeek.setMax(100); depthSeek.setProgress(skinDepth); depthSeek.setPadding((int) (8 * density), 0, (int) (8 * density), (int) (6 * density));
+                Runnable refreshDepthVisibility = () -> {
+                    boolean showDepth = !"default".equals(sp.getString("ui_skin", "default"));
+                    depthLabel.setVisibility(showDepth ? View.VISIBLE : View.GONE);
+                    depthSeek.setVisibility(showDepth ? View.VISIBLE : View.GONE);
+                };
                 final String[] skinKeys = new String[]{"default", "egg", "green", "blue", "gradient"};
                 final android.widget.ImageButton[] skinButtons = new android.widget.ImageButton[skinKeys.length];
                 Runnable refreshSkinSelection = () -> {
@@ -3426,12 +3460,9 @@ jobs:
                     if (!"gradient".equals(key)) choice.setColorFilter(skinAccent(key)); else choice.clearColorFilter();
                     choice.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER); choice.setPadding((int) (5 * density), (int) (8 * density), (int) (5 * density), (int) (8 * density)); choice.setContentDescription("界面皮肤");
                     LinearLayout.LayoutParams choiceParams = new LinearLayout.LayoutParams((int) (39 * density), (int) (39 * density)); choiceParams.setMargins((int) (3 * density), 0, (int) (3 * density), 0); skinRow.addView(choice, choiceParams);
-                    choice.setOnClickListener(v -> { if ("gradient".equals(key)) randomizeGradientSkinPalette(); sp.edit().putString("ui_skin", key).apply(); applySkin(key); refreshSkinSelection.run(); });
+                    choice.setOnClickListener(v -> { if ("gradient".equals(key)) randomizeGradientSkinPalette(); sp.edit().putString("ui_skin", key).apply(); applySkin(key); refreshSkinSelection.run(); refreshDepthVisibility.run(); });
                 }
                 refreshSkinSelection.run();
-
-                TextView depthLabel = new TextView(this); depthLabel.setText("界面深浅"); depthLabel.setTextSize(13f); depthLabel.setTextColor(0xFF777777); depthLabel.setPadding(0, (int) (8 * density), 0, 0);
-                android.widget.SeekBar depthSeek = new android.widget.SeekBar(this); depthSeek.setMax(100); depthSeek.setProgress(skinDepth); depthSeek.setPadding((int) (8 * density), 0, (int) (8 * density), (int) (6 * density));
                 depthSeek.setOnSeekBarChangeListener(new SimpleSeekListener() {
                     @Override public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) {
                         sp.edit().putInt("skin_depth", progress).apply();
@@ -3440,7 +3471,7 @@ jobs:
                 });
 
                 Button done = new Button(this); done.setText("完成"); done.setTextColor(0xFF2196F3); done.setBackgroundColor(Color.TRANSPARENT); LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); doneParams.gravity = android.view.Gravity.END; doneParams.rightMargin = (int) (1 * density); done.setLayoutParams(doneParams);
-                layout.addView(title); layout.addView(textLabel); layout.addView(textSeek); layout.addView(systemLabel); layout.addView(systemSeek); layout.addView(skinRow); layout.addView(depthLabel); layout.addView(depthSeek); layout.addView(done);
+                layout.addView(title); layout.addView(textLabel); layout.addView(textSeek); layout.addView(systemLabel); layout.addView(systemSeek); layout.addView(skinRow); layout.addView(depthLabel); layout.addView(depthSeek); layout.addView(done); refreshDepthVisibility.run();
                 android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this).setView(layout).create();
                 Runnable persist = () -> sp.edit().putInt("font_offset_text", textSeek.getProgress() - 4).putInt("font_offset_sys", systemSeek.getProgress() - 2).putInt("skin_depth", depthSeek.getProgress()).apply();
                 done.setOnClickListener(v -> { persist.run(); dialog.dismiss(); }); dialog.setOnCancelListener(d -> persist.run()); dialog.show();
@@ -3869,9 +3900,23 @@ jobs:
                 if (keepChanges) {
                     String value = expandedInputEditText.getText().toString(); int selection = Math.max(0, Math.min(expandedInputEditText.getSelectionStart(), value.length()));
                     boolean old = isRestoringHistory; isRestoringHistory = true; inputText.setText(value); inputText.setSelection(Math.max(0, Math.min(selection, inputText.length()))); isRestoringHistory = old; sp.edit().putString("sync_text", value).apply();
+                } else {
+                    sp.edit().putString("sync_text", originalInputEditorText).apply();
                 }
                 android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE); if (imm != null) imm.hideSoftInputFromWindow(expandedInputEditText.getWindowToken(), 0);
                 inputEditorOverlay.animate().alpha(0f).translationY(100f).setDuration(160).withEndAction(() -> { inputEditorOverlay.setVisibility(View.GONE); isInputEditorOpen = false; drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED); }).start();
+            }
+
+            private void confirmCloseInputEditor() {
+                if (!isInputEditorOpen) return;
+                String current = expandedInputEditText == null ? "" : expandedInputEditText.getText().toString();
+                String original = originalInputEditorText == null ? "" : originalInputEditorText;
+                if (current.equals(original)) { closeInputEditor(false); return; }
+                new android.app.AlertDialog.Builder(this)
+                        .setMessage("是否保存刚才的编辑操作？")
+                        .setPositiveButton("是", (dialog, which) -> closeInputEditor(true))
+                        .setNegativeButton("否", (dialog, which) -> closeInputEditor(false))
+                        .show();
             }
 
             private void applyInputIndent() {
@@ -4152,7 +4197,7 @@ jobs:
             }
 
             @Override public void onBackPressed() {
-                if (isInputEditorOpen && inputEditorOverlay != null && inputEditorOverlay.getVisibility() == View.VISIBLE) { closeInputEditor(true); return; }
+                if (isInputEditorOpen && inputEditorOverlay != null && inputEditorOverlay.getVisibility() == View.VISIBLE) { confirmCloseInputEditor(); return; }
                 if (isEditorOpen && expandedEditorOverlay != null
                         && expandedEditorOverlay.getVisibility() == View.VISIBLE) {
                     View closeButton = findViewById(R.id.btnEditorClose);
