@@ -124,6 +124,29 @@ jobs:
         echo "e3c7176f956ad84bbb33fc693e3b11efd840a5046c2b94eb5d9221dc418f71ae  app/src/main/assets/dededi_candidates_v2.bin" | sha256sum -c
         echo "433ad10519490e4635acfb338838d9ea661e6e90f945f3e78f6964ace3bb8a85  app/src/main/assets/dededi_protected_terms_v2.txt.gz" | sha256sum -c
 
+    - name: Make protected-term asset Android-safe
+      shell: bash
+      run: |
+        set -euo pipefail
+        # AAPT treats .gz specially and may strip/decompress the extension during APK packaging.
+        # Keep the bytes gzip-compressed but give the asset a neutral .dat suffix, which is
+        # already configured as noCompress in app/build.gradle.
+        mv app/src/main/assets/dededi_protected_terms_v2.txt.gz \
+           app/src/main/assets/dededi_protected_terms_v2.dat
+        python - <<'PYAAPT'
+        from pathlib import Path
+        p = Path("app/src/main/java/com/app/dededi/CandidateEngine.java")
+        s = p.read_text(encoding="utf-8")
+        old = 'context.getAssets().open("dededi_protected_terms_v2.txt.gz")'
+        new = 'context.getAssets().open("dededi_protected_terms_v2.dat")'
+        if old not in s:
+            raise SystemExit("CandidateEngine protected-term asset reference not found")
+        p.write_text(s.replace(old, new, 1), encoding="utf-8")
+        PYAAPT
+        echo "433ad10519490e4635acfb338838d9ea661e6e90f945f3e78f6964ace3bb8a85  app/src/main/assets/dededi_protected_terms_v2.dat" | sha256sum -c
+        test ! -e app/src/main/assets/dededi_protected_terms_v2.txt.gz
+        grep -q 'dededi_protected_terms_v2.dat' app/src/main/java/com/app/dededi/CandidateEngine.java
+
     - name: Fetch KenLM query-only source
       shell: bash
       run: |
@@ -195,7 +218,7 @@ jobs:
         set -euo pipefail
         test -s app/src/main/assets/sys_lm_q10.dat
         test -s app/src/main/assets/dededi_candidates_v2.bin
-        test -s app/src/main/assets/dededi_protected_terms_v2.txt.gz
+        test -s app/src/main/assets/dededi_protected_terms_v2.dat
         grep -q "Stage-D-conservative" app/src/main/java/com/app/dededi/CandidateEngine.java
         grep -q "deltaSpanNative" app/src/main/cpp/native-lib.cpp
         grep -q "kenlm_query" app/src/main/cpp/CMakeLists.txt
@@ -294,16 +317,30 @@ jobs:
         APK="app/build/outputs/apk/release/app-release.apk"
         test -s "$APK"
         Q10_SIZE="$(unzip -l "$APK" | awk '$4=="assets/sys_lm_q10.dat" {print $1; exit}')"
+        CAND_SIZE="$(unzip -l "$APK" | awk '$4=="assets/dededi_candidates_v2.bin" {print $1; exit}')"
+        PROTECT_SIZE="$(unzip -l "$APK" | awk '$4=="assets/dededi_protected_terms_v2.dat" {print $1; exit}')"
         if [ -z "$Q10_SIZE" ] || [ "$Q10_SIZE" -lt 100000000 ]; then
           echo "::error::Final APK does not contain the full Q10 asset (size=${Q10_SIZE:-missing})"
           exit 1
         fi
+        if [ "$CAND_SIZE" != "904900" ]; then
+          echo "::error::Final APK candidate asset missing/corrupt (size=${CAND_SIZE:-missing})"
+          exit 1
+        fi
+        if [ "$PROTECT_SIZE" != "302154" ]; then
+          echo "::error::Final APK protected-term asset missing/corrupt (size=${PROTECT_SIZE:-missing})"
+          exit 1
+        fi
         APK_SIZE="$(stat -c%s "$APK")"
         echo "Q10 encrypted asset bytes: $Q10_SIZE"
+        echo "Candidate asset bytes: $CAND_SIZE"
+        echo "Protected-term asset bytes: $PROTECT_SIZE"
         echo "Final APK bytes: $APK_SIZE"
         {
           echo "### Q10 build verified"
           echo "- sys_lm_q10.dat: $Q10_SIZE bytes"
+          echo "- dededi_candidates_v2.bin: $CAND_SIZE bytes"
+          echo "- dededi_protected_terms_v2.dat: $PROTECT_SIZE bytes"
           echo "- APK: $APK_SIZE bytes"
           echo "- Artifact name: Dededi-3.5-Q10"
         } >> "$GITHUB_STEP_SUMMARY"
