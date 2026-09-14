@@ -105,6 +105,28 @@ jobs:
         test -s .ci/kenlm/lm/virtual_interface.hh
         git -C .ci/kenlm rev-parse HEAD | tee .ci/kenlm_commit.txt
 
+    - name: Force KenLM legacy C++ mode for Android NDK
+      shell: bash
+      run: |
+        set -euo pipefail
+        python - <<'PYFIX'
+        from pathlib import Path
+        p = Path("app/src/main/cpp/CMakeLists.txt")
+        s = p.read_text(encoding="utf-8")
+        old1 = "target_compile_options(kenlm_query PRIVATE -O3 -Wno-deprecated-declarations)"
+        new1 = "target_compile_options(kenlm_query PRIVATE -std=c++11 -O3 -Wno-deprecated-declarations)"
+        old2 = "target_compile_options(dededi PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)"
+        new2 = "target_compile_options(dededi PRIVATE -std=c++11 -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)"
+        if old1 not in s:
+            raise SystemExit("KenLM compile-options line not found; refusing an unsafe patch")
+        s = s.replace(old1, new1)
+        if old2 in s:
+            s = s.replace(old2, new2)
+        p.write_text(s, encoding="utf-8")
+        PYFIX
+        grep -F -- "-std=c++11" app/src/main/cpp/CMakeLists.txt
+        echo "KenLM is pinned to C++11 because std::binary_function was removed from C++17 libc++."
+
     - name: Encrypt models and generate per-build security shares
       shell: bash
       run: |
