@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Dededi 3.5 Q10
 
 on:
   push:
@@ -30,6 +30,35 @@ jobs:
         unzip -oq Dededi-Q10-source.zip -d .
         test -s app/src/main/java/com/app/dededi/CandidateEngine.java
         test -s .ci/requirements-build.txt
+
+    - name: Make Q10 runtime mandatory
+      shell: bash
+      run: |
+        set -euo pipefail
+        python - <<'PYQ10'
+        from pathlib import Path
+        p = Path("app/src/main/java/com/app/dededi/CorrectionCore.java")
+        s = p.read_text(encoding="utf-8")
+        old = 'CandidateEngine candidateEngine = fastMode ? null : CandidateEngine.get(DedediApp.context());'
+        lines = [
+            'CandidateEngine candidateEngine = fastMode ? null : CandidateEngine.get(DedediApp.context());',
+            '            if (!fastMode) {',
+            '                if (candidateEngine == null)',
+            '                    throw new IllegalStateException("Q10候选引擎加载失败：" + SecureAsset.lastErrorSummary());',
+            '                if (!NGramEngine.ensureReady(DedediApp.context()))',
+            '                    throw new IllegalStateException("Q10语言模型加载失败：" + SecureAsset.lastErrorSummary());',
+            '                double q10Smoke = NGramEngine.delta(DedediApp.context(), "这有一台计算鸡", 6, 1, "机");',
+            '                if (!Double.isFinite(q10Smoke) || q10Smoke < 3.0)',
+            '                    throw new IllegalStateException("Q10运行时自检失败，计算鸡→计算机 Δ=" + q10Smoke);',
+            '            }',
+        ]
+        new = "\n".join(lines)
+        if old not in s:
+            raise SystemExit("Q10 candidate hook not found")
+        s = s.replace(old, new, 1)
+        p.write_text(s, encoding="utf-8")
+        PYQ10
+        grep -q 'Q10运行时自检失败' app/src/main/java/com/app/dededi/CorrectionCore.java
 
     - name: Set up Python 3.10
       uses: actions/setup-python@v5
@@ -258,10 +287,31 @@ jobs:
           exit 1
         }
 
+    - name: Verify final APK really contains Q10
+      shell: bash
+      run: |
+        set -euo pipefail
+        APK="app/build/outputs/apk/release/app-release.apk"
+        test -s "$APK"
+        Q10_SIZE="$(unzip -l "$APK" | awk '$4=="assets/sys_lm_q10.dat" {print $1; exit}')"
+        if [ -z "$Q10_SIZE" ] || [ "$Q10_SIZE" -lt 100000000 ]; then
+          echo "::error::Final APK does not contain the full Q10 asset (size=${Q10_SIZE:-missing})"
+          exit 1
+        fi
+        APK_SIZE="$(stat -c%s "$APK")"
+        echo "Q10 encrypted asset bytes: $Q10_SIZE"
+        echo "Final APK bytes: $APK_SIZE"
+        {
+          echo "### Q10 build verified"
+          echo "- sys_lm_q10.dat: $Q10_SIZE bytes"
+          echo "- APK: $APK_SIZE bytes"
+          echo "- Artifact name: Dededi-3.5-Q10"
+        } >> "$GITHUB_STEP_SUMMARY"
+
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Dededi-3.5
+        name: Dededi-3.5-Q10
         compression-level: 6
         path: app/build/outputs/apk/release/app-release.apk
         if-no-files-found: error
