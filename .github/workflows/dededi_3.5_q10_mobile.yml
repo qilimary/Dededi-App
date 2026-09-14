@@ -117,15 +117,21 @@ jobs:
         new1 = "target_compile_options(kenlm_query PRIVATE -std=c++11 -O3 -Wno-deprecated-declarations)"
         old2 = "target_compile_options(dededi PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)"
         new2 = "target_compile_options(dededi PRIVATE -std=c++11 -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)"
+        old3 = "target_compile_definitions(kenlm_query PRIVATE KENLM_MAX_ORDER=5 NDEBUG)"
+        new3 = "target_compile_definitions(kenlm_query PUBLIC KENLM_MAX_ORDER=5 NDEBUG)"
         if old1 not in s:
             raise SystemExit("KenLM compile-options line not found; refusing an unsafe patch")
+        if old3 not in s:
+            raise SystemExit("KENLM_MAX_ORDER definition line not found; refusing an unsafe patch")
         s = s.replace(old1, new1)
+        s = s.replace(old3, new3)
         if old2 in s:
             s = s.replace(old2, new2)
         p.write_text(s, encoding="utf-8")
         PYFIX
         grep -F -- "-std=c++11" app/src/main/cpp/CMakeLists.txt
-        echo "KenLM is pinned to C++11 because std::binary_function was removed from C++17 libc++."
+        grep -F -- "target_compile_definitions(kenlm_query PUBLIC KENLM_MAX_ORDER=5 NDEBUG)" app/src/main/cpp/CMakeLists.txt
+        echo "KenLM and JNI now share KENLM_MAX_ORDER=5; KenLM is also pinned to C++11."
 
     - name: Encrypt models and generate per-build security shares
       shell: bash
