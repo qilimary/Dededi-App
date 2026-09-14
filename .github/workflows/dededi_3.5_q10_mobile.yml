@@ -151,27 +151,63 @@ jobs:
         distribution: 'temurin'
 
     - name: Set up Android SDK command-line tools
-      uses: android-actions/setup-android@v3
+      uses: android-actions/setup-android@v4
+      with:
+        # Pin the current command-line tools and do not ask the action to install
+        # its legacy default `tools` package. Exact packages are installed below.
+        cmdline-tools-version: '14742923'
+        packages: ''
+        log-accepted-android-sdk-licenses: 'false'
 
-    - name: Ensure Android 16 SDK and native toolchain
+    - name: Ensure Android SDK 36 and native toolchain
       shell: bash
       run: |
         set -euo pipefail
         SDKMANAGER="$(command -v sdkmanager || true)"
         if [ -z "$SDKMANAGER" ]; then
           for candidate in \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/20.0/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/20.0/bin/sdkmanager" \
             "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager" \
-            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
-            "${ANDROID_SDK_ROOT:-}/cmdline-tools/16.0/bin/sdkmanager" \
-            "${ANDROID_HOME:-}/cmdline-tools/16.0/bin/sdkmanager"; do
+            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager"; do
             if [ -n "$candidate" ] && [ -x "$candidate" ]; then
               SDKMANAGER="$candidate"
               break
             fi
           done
         fi
-        test -n "$SDKMANAGER"
-        "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1" >/dev/null
+        if [ -z "$SDKMANAGER" ]; then
+          echo "::error::sdkmanager was not found after setup-android@v4"
+          exit 1
+        fi
+
+        PACKAGES=(
+          "platform-tools"
+          "platforms;android-36"
+          "build-tools;35.0.0"
+          "ndk;27.0.12077973"
+          "cmake;3.22.1"
+        )
+
+        # Google repository downloads occasionally fail transiently. Retry the exact
+        # package install instead of failing the whole build on the first network hiccup.
+        ok=0
+        for attempt in 1 2 3; do
+          echo "Installing Android packages (attempt $attempt/3)..."
+          if "$SDKMANAGER" "${PACKAGES[@]}"; then
+            ok=1
+            break
+          fi
+          sleep $((attempt * 10))
+        done
+        if [ "$ok" -ne 1 ]; then
+          echo "::error::Android SDK package installation failed after 3 attempts"
+          exit 1
+        fi
+
+        test -d "${ANDROID_SDK_ROOT:-${ANDROID_HOME}}/platforms/android-36"
+        test -d "${ANDROID_SDK_ROOT:-${ANDROID_HOME}}/ndk/27.0.12077973"
+        "$SDKMANAGER" --version
 
     - name: Set up Gradle 8.13
       uses: gradle/actions/setup-gradle@v4
