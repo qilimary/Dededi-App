@@ -1,0 +1,203 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dededi-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Expand mobile source bundle
+      shell: bash
+      run: |
+        set -euo pipefail
+        test -s Dededi-Q10-source.zip
+        echo "fd10592aff6382abaa9bcd88123c67ade4e0d772a1e009660c3b3b5f59edf6c4  Dededi-Q10-source.zip" | sha256sum -c
+        unzip -oq Dededi-Q10-source.zip -d .
+        test -s app/src/main/java/com/app/dededi/CandidateEngine.java
+        test -s .ci/requirements-build.txt
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+        cache-dependency-path: .ci/requirements-build.txt
+
+    - name: Install Python dependencies
+      run: python -m pip install -r .ci/requirements-build.txt
+
+    - name: Cache verified RoFormer model archive
+      uses: actions/cache@v4
+      with:
+        path: .model-cache
+        key: dededi-e3ema-661b49f489c56feaa198c0760cc0b2b8a7b18d5155451de65e9f3095026cd9a8
+
+    - name: Download and prepare ExecuTorch RoFormerV2
+      shell: bash
+      run: |
+        set -euo pipefail
+        MODEL_FILE_ID="105_hh7wefkLUsdOJugtq90f6EsBRvpch"
+        MODEL_DIR="roformer_v2_executorch"
+        MODEL_NAME="dededi_E3EMA_executorch_xnnpack_dynamic_int8_perchannel_fp32_head_dynamicL.pte"
+        MODEL_SHA256="661b49f489c56feaa198c0760cc0b2b8a7b18d5155451de65e9f3095026cd9a8"
+        CACHED_MODEL=".model-cache/roformer_v2_executorch.zip"
+        mkdir -p .model-cache "$MODEL_DIR"
+        if ! echo "$MODEL_SHA256  $CACHED_MODEL" | sha256sum -c --status; then
+          gdown "$MODEL_FILE_ID" --no-cookies -O "$CACHED_MODEL"
+        fi
+        echo "$MODEL_SHA256  $CACHED_MODEL" | sha256sum -c
+        unzip -oq "$CACHED_MODEL" -d "$MODEL_DIR"
+        test -s "$MODEL_DIR/$MODEL_NAME"
+        test -s "$MODEL_DIR/vocab.txt"
+        cp "$MODEL_DIR/$MODEL_NAME" roformer_mobile.pte
+        python .ci/scripts/prepare_vocab.py
+
+    - name: Cache verified Q10 language model
+      uses: actions/cache@v4
+      with:
+        path: .q10-cache
+        key: dededi-q10-4d4b507c7fd34fa584a8c9001201be2eb2ca2d32cbf1c9b9edb66f8284009815
+
+    - name: Download verified Q10 5-gram model
+      shell: bash
+      run: |
+        set -euo pipefail
+        MODEL_FILE_ID="1Tdevlnj4UP2zQKSp1gYCBWzXVRQDGLE8"
+        MODEL_SHA256="4d4b507c7fd34fa584a8c9001201be2eb2ca2d32cbf1c9b9edb66f8284009815"
+        CACHED_MODEL=".q10-cache/dededi_final_5gram_q10.klm.bin"
+        mkdir -p .q10-cache
+        if ! echo "$MODEL_SHA256  $CACHED_MODEL" | sha256sum -c --status; then
+          gdown "$MODEL_FILE_ID" --no-cookies -O "$CACHED_MODEL"
+        fi
+        echo "$MODEL_SHA256  $CACHED_MODEL" | sha256sum -c
+        cp "$CACHED_MODEL" dededi_final_5gram_q10.klm.bin
+        test "$(stat -c%s dededi_final_5gram_q10.klm.bin)" -eq 146771061
+
+    - name: Verify checked-in two-stage resources
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "e3c7176f956ad84bbb33fc693e3b11efd840a5046c2b94eb5d9221dc418f71ae  app/src/main/assets/dededi_candidates_v2.bin" | sha256sum -c
+        echo "433ad10519490e4635acfb338838d9ea661e6e90f945f3e78f6964ace3bb8a85  app/src/main/assets/dededi_protected_terms_v2.txt.gz" | sha256sum -c
+
+    - name: Fetch KenLM query-only source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf .ci/kenlm
+        git clone --depth 1 https://github.com/kpu/kenlm.git .ci/kenlm
+        test -s .ci/kenlm/lm/model.hh
+        test -s .ci/kenlm/lm/virtual_interface.hh
+        git -C .ci/kenlm rev-parse HEAD | tee .ci/kenlm_commit.txt
+
+    - name: Encrypt models and generate per-build security shares
+      shell: bash
+      run: |
+        set -euo pipefail
+        python .ci/scripts/encrypt_assets.py
+
+    - name: Install generated and encrypted assets
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p app/src/main/java/com/app/dededi app/src/main/cpp app/src/main/assets app/src/main/res/mipmap-xxxhdpi
+        cp generated_security/GeneratedSecuritySeed.java app/src/main/java/com/app/dededi/
+        cp generated_security/key-part-a.cpp app/src/main/cpp/
+        cp generated_security/key-part-b.cpp app/src/main/cpp/
+        cp sys_core_p.dat app/src/main/assets/
+        cp sys_lm_q10.dat app/src/main/assets/
+        cp sys_vocab_p.dat app/src/main/assets/
+        cp sys_typo.dat app/src/main/assets/ || true
+        cp app_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true
+
+    - name: Protect embedded grammar rules
+      shell: bash
+      run: |
+        set -euo pipefail
+        python .ci/scripts/protect_rules.py
+        rm -f .ci/security_material.json
+
+    - name: Q10 integration sanity checks
+      shell: bash
+      run: |
+        set -euo pipefail
+        test -s app/src/main/assets/sys_lm_q10.dat
+        test -s app/src/main/assets/dededi_candidates_v2.bin
+        test -s app/src/main/assets/dededi_protected_terms_v2.txt.gz
+        grep -q "Stage-D-conservative" app/src/main/java/com/app/dededi/CandidateEngine.java
+        grep -q "deltaSpanNative" app/src/main/cpp/native-lib.cpp
+        grep -q "kenlm_query" app/src/main/cpp/CMakeLists.txt
+        echo "Q10 + conservative two-stage candidate integration files are present."
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Set up Android SDK command-line tools
+      uses: android-actions/setup-android@v3
+
+    - name: Ensure Android 16 SDK and native toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        SDKMANAGER="$(command -v sdkmanager || true)"
+        if [ -z "$SDKMANAGER" ]; then
+          for candidate in \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/16.0/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/16.0/bin/sdkmanager"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+        fi
+        test -n "$SDKMANAGER"
+        "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1" >/dev/null
+
+    - name: Set up Gradle 8.13
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.13'
+
+    - name: Build APK (Release mode)
+      shell: bash
+      run: |
+        set -o pipefail
+        gradle assembleRelease --stacktrace --console=plain > build_output.log 2>&1 || {
+          echo "### ❌ 编译未通过！以下是具体报错信息：" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 300 build_output.log >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "### 🔍 关键错误提取：" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "error:|ERROR:|FAILED|Exception|cannot find symbol|method does not" build_output.log | head -50 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        }
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Dededi-3.5
+        compression-level: 6
+        path: app/build/outputs/apk/release/app-release.apk
+        if-no-files-found: error
