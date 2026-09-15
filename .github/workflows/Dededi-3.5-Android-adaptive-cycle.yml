@@ -4967,7 +4967,9 @@ jobs:
         distribution: 'temurin'
 
     - name: Set up Android SDK command-line tools
-      uses: android-actions/setup-android@v3
+      uses: android-actions/setup-android@v4
+      with:
+        packages: ''
 
     - name: Ensure Android 16 SDK and native toolchain
       run: |
@@ -4977,6 +4979,8 @@ jobs:
           for candidate in \
             "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager" \
             "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/20.0/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/20.0/bin/sdkmanager" \
             "${ANDROID_SDK_ROOT:-}/cmdline-tools/16.0/bin/sdkmanager" \
             "${ANDROID_HOME:-}/cmdline-tools/16.0/bin/sdkmanager"; do
             if [ -n "$candidate" ] && [ -x "$candidate" ]; then
