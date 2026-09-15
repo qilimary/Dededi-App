@@ -1,0 +1,680 @@
+name: Build Dededi 3.5 Q10 Confidence v2
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dededi-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Expand mobile source bundle
+      shell: bash
+      run: |
+        set -euo pipefail
+        test -s Dededi-Q10-source.zip
+        echo "fd10592aff6382abaa9bcd88123c67ade4e0d772a1e009660c3b3b5f59edf6c4  Dededi-Q10-source.zip" | sha256sum -c
+        unzip -oq Dededi-Q10-source.zip -d .
+        test -s app/src/main/java/com/app/dededi/CandidateEngine.java
+        test -s .ci/requirements-build.txt
+
+    - name: Make Q10 runtime mandatory
+      shell: bash
+      run: |
+        set -euo pipefail
+        python - <<'PYQ10'
+        from pathlib import Path
+        p = Path("app/src/main/java/com/app/dededi/CorrectionCore.java")
+        s = p.read_text(encoding="utf-8")
+        old = 'CandidateEngine candidateEngine = fastMode ? null : CandidateEngine.get(DedediApp.context());'
+        lines = [
+            'CandidateEngine candidateEngine = fastMode ? null : CandidateEngine.get(DedediApp.context());',
+            '            if (!fastMode) {',
+            '                if (candidateEngine == null)',
+            '                    throw new IllegalStateException("Q10候选引擎加载失败：" + SecureAsset.lastErrorSummary());',
+            '                if (!NGramEngine.ensureReady(DedediApp.context()))',
+            '                    throw new IllegalStateException("Q10语言模型加载失败：" + SecureAsset.lastErrorSummary());',
+            '                double q10Smoke = NGramEngine.delta(DedediApp.context(), "这有一台计算鸡", 6, 1, "机");',
+            '                if (!Double.isFinite(q10Smoke) || q10Smoke < 3.0)',
+            '                    throw new IllegalStateException("Q10运行时自检失败，计算鸡→计算机 Δ=" + q10Smoke);',
+            '            }',
+        ]
+        new = "\n".join(lines)
+        if old not in s:
+            raise SystemExit("Q10 candidate hook not found")
+        s = s.replace(old, new, 1)
+        p.write_text(s, encoding="utf-8")
+        PYQ10
+        grep -q 'Q10运行时自检失败' app/src/main/java/com/app/dededi/CorrectionCore.java
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+        cache-dependency-path: .ci/requirements-build.txt
+
+    - name: Install Python dependencies
+      run: python -m pip install -r .ci/requirements-build.txt
+
+    - name: Cache verified RoFormer model archive
+      uses: actions/cache@v4
+      with:
+        path: .model-cache
+        key: dededi-e3ema-661b49f489c56feaa198c0760cc0b2b8a7b18d5155451de65e9f3095026cd9a8
+
+    - name: Download and prepare ExecuTorch RoFormerV2
+      shell: bash
+      run: |
+        set -euo pipefail
+        MODEL_FILE_ID="105_hh7wefkLUsdOJugtq90f6EsBRvpch"
+        MODEL_DIR="roformer_v2_executorch"
+        MODEL_NAME="dededi_E3EMA_executorch_xnnpack_dynamic_int8_perchannel_fp32_head_dynamicL.pte"
+        MODEL_SHA256="661b49f489c56feaa198c0760cc0b2b8a7b18d5155451de65e9f3095026cd9a8"
+        CACHED_MODEL=".model-cache/roformer_v2_executorch.zip"
+        mkdir -p .model-cache "$MODEL_DIR"
+        if ! echo "$MODEL_SHA256  $CACHED_MODEL" | sha256sum -c --status; then
+          gdown "$MODEL_FILE_ID" --no-cookies -O "$CACHED_MODEL"
+        fi
+        echo "$MODEL_SHA256  $CACHED_MODEL" | sha256sum -c
+        unzip -oq "$CACHED_MODEL" -d "$MODEL_DIR"
+        test -s "$MODEL_DIR/$MODEL_NAME"
+        test -s "$MODEL_DIR/vocab.txt"
+        cp "$MODEL_DIR/$MODEL_NAME" roformer_mobile.pte
+        python .ci/scripts/prepare_vocab.py
+
+    - name: Cache verified Q10 language model
+      uses: actions/cache@v4
+      with:
+        path: .q10-cache
+        key: dededi-q10-4d4b507c7fd34fa584a8c9001201be2eb2ca2d32cbf1c9b9edb66f8284009815
+
+    - name: Download verified Q10 5-gram model
+      shell: bash
+      run: |
+        set -euo pipefail
+        MODEL_FILE_ID="1Tdevlnj4UP2zQKSp1gYCBWzXVRQDGLE8"
+        MODEL_SHA256="4d4b507c7fd34fa584a8c9001201be2eb2ca2d32cbf1c9b9edb66f8284009815"
+        CACHED_MODEL=".q10-cache/dededi_final_5gram_q10.klm.bin"
+        mkdir -p .q10-cache
+        if ! echo "$MODEL_SHA256  $CACHED_MODEL" | sha256sum -c --status; then
+          gdown "$MODEL_FILE_ID" --no-cookies -O "$CACHED_MODEL"
+        fi
+        echo "$MODEL_SHA256  $CACHED_MODEL" | sha256sum -c
+        cp "$CACHED_MODEL" dededi_final_5gram_q10.klm.bin
+        test "$(stat -c%s dededi_final_5gram_q10.klm.bin)" -eq 146771061
+
+    - name: Verify checked-in two-stage resources
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "e3c7176f956ad84bbb33fc693e3b11efd840a5046c2b94eb5d9221dc418f71ae  app/src/main/assets/dededi_candidates_v2.bin" | sha256sum -c
+        echo "433ad10519490e4635acfb338838d9ea661e6e90f945f3e78f6964ace3bb8a85  app/src/main/assets/dededi_protected_terms_v2.txt.gz" | sha256sum -c
+
+    - name: Make protected-term asset Android-safe
+      shell: bash
+      run: |
+        set -euo pipefail
+        # AAPT treats .gz specially and may strip/decompress the extension during APK packaging.
+        # Keep the bytes gzip-compressed but give the asset a neutral .dat suffix, which is
+        # already configured as noCompress in app/build.gradle.
+        mv app/src/main/assets/dededi_protected_terms_v2.txt.gz \
+           app/src/main/assets/dededi_protected_terms_v2.dat
+        python - <<'PYAAPT'
+        from pathlib import Path
+        p = Path("app/src/main/java/com/app/dededi/CandidateEngine.java")
+        s = p.read_text(encoding="utf-8")
+        old = 'context.getAssets().open("dededi_protected_terms_v2.txt.gz")'
+        new = 'context.getAssets().open("dededi_protected_terms_v2.dat")'
+        if old not in s:
+            raise SystemExit("CandidateEngine protected-term asset reference not found")
+        p.write_text(s.replace(old, new, 1), encoding="utf-8")
+        PYAAPT
+        echo "433ad10519490e4635acfb338838d9ea661e6e90f945f3e78f6964ace3bb8a85  app/src/main/assets/dededi_protected_terms_v2.dat" | sha256sum -c
+        test ! -e app/src/main/assets/dededi_protected_terms_v2.txt.gz
+        grep -q 'dededi_protected_terms_v2.dat' app/src/main/java/com/app/dededi/CandidateEngine.java
+
+    - name: Install Q10 score gate and repeated-term protection
+      shell: bash
+      run: |
+        set -euo pipefail
+        cat > app/src/main/java/com/app/dededi/CandidateEngine.java <<'JAVAQ10'
+        package com.app.dededi;
+        
+        import android.content.Context;
+        import java.io.BufferedReader;
+        import java.io.DataInputStream;
+        import java.io.BufferedInputStream;
+        import java.io.InputStreamReader;
+        import java.nio.charset.StandardCharsets;
+        import java.util.ArrayList;
+        import java.util.Arrays;
+        import java.util.Collections;
+        import java.util.Comparator;
+        import java.util.HashMap;
+        import java.util.HashSet;
+        import java.util.List;
+        import java.util.Map;
+        import java.util.Set;
+        import java.util.zip.GZIPInputStream;
+        
+        /**
+         * Q10 two-stage character candidates with a high-precision score gate.
+         * Keeps the Stage-D-conservative prefilters, then applies stricter 0..100 score gates.
+         * The public-facing score is 0..100 and is only a ranking/acceptance score,
+         * not a calibrated mathematical probability.
+         */
+        final class CandidateEngine {
+            static final class Decision {
+                final int index;
+                final char source, target;
+                final double delta, margin;
+                final boolean empirical;
+                final int evidence;
+                final int score;
+                Decision(int index, char source, char target, double delta, double margin,
+                         boolean empirical, int evidence, int score) {
+                    this.index=index; this.source=source; this.target=target;
+                    this.delta=delta; this.margin=margin; this.empirical=empirical;
+                    this.evidence=evidence; this.score=score;
+                }
+            }
+        
+            /**
+             * Whole-document repeat guard.  We intentionally do NOT protect a single
+             * repeated character: ordinary Chinese repeats common characters constantly.
+             * Instead, an exact 2-char fragment must appear >=3 times, while an exact
+             * 3..6-char fragment only needs >=2 appearances.  This protects repeated
+             * names/terms/places in novels and chats without changing dictionary/rules/RoFormer.
+             */
+            static final class RepeatGuard {
+                private final Set<Long> repeated2;
+                private final Set<Long> repeated3to6;
+                private RepeatGuard(Set<Long> repeated2, Set<Long> repeated3to6) {
+                    this.repeated2=repeated2; this.repeated3to6=repeated3to6;
+                }
+        
+                static RepeatGuard fromText(String text) {
+                    if (text==null || text.length()<2) return new RepeatGuard(Collections.emptySet(), Collections.emptySet());
+                    Map<Long,Byte> c2=new HashMap<>();
+                    Map<Long,Byte> cLong=new HashMap<>();
+                    for (int i=0;i<text.length();i++) {
+                        if (!isHan(text.charAt(i))) continue;
+                        long h=hashSeed();
+                        for (int len=1;len<=6 && i+len<=text.length();len++) {
+                            char ch=text.charAt(i+len-1);
+                            if (!isHan(ch)) break;
+                            h=hashStep(h,ch);
+                            if (len==2) incrementCapped(c2,h,3);
+                            else if (len>=3) incrementCapped(cLong,h,2);
+                        }
+                    }
+                    Set<Long> r2=new HashSet<>(), rLong=new HashSet<>();
+                    for (Map.Entry<Long,Byte> e:c2.entrySet()) if (e.getValue()>=3) r2.add(e.getKey());
+                    for (Map.Entry<Long,Byte> e:cLong.entrySet()) if (e.getValue()>=2) rLong.add(e.getKey());
+                    return new RepeatGuard(Collections.unmodifiableSet(r2),Collections.unmodifiableSet(rLong));
+                }
+        
+                boolean[] mask(String text) {
+                    boolean[] mask=new boolean[text.length()];
+                    if ((repeated2.isEmpty() && repeated3to6.isEmpty()) || text.length()<2) return mask;
+                    for (int i=0;i<text.length();i++) {
+                        if (!isHan(text.charAt(i))) continue;
+                        long h=hashSeed();
+                        for (int len=1;len<=6 && i+len<=text.length();len++) {
+                            char ch=text.charAt(i+len-1);
+                            if (!isHan(ch)) break;
+                            h=hashStep(h,ch);
+                            boolean hit=(len==2 && repeated2.contains(h)) || (len>=3 && repeated3to6.contains(h));
+                            if (hit) Arrays.fill(mask,i,i+len,true);
+                        }
+                    }
+                    return mask;
+                }
+        
+                private static void incrementCapped(Map<Long,Byte> map,long key,int cap) {
+                    byte old=map.getOrDefault(key,(byte)0);
+                    if (old<cap) map.put(key,(byte)(old+1));
+                }
+                private static boolean isHan(char c) { return Character.UnicodeScript.of(c)==Character.UnicodeScript.HAN; }
+                private static long hashSeed() { return 0xcbf29ce484222325L; }
+                private static long hashStep(long h,char c) {
+                    h ^= (c & 0xff); h *= 0x100000001b3L;
+                    h ^= ((c >>> 8) & 0xff); h *= 0x100000001b3L;
+                    return h;
+                }
+            }
+        
+            private static final class Candidate {
+                final char target; final boolean empirical; final int count;
+                Candidate(char target, boolean empirical, int count) { this.target=target;this.empirical=empirical;this.count=count; }
+            }
+            private static final class Entry {
+                final Candidate[] primary, empirical;
+                Entry(Candidate[] primary, Candidate[] empirical) { this.primary=primary;this.empirical=empirical; }
+            }
+            private static final class Scored {
+                final Candidate candidate; final double delta;
+                Scored(Candidate candidate, double delta) { this.candidate=candidate;this.delta=delta; }
+            }
+        
+            private static final Object LOCK = new Object();
+            private static volatile CandidateEngine instance;
+            private final Map<Character, Entry> table;
+            private final Map<Character, String[]> protectionByFirst;
+            private CandidateEngine(Map<Character, Entry> table, Map<Character, String[]> protectionByFirst) {
+                this.table=table;this.protectionByFirst=protectionByFirst;
+            }
+        
+            static CandidateEngine get(Context context) {
+                CandidateEngine local=instance; if (local!=null) return local;
+                synchronized (LOCK) {
+                    local=instance; if (local!=null) return local;
+                    try { instance=local=load(context); }
+                    catch (Throwable error) { SecureAsset.recordError("两阶段候选资源加载失败", error); return null; }
+                    return local;
+                }
+            }
+        
+            private static CandidateEngine load(Context context) throws Exception {
+                Map<Character, Entry> map=new HashMap<>(8192);
+                try (DataInputStream in=new DataInputStream(new BufferedInputStream(context.getAssets().open("dededi_candidates_v2.bin"),64*1024))) {
+                    byte[] magic=new byte[4];in.readFully(magic);
+                    if (magic[0]!='D'||magic[1]!='D'||magic[2]!='C'||magic[3]!='2') throw new IllegalStateException("候选资源版本错误");
+                    int n=in.readInt(); if(n<5000||n>10000) throw new IllegalStateException("候选源字数量异常:"+n);
+                    for(int i=0;i<n;i++) {
+                        int src=in.readInt(), ns=in.readUnsignedByte(), ne=in.readUnsignedByte();
+                        if(src>Character.MAX_VALUE||ns>24||ne>24) throw new IllegalStateException("候选资源损坏");
+                        Candidate[] ps=new Candidate[ns], es=new Candidate[ne];
+                        for(int j=0;j<ns;j++) {
+                            int t=in.readInt(); in.readUnsignedShort();in.readUnsignedShort();in.readUnsignedShort();in.readUnsignedByte();
+                            ps[j]=new Candidate((char)t,false,0);
+                        }
+                        for(int j=0;j<ne;j++) es[j]=new Candidate((char)in.readInt(),true,in.readUnsignedShort());
+                        map.put((char)src,new Entry(ps,es));
+                    }
+                    if(in.read()!=-1) throw new IllegalStateException("候选资源存在尾部异常数据");
+                }
+                Map<Character,List<String>> grouped=new HashMap<>();
+                try (BufferedReader br=new BufferedReader(new InputStreamReader(new GZIPInputStream(context.getAssets().open("dededi_protected_terms_v2.dat"),64*1024),StandardCharsets.UTF_8),64*1024)) {
+                    String line; while((line=br.readLine())!=null) {
+                        String term=line.trim(); if(term.length()<2||term.charAt(0)=='#')continue;
+                        grouped.computeIfAbsent(term.charAt(0),k->new ArrayList<>()).add(term);
+                    }
+                }
+                Map<Character,String[]> protect=new HashMap<>(grouped.size()*2);
+                for(Map.Entry<Character,List<String>> e:grouped.entrySet()) {
+                    e.getValue().sort((a,b)->Integer.compare(b.length(),a.length()));
+                    protect.put(e.getKey(),e.getValue().toArray(new String[0]));
+                }
+                return new CandidateEngine(Collections.unmodifiableMap(map),Collections.unmodifiableMap(protect));
+            }
+        
+            private boolean[] protectionMask(String text, RepeatGuard repeatGuard) {
+                boolean[] mask=new boolean[text.length()];
+                for(int i=0;i<text.length();i++) {
+                    String[] terms=protectionByFirst.get(text.charAt(i)); if(terms==null)continue;
+                    for(String term:terms) if(i+term.length()<=text.length()&&text.regionMatches(i,term,0,term.length()))
+                        Arrays.fill(mask,i,i+term.length(),true);
+                }
+                if (repeatGuard!=null) {
+                    boolean[] repeated=repeatGuard.mask(text);
+                    for (int i=0;i<mask.length;i++) if (repeated[i]) mask[i]=true;
+                }
+                return mask;
+            }
+        
+            List<Decision> scan(Context context,String text,boolean[] eligible,RepeatGuard repeatGuard) {
+                return scanInternal(context,text,eligible,false,repeatGuard);
+            }
+            List<Decision> scanCascade(Context context,String text,boolean[] eligible,RepeatGuard repeatGuard) {
+                return scanInternal(context,text,eligible,true,repeatGuard);
+            }
+        
+            private List<Decision> scanInternal(Context context,String text,boolean[] eligible,boolean cascade,RepeatGuard repeatGuard) {
+                if(text==null||text.isEmpty()||eligible==null||eligible.length!=text.length())return Collections.emptyList();
+                boolean[] protectedMask=protectionMask(text,repeatGuard); List<Decision> out=new ArrayList<>();
+                for(int i=0;i<text.length();i++) {
+                    if(!eligible[i]||protectedMask[i]||Character.isSurrogate(text.charAt(i)))continue;
+                    Entry entry=table.get(text.charAt(i)); if(entry==null)continue;
+                    Decision d=evaluate(context,text,i,entry,cascade); if(d!=null)out.add(d);
+                }
+                return out;
+            }
+        
+            private Decision evaluate(Context context,String text,int index,Entry entry,boolean cascade) {
+                final char src=text.charAt(index);
+                List<Scored> primary=new ArrayList<>(entry.primary.length);
+                List<Scored> all=new ArrayList<>(entry.primary.length+entry.empirical.length);
+                for(Candidate c:entry.primary) {
+                    if(blocked(src,c.target))continue;
+                    double d=NGramEngine.delta(context,text,index,1,String.valueOf(c.target));
+                    if(!Double.isFinite(d))return null;
+                    Scored x=new Scored(c,d);primary.add(x);all.add(x);
+                }
+                Comparator<Scored> cmp=(a,b)->{int v=Double.compare(b.delta,a.delta);return v!=0?v:Character.compare(b.candidate.target,a.candidate.target);};
+                primary.sort(cmp);
+                if(!primary.isEmpty()) {
+                    Scored best=primary.get(0);
+                    double second=primary.size()>1?primary.get(1).delta:0.0;
+                    double margin=best.delta-second;
+                    double primaryT=cascade?3.5:2.5, primaryM=cascade?1.0:0.75;
+                    if(best.delta>=primaryT&&margin>=primaryM&&!ambiguityConflict(best.candidate.target,primary)) {
+                        int score=score(best.delta,margin,false,0,cascade);
+                        int required=cascade?98:96;
+                        if(score>=required) return new Decision(index,src,best.candidate.target,best.delta,margin,false,0,score);
+                    }
+                }
+                if(cascade)return null;
+                for(Candidate c:entry.empirical) {
+                    if(blocked(src,c.target))continue;
+                    double d=NGramEngine.delta(context,text,index,1,String.valueOf(c.target));
+                    if(!Double.isFinite(d))return null;
+                    all.add(new Scored(c,d));
+                }
+                if(all.isEmpty())return null;
+                all.sort(cmp); Scored best=all.get(0);
+                if(!best.candidate.empirical)return null;
+                double second=all.size()>1?all.get(1).delta:0.0, margin=best.delta-second;
+                double t=best.candidate.count>=2?3.25:3.5, m=best.candidate.count>=2?1.0:1.25;
+                if(best.delta>=t&&margin>=m&&!ambiguityConflict(best.candidate.target,all)) {
+                    int score=score(best.delta,margin,true,best.candidate.count,false);
+                    if(score>=99) return new Decision(index,src,best.candidate.target,best.delta,margin,true,best.candidate.count,score);
+                }
+                return null;
+            }
+        
+            // Simple 0..100 engineering score: high language-model gain + clear separation from runner-up.
+            // It is deliberately conservative and is NOT presented as a probability.
+            private static int score(double delta,double margin,boolean empirical,int evidence,boolean cascade) {
+                double value=55.0 + 6.0*delta + 8.0*margin;
+                if(empirical) {
+                    value-=8.0;
+                    if(evidence>=2) value+=2.0;
+                    if(evidence>=4) value+=1.0;
+                }
+                if(cascade)value-=2.0;
+                return (int)Math.round(Math.max(0.0,Math.min(100.0,value)));
+            }
+        
+            private static boolean blocked(char a,char b) {
+                return sameGroup(a,b,"的地得")||sameGroup(a,b,"他她它牠祂")||sameGroup(a,b,"你您")||sameGroup(a,b,"爆暴");
+            }
+            private static boolean sameGroup(char a,char b,String group) { return a!=b&&group.indexOf(a)>=0&&group.indexOf(b)>=0; }
+            private static int ambiguityGroup(char c) {
+                String[] groups={"哪那","和或","做作","吗么","于与","以已","需须","在再"};
+                for(int i=0;i<groups.length;i++)if(groups[i].indexOf(c)>=0)return i; return -1;
+            }
+            private static boolean ambiguityConflict(char best,List<Scored> pool) {
+                int g=ambiguityGroup(best); if(g<0)return false; int count=0;
+                for(Scored x:pool)if(ambiguityGroup(x.candidate.target)==g&&++count>=2)return true; return false;
+            }
+        }
+        JAVAQ10
+
+        python - <<'PYCONF'
+        from pathlib import Path
+        p=Path("app/src/main/java/com/app/dededi/CorrectionCore.java")
+        s=p.read_text(encoding="utf-8")
+        
+        old="""        int errorCount = 0;
+                long lastProgressTime = 0;
+        """
+        new="""        int errorCount = 0;
+                long lastProgressTime = 0;
+                final CandidateEngine.RepeatGuard q10RepeatGuard = fastMode ? null : CandidateEngine.RepeatGuard.fromText(text);
+        """
+        if old not in s:
+            raise SystemExit("CorrectionCore repeat-guard insertion point not found")
+        s=s.replace(old,new,1)
+        
+        repls=[
+            ('candidateEngine.scan(DedediApp.context(), q10Text, eligible)',
+             'candidateEngine.scan(DedediApp.context(), q10Text, eligible, q10RepeatGuard)',
+             'Primary Q10 scan call not found'),
+            ('changed.exp = d.empirical ? "Q10两阶段经验候选" : "Q10主候选";',
+             'changed.exp = "评分 " + d.score + "/100";',
+             'Primary Q10 explanation line not found'),
+            ('candidateEngine.scanCascade(DedediApp.context(), cascadeText, cascadeEligible)',
+             'candidateEngine.scanCascade(DedediApp.context(), cascadeText, cascadeEligible, q10RepeatGuard)',
+             'Cascade Q10 scan call not found'),
+            ('changed.exp = "Q10邻近二次确认";',
+             'changed.exp = "评分 " + d.score + "/100";',
+             'Cascade Q10 explanation line not found'),
+        ]
+        for old,new,msg in repls:
+            if old not in s:
+                raise SystemExit(msg)
+            s=s.replace(old,new,1)
+        
+        p.write_text(s,encoding="utf-8")
+        PYCONF
+
+        grep -Fq 'int required=cascade?98:96' app/src/main/java/com/app/dededi/CandidateEngine.java
+        grep -Fq 'if(score>=99)' app/src/main/java/com/app/dededi/CandidateEngine.java
+        grep -Fq 'class RepeatGuard' app/src/main/java/com/app/dededi/CandidateEngine.java
+        grep -Fq 'q10RepeatGuard' app/src/main/java/com/app/dededi/CorrectionCore.java
+        grep -Fq '评分 ' app/src/main/java/com/app/dededi/CorrectionCore.java
+        ! grep -Fq 'Q10主候选' app/src/main/java/com/app/dededi/CorrectionCore.java
+        ! grep -Fq 'Q10两阶段经验候选' app/src/main/java/com/app/dededi/CorrectionCore.java
+
+    - name: Fetch KenLM query-only source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf .ci/kenlm
+        git clone --depth 1 https://github.com/kpu/kenlm.git .ci/kenlm
+        test -s .ci/kenlm/lm/model.hh
+        test -s .ci/kenlm/lm/virtual_interface.hh
+        git -C .ci/kenlm rev-parse HEAD | tee .ci/kenlm_commit.txt
+
+    - name: Force KenLM legacy C++ mode for Android NDK
+      shell: bash
+      run: |
+        set -euo pipefail
+        python - <<'PYFIX'
+        from pathlib import Path
+        p = Path("app/src/main/cpp/CMakeLists.txt")
+        s = p.read_text(encoding="utf-8")
+        old1 = "target_compile_options(kenlm_query PRIVATE -O3 -Wno-deprecated-declarations)"
+        new1 = "target_compile_options(kenlm_query PRIVATE -std=c++11 -O3 -Wno-deprecated-declarations)"
+        old2 = "target_compile_options(dededi PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)"
+        new2 = "target_compile_options(dededi PRIVATE -std=c++11 -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)"
+        old3 = "target_compile_definitions(kenlm_query PRIVATE KENLM_MAX_ORDER=5 NDEBUG)"
+        new3 = "target_compile_definitions(kenlm_query PUBLIC KENLM_MAX_ORDER=5 NDEBUG)"
+        if old1 not in s:
+            raise SystemExit("KenLM compile-options line not found; refusing an unsafe patch")
+        if old3 not in s:
+            raise SystemExit("KENLM_MAX_ORDER definition line not found; refusing an unsafe patch")
+        s = s.replace(old1, new1)
+        s = s.replace(old3, new3)
+        if old2 in s:
+            s = s.replace(old2, new2)
+        p.write_text(s, encoding="utf-8")
+        PYFIX
+        grep -F -- "-std=c++11" app/src/main/cpp/CMakeLists.txt
+        grep -F -- "target_compile_definitions(kenlm_query PUBLIC KENLM_MAX_ORDER=5 NDEBUG)" app/src/main/cpp/CMakeLists.txt
+        echo "KenLM and JNI now share KENLM_MAX_ORDER=5; KenLM is also pinned to C++11."
+
+    - name: Encrypt models and generate per-build security shares
+      shell: bash
+      run: |
+        set -euo pipefail
+        python .ci/scripts/encrypt_assets.py
+
+    - name: Install generated and encrypted assets
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p app/src/main/java/com/app/dededi app/src/main/cpp app/src/main/assets app/src/main/res/mipmap-xxxhdpi
+        cp generated_security/GeneratedSecuritySeed.java app/src/main/java/com/app/dededi/
+        cp generated_security/key-part-a.cpp app/src/main/cpp/
+        cp generated_security/key-part-b.cpp app/src/main/cpp/
+        cp sys_core_p.dat app/src/main/assets/
+        cp sys_lm_q10.dat app/src/main/assets/
+        cp sys_vocab_p.dat app/src/main/assets/
+        cp sys_typo.dat app/src/main/assets/ || true
+        cp app_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true
+
+    - name: Protect embedded grammar rules
+      shell: bash
+      run: |
+        set -euo pipefail
+        python .ci/scripts/protect_rules.py
+        rm -f .ci/security_material.json
+
+    - name: Q10 integration sanity checks
+      shell: bash
+      run: |
+        set -euo pipefail
+        test -s app/src/main/assets/sys_lm_q10.dat
+        test -s app/src/main/assets/dededi_candidates_v2.bin
+        test -s app/src/main/assets/dededi_protected_terms_v2.dat
+        grep -q "Stage-D-conservative" app/src/main/java/com/app/dededi/CandidateEngine.java
+        grep -q "class RepeatGuard" app/src/main/java/com/app/dededi/CandidateEngine.java
+        grep -q "评分 " app/src/main/java/com/app/dededi/CorrectionCore.java
+        grep -q "deltaSpanNative" app/src/main/cpp/native-lib.cpp
+        grep -q "kenlm_query" app/src/main/cpp/CMakeLists.txt
+        echo "Q10 + conservative two-stage candidate integration files are present."
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Set up Android SDK command-line tools
+      uses: android-actions/setup-android@v4
+      with:
+        # Pin the current command-line tools and do not ask the action to install
+        # its legacy default `tools` package. Exact packages are installed below.
+        cmdline-tools-version: '14742923'
+        packages: ''
+        log-accepted-android-sdk-licenses: 'false'
+
+    - name: Ensure Android SDK 36 and native toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        SDKMANAGER="$(command -v sdkmanager || true)"
+        if [ -z "$SDKMANAGER" ]; then
+          for candidate in \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/20.0/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/20.0/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+        fi
+        if [ -z "$SDKMANAGER" ]; then
+          echo "::error::sdkmanager was not found after setup-android@v4"
+          exit 1
+        fi
+
+        PACKAGES=(
+          "platform-tools"
+          "platforms;android-36"
+          "build-tools;35.0.0"
+          "ndk;27.0.12077973"
+          "cmake;3.22.1"
+        )
+
+        # Google repository downloads occasionally fail transiently. Retry the exact
+        # package install instead of failing the whole build on the first network hiccup.
+        ok=0
+        for attempt in 1 2 3; do
+          echo "Installing Android packages (attempt $attempt/3)..."
+          if "$SDKMANAGER" "${PACKAGES[@]}"; then
+            ok=1
+            break
+          fi
+          sleep $((attempt * 10))
+        done
+        if [ "$ok" -ne 1 ]; then
+          echo "::error::Android SDK package installation failed after 3 attempts"
+          exit 1
+        fi
+
+        test -d "${ANDROID_SDK_ROOT:-${ANDROID_HOME}}/platforms/android-36"
+        test -d "${ANDROID_SDK_ROOT:-${ANDROID_HOME}}/ndk/27.0.12077973"
+        "$SDKMANAGER" --version
+
+    - name: Set up Gradle 8.13
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.13'
+
+    - name: Build APK (Release mode)
+      shell: bash
+      run: |
+        set -o pipefail
+        gradle assembleRelease --stacktrace --console=plain > build_output.log 2>&1 || {
+          echo "### ❌ 编译未通过！以下是具体报错信息：" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 300 build_output.log >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "### 🔍 关键错误提取：" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "error:|ERROR:|FAILED|Exception|cannot find symbol|method does not" build_output.log | head -50 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        }
+
+    - name: Verify final APK really contains Q10
+      shell: bash
+      run: |
+        set -euo pipefail
+        APK="app/build/outputs/apk/release/app-release.apk"
+        test -s "$APK"
+        Q10_SIZE="$(unzip -l "$APK" | awk '$4=="assets/sys_lm_q10.dat" {print $1; exit}')"
+        CAND_SIZE="$(unzip -l "$APK" | awk '$4=="assets/dededi_candidates_v2.bin" {print $1; exit}')"
+        PROTECT_SIZE="$(unzip -l "$APK" | awk '$4=="assets/dededi_protected_terms_v2.dat" {print $1; exit}')"
+        if [ -z "$Q10_SIZE" ] || [ "$Q10_SIZE" -lt 100000000 ]; then
+          echo "::error::Final APK does not contain the full Q10 asset (size=${Q10_SIZE:-missing})"
+          exit 1
+        fi
+        if [ "$CAND_SIZE" != "904900" ]; then
+          echo "::error::Final APK candidate asset missing/corrupt (size=${CAND_SIZE:-missing})"
+          exit 1
+        fi
+        if [ "$PROTECT_SIZE" != "302154" ]; then
+          echo "::error::Final APK protected-term asset missing/corrupt (size=${PROTECT_SIZE:-missing})"
+          exit 1
+        fi
+        APK_SIZE="$(stat -c%s "$APK")"
+        echo "Q10 encrypted asset bytes: $Q10_SIZE"
+        echo "Candidate asset bytes: $CAND_SIZE"
+        echo "Protected-term asset bytes: $PROTECT_SIZE"
+        echo "Final APK bytes: $APK_SIZE"
+        {
+          echo "### Q10 build verified"
+          echo "- sys_lm_q10.dat: $Q10_SIZE bytes"
+          echo "- dededi_candidates_v2.bin: $CAND_SIZE bytes"
+          echo "- dededi_protected_terms_v2.dat: $PROTECT_SIZE bytes"
+          echo "- APK: $APK_SIZE bytes"
+          echo "- Artifact name: Dededi-3.5-Q10-Confidence-v2"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Dededi-3.5-Q10-Confidence-v2
+        compression-level: 6
+        path: app/build/outputs/apk/release/app-release.apk
+        if-no-files-found: error
