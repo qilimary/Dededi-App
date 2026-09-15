@@ -1226,12 +1226,13 @@ jobs:
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="自定义错词库" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_marginBottom="8dp"/>
                         <com.app.dededi.FlowLayout android:id="@+id/llCustomTypos" android:layout_width="match_parent" android:layout_height="wrap_content"/>
                         <Button android:id="@+id/btnExpandTypos" android:layout_width="match_parent" android:layout_height="36dp" android:text="展开更多" android:textSize="12sp" android:backgroundTint="#E0E0E0" android:textColor="@color/text_primary" android:visibility="gone" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" android:insetTop="0dp" android:insetBottom="0dp"/>
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="16dp" android:layout_marginTop="8dp">
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="8dp">
                             <EditText android:id="@+id/etOriginal" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:maxLength="5" android:hint="原始文本" android:textColorHint="#BDBDBD" android:background="@color/card_bg" android:padding="8dp" android:textSize="13sp" android:textColor="@color/text_primary"/>
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=" → " android:textColor="@color/text_primary"/>
                             <EditText android:id="@+id/etCorrected" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:maxLength="5" android:hint="修改后" android:textColorHint="#BDBDBD" android:background="@color/card_bg" android:padding="8dp" android:textSize="13sp" android:textColor="@color/text_primary"/>
                             <Button android:id="@+id/btnAddTypo" android:layout_width="60dp" android:layout_height="40dp" android:text="添加" android:textSize="12sp" android:backgroundTint="#81C784" android:layout_marginStart="4dp" android:padding="0dp" android:insetTop="0dp" android:insetBottom="0dp"/>
                         </LinearLayout>
+                        <TextView android:id="@+id/tvWhitelistJumpHint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="↑仅在此卡片内输入需保护的词，再点击添加即可。" android:textSize="11sp" android:textColor="#9E9E9E" android:paddingTop="3dp" android:paddingLeft="2dp" android:layout_marginBottom="16dp" android:visibility="gone"/>
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#E0E0E0" android:layout_marginBottom="16dp"/>
                         <RelativeLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="最近50条纠错历史" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/text_primary" android:layout_centerVertical="true"/>
@@ -2337,6 +2338,7 @@ jobs:
             private static final Pattern TYPO_FIELDS = Pattern.compile("\\s+");
             public static TypoIndex currentTypoIndex() { return typoIndex; }
             public static volatile boolean typoMapLoaded, isCleanDialogOpen, isEditorOpen, isWaitingForFloatResult, hasNewFloatResult;
+            private static volatile boolean processSessionInitialized;
             public static List<List<TextBlock>> allSentencesBlocks = new ArrayList<>(), pendingFloatBlocks = new ArrayList<>();
             public static long lastTimeMs, pendingFloatTimeMs;
             public static String pendingFloatFileId;
@@ -2569,11 +2571,11 @@ jobs:
                     // pycorrector 的经典示例包含“因该→应该、让坐→让座”，但本应用不做无条件替换：
                     // “因该公司/因该项目”以及“这里不让坐/让他坐下”都可能是正常表达，只在高确定性上下文触发。
                     addRule("(因该)()((?=为|是|已经|正在|尽快|尽量|及时|立即|马上|首先|先(?:行|把|做|去|来|看|说|处理|解决|完成)))", new String[][]{{"应该", null, "用字不当"}});
-                    addRule("(看在)([^，,。；;！？!?：:\\n]{1,40}?的)(份上)", new String[][]{{null, "分上", "规范写法为‘看在……的分上’"}});
-                    addRule("((?:第?(?:[0-9零〇一二两三四五六七八九十百千万亿]+(?:余|多|来)?|几)|数|多|若干)[ 　]*)()(位)(?=[ 　]*(?:犯罪嫌疑人|嫌疑人|犯罪分子|罪犯|犯人|嫌犯|逃犯|通缉犯|凶手|歹徒|人贩子|毒贩|诈骗犯|盗窃犯|抢劫犯|杀人犯)(?=[ 　]*(?:$|[，,。；;！？!?：:、…\n]|已|被|因|涉嫌|正在|正|曾|将|均|都|分别|目前|当场|随后|后来|最终|供述|交代|承认|落网|被捕|抓获|归案|接受|进入|面临|受到|遭到|逃跑|作案|参与|实施|和|与|及|以及|中|等)))", new String[][]{{null, "名", "“位”不宜用于负面身份人物，建议用“名”"}});
+                    addRule("(看在)([^，,。；;！？!?：:\\n]{1,40}?的)(份上)", new String[][]{{null, "分上", "表示‘情分’时宜用‘分’；规范写法为‘看在……的分上’"}});
+                    addRule("((?:第?(?:[0-9零〇一二两三四五六七八九十百千万亿]+(?:余|多|来)?|几)|数|多|若干)[ 　]*)()(位)(?=[ 　]*(?:犯罪嫌疑人|嫌疑人|犯罪分子|罪犯|犯人|嫌犯|逃犯|通缉犯|凶手|歹徒|人贩子|毒贩|诈骗犯|盗窃犯|抢劫犯|杀人犯)(?=[ 　]*(?:$|[，,。；;！？!?：:、…\n]|已|被|因|涉嫌|正在|正|曾|将|均|都|分别|目前|当场|随后|后来|最终|供述|交代|承认|落网|被捕|抓获|归案|接受|进入|面临|受到|遭到|逃跑|作案|参与|实施|和|与|及|以及|中|等)))", new String[][]{{null, "名", "“位”是含敬意的人称量词，不宜用于嫌疑人、犯罪嫌疑人等负面身份人物，建议用“名”"}});
                     addRule("(开心|快乐|高兴|欢快|兴奋|愉快|轻快|小心|小心翼翼|慢慢|缓缓|艰难|吃力|谨慎|悠闲)([ 　]*)([的地得](?:淌水|蹚水))", new String[][]{{null, "地蹚水", ""}});
-                    addRule("(淌水)()((?=过(?:河|江|溪|沟|水坑|积水|浅滩)|而过|过去|前行|行走|通过|赶路|救人|转移|巡查|巡逻|撤离|上岸|下田|玩(?:水)?))", new String[][]{{"蹚水", null, "人从水中行走应用“蹚水”"}});
-                    addRule("(不止)(是[^，,。；;！？!?：:\\n]{1,28}?[，,]?[ 　]*)(而且|并且|更|甚至|同时|又|也|还(?!有[ 　]*(?:[0-9零〇一二两三四五六七八九十百千万亿几数多]+)))", new String[][]{{"不只", null, ""}});
+                    addRule("(淌水)()((?=过(?:河|江|溪|沟|水坑|积水|浅滩)|而过|过去|前行|行走|通过|赶路|救人|转移|巡查|巡逻|撤离|上岸|下田|玩(?:水)?))", new String[][]{{"蹚水", null, "人从水中行走、通过应用“蹚水”；“淌”表示液体流动"}});
+                    addRule("(不止)(是[^，,。；;！？!?：:\\n]{1,28}?[，,]?[ 　]*)(而且|并且|更|甚至|同时|又|也|还(?!有[ 　]*(?:[0-9零〇一二两三四五六七八九十百千万亿几数多]+)))", new String[][]{{"不只", null, "表示“不仅……还/也……”的递进关系时宜用“不只”；“不止”主要表示数量、范围超出或不停"}});
                     String seatRecipient = "(?:[^，,。；;！？!?：:\\n]{0,10}?(?:老人|老年人|长者|孕妇|孩子|小孩|儿童|病人|患者|伤员|残疾人|乘客|客人|来宾|老师|同学|学生|朋友|长辈|父母|爸爸|妈妈|爷爷|奶奶|先生|女士|军人|工人|行人|路人|陌生人|他|她|你|您|他们|她们|大家|对方|别人|人|者|员|客|生|师|童|妇|士|友|辈))";
                     addRule("((?:为|给|向)" + seatRecipient + ")([ 　]*让)(坐)(?=(?:了|过)?[吧吗呢啊呀哦嘛]?(?:[，,。；;！？!?：:、…\\n]|$))", new String[][]{{null, "座", ""}});
         
@@ -4035,6 +4037,14 @@ jobs:
                 setContentView(R.layout.activity_main);
                 setupSystemBarInsets();
                 instance = this; sp = getSharedPreferences("DedediConfig", MODE_PRIVATE);
+                Intent launchIntent = getIntent();
+                boolean firstActivityInProcess = !processSessionInitialized;
+                processSessionInitialized = true;
+                boolean carriesExternalText = launchIntent != null && (launchIntent.hasExtra("SYNC_TEXT")
+                        || (Intent.ACTION_SEND.equals(launchIntent.getAction()) && launchIntent.getType() != null));
+                // sync_text 只负责同一进程内主界面与悬浮窗同步，不作为跨进程“草稿恢复”。
+                // 真正杀掉 App 进程后从桌面重新进入时应得到干净输入框；分享/悬浮窗跳转携带的文本仍保留。
+                if (firstActivityInProcess && !carriesExternalText) sp.edit().putString("sync_text", "").apply();
                 drawerLayout = findViewById(R.id.drawerLayout); inputText = findViewById(R.id.inputText); outputText = findViewById(R.id.outputText); tvWordCount = findViewById(R.id.tvWordCount); tvResultStaleWarning = findViewById(R.id.tvResultStaleWarning); scrollView = findViewById(R.id.scrollView); progressBar = findViewById(R.id.progressBar);
                 editTemp = findViewById(R.id.editTemp); editThreshDe1 = findViewById(R.id.editThreshDe1); editThreshDe2 = findViewById(R.id.editThreshDe2); editThreshDe3 = findViewById(R.id.editThreshDe3);
                 btnCheck = findViewById(R.id.btnCheck); btnImport = findViewById(R.id.btnImport); btnPaste = findViewById(R.id.btnPaste); btnClear = findViewById(R.id.btnClear); btnCopy = findViewById(R.id.btnCopy); btnSaveTxt = findViewById(R.id.btnSaveTxt);
@@ -4054,7 +4064,7 @@ jobs:
                 });
                 handleIntent(getIntent());
                 title.setOnClickListener(v -> showHelp());
-                menu.setOnClickListener(v -> { editingTypoKey = null; ((Button) findViewById(R.id.btnAddTypo)).setText("添加"); ((EditText) findViewById(R.id.etOriginal)).setText(""); ((EditText) findViewById(R.id.etCorrected)).setText(""); drawerLayout.openDrawer(GravityCompat.END); renderCustomTyposUI(); renderHistoryUI(); });
+                menu.setOnClickListener(v -> { editingTypoKey = null; ((Button) findViewById(R.id.btnAddTypo)).setText("添加"); EditText original = findViewById(R.id.etOriginal); original.setText(""); original.setHint("原始文本"); ((EditText) findViewById(R.id.etCorrected)).setText(""); TextView whitelistHint = findViewById(R.id.tvWhitelistJumpHint); if (whitelistHint != null) whitelistHint.setVisibility(View.GONE); drawerLayout.openDrawer(GravityCompat.END); renderCustomTyposUI(); renderHistoryUI(); });
                 floatButton.setOnClickListener(v -> {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) startActivityForResult(new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + getPackageName())), 201); else startFloatingService();
                 });
@@ -4631,7 +4641,7 @@ jobs:
                 add.setOnClickListener(v -> {
                     String source = original.getText().toString().trim(), target = corrected.getText().toString().trim(); if (source.isEmpty()) { Toast.makeText(this, "原始文本不能为空", Toast.LENGTH_SHORT).show(); return; } if (target.isEmpty()) target = source;
                     try {
-                        JSONObject object = new JSONObject(sp.getString("custom_typos", "{}")); if (editingTypoKey != null && !editingTypoKey.equals(source)) object.remove(editingTypoKey); object.put(source, target); sp.edit().putString("custom_typos", object.toString()).apply(); reloadTypoMapAsync(this); renderCustomTyposUI(); original.setText(""); corrected.setText(""); editingTypoKey = null; add.setText("添加"); Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
+                        JSONObject object = new JSONObject(sp.getString("custom_typos", "{}")); if (editingTypoKey != null && !editingTypoKey.equals(source)) object.remove(editingTypoKey); object.put(source, target); sp.edit().putString("custom_typos", object.toString()).apply(); reloadTypoMapAsync(this); renderCustomTyposUI(); original.setText(""); original.setHint("原始文本"); corrected.setText(""); TextView whitelistHint = findViewById(R.id.tvWhitelistJumpHint); if (whitelistHint != null) whitelistHint.setVisibility(View.GONE); editingTypoKey = null; add.setText("添加"); Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
                     } catch (Exception ignored) {}
                 });
                 findViewById(R.id.btnClearHistory).setOnClickListener(v -> new AlertDialog.Builder(this).setMessage("是否清空全部历史记录？").setPositiveButton("是", (d, w) -> {
@@ -4944,12 +4954,66 @@ jobs:
                 if (!current.isEmpty()) groups.add(current); return groups;
             }
         
+            private void jumpToWhitelistFromCorrection() {
+                editingTypoKey = null;
+                Button add = findViewById(R.id.btnAddTypo);
+                EditText original = findViewById(R.id.etOriginal), corrected = findViewById(R.id.etCorrected);
+                TextView hint = findViewById(R.id.tvWhitelistJumpHint);
+                if (add != null) add.setText("添加");
+                if (original != null) { original.setText(""); original.setHint("白名单"); }
+                if (corrected != null) corrected.setText("");
+                if (hint != null) hint.setVisibility(View.VISIBLE);
+                renderCustomTyposUI(); renderHistoryUI();
+                drawerLayout.openDrawer(GravityCompat.END);
+                if (original != null) {
+                    original.requestFocus();
+                    original.postDelayed(() -> original.setHint("原始文本"), 260);
+                    original.postDelayed(() -> original.setHint("白名单"), 520);
+                    original.postDelayed(() -> original.setHint("原始文本"), 780);
+                    original.postDelayed(() -> {
+                        if (!original.hasFocus()) original.requestFocus();
+                        android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                        if (imm != null) imm.showSoftInput(original, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+                    }, 220);
+                }
+            }
+
+            private AlertDialog buildEditChoiceDialog(TextBlock block, String[] options, int whitelistIndex, android.content.DialogInterface.OnClickListener listener) {
+                AlertDialog dialog = new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + block.current + ")").setItems(options, listener).create();
+                dialog.setOnShowListener(ignored -> {
+                    android.widget.ListView list = dialog.getListView();
+                    if (list == null) return;
+                    list.post(() -> {
+                        int first = list.getFirstVisiblePosition();
+                        View row = list.getChildAt(whitelistIndex - first);
+                        if (row instanceof TextView) {
+                            TextView text = (TextView) row;
+                            text.setTextColor(0xFF9E9E9E);
+                            text.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12.5f);
+                        }
+                    });
+                });
+                return dialog;
+            }
+
             private void showEditDialog(TextBlock block) {
                 if (isManuallyEditedOut) { Toast.makeText(this, "文本已手动编辑，无法使用还原。请长按进入便签模式修改。", Toast.LENGTH_LONG).show(); return; }
                 if (block.type == 1) {
-                    String[] options = {"的", "地", "得", "还原为原字 (" + block.original + ")"}; new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + block.current + ")").setItems(options, (dialog, which) -> { String choice = which == 0 ? "的" : which == 1 ? "地" : which == 2 ? "得" : block.original; block.userModified = !choice.equals(block.modelCorrected); block.current = choice; renderFinalBlocks(); HistoryStore.saveBlocks(this, lastSavedHistoryFileId, allSentencesBlocks); }).show();
+                    String[] options = {"的", "地", "得", "还原为原字 (" + block.original + ")", "错改？加入白名单试试"};
+                    AlertDialog dialog = buildEditChoiceDialog(block, options, 4, (d, which) -> {
+                        if (which == 4) { jumpToWhitelistFromCorrection(); return; }
+                        String choice = which == 0 ? "的" : which == 1 ? "地" : which == 2 ? "得" : block.original;
+                        block.userModified = !choice.equals(block.modelCorrected); block.current = choice; renderFinalBlocks(); HistoryStore.saveBlocks(this, lastSavedHistoryFileId, allSentencesBlocks);
+                    });
+                    dialog.show();
                 } else {
-                    String[] options = {"采用修改 (" + block.modelCorrected + ")", "还原 (" + block.original + ")"}; new AlertDialog.Builder(this).setTitle("手动修改 (当前：" + block.current + ")").setItems(options, (dialog, which) -> { String choice = which == 0 ? block.modelCorrected : block.original; block.userModified = !choice.equals(block.modelCorrected); block.current = choice; renderFinalBlocks(); HistoryStore.saveBlocks(this, lastSavedHistoryFileId, allSentencesBlocks); }).show();
+                    String[] options = {"采用修改 (" + block.modelCorrected + ")", "还原 (" + block.original + ")", "错改？加入白名单试试"};
+                    AlertDialog dialog = buildEditChoiceDialog(block, options, 2, (d, which) -> {
+                        if (which == 2) { jumpToWhitelistFromCorrection(); return; }
+                        String choice = which == 0 ? block.modelCorrected : block.original;
+                        block.userModified = !choice.equals(block.modelCorrected); block.current = choice; renderFinalBlocks(); HistoryStore.saveBlocks(this, lastSavedHistoryFileId, allSentencesBlocks);
+                    });
+                    dialog.show();
                 }
             }
         
