@@ -1404,6 +1404,26 @@ jobs:
                             boolean group1Error = !group1.equals(replacement1) || (!explanation.isEmpty() && selected[0] != null);
                             boolean group3Error = !group3.equals(replacement3) || (!explanation.isEmpty() && selected.length > 1 && selected[1] != null);
 
+                            // 相邻冲突标点作为一个整体纠错：随机保留其中一侧。
+                            // 这样删除一侧后，修正后的全文会把红色可点击标记落在实际保留下来的标点上，
+                            // 而不是因为“删除结果长度为 0”错误地借用前一个汉字作为视觉锚点。
+                            boolean punctuationConflict = "标点多余".equals(explanation) && group2.isEmpty()
+                                    && ((group1.matches("[，、]+") && group3.matches("[。；：]"))
+                                    || (group1.matches("[。；：]") && group3.matches("[，、]+")));
+                            if (punctuationConflict && (replacement1.isEmpty() ^ replacement3.isEmpty())) {
+                                String kept = replacement1.isEmpty() ? replacement3 : replacement1;
+                                // 若逗号/顿号一侧本身重复，只保留一个，避免“，，。”随机后留下“，，”。
+                                if (kept.length() > 1 && kept.matches("[，、]+")) kept = kept.substring(0, 1);
+                                String originalPunctuation = group1 + group3;
+                                MainActivity.TextBlock block = new MainActivity.TextBlock(originalPunctuation, kept, true, 1.0f, 6);
+                                block.exp = explanation;
+                                intermediate.add(block);
+                                errorCount++;
+                                if (listener != null) listener.onError("发现错误：" + originalPunctuation + " → " + kept + " | 共 " + errorCount + " 处", true);
+                                cursor = grammarHit.end;
+                                continue;
+                            }
+
                             if (group1Error) {
                                 MainActivity.TextBlock block = new MainActivity.TextBlock(group1, replacement1, true, 1.0f, 6);
                                 block.exp = explanation;
@@ -1687,6 +1707,10 @@ jobs:
             }
 
             public static void saveBlocks(Context context, String fileId, List<List<MainActivity.TextBlock>> blocks) {
+                saveBlocks(context, fileId, blocks, -1L);
+            }
+
+            public static void saveBlocks(Context context, String fileId, List<List<MainActivity.TextBlock>> blocks, long elapsedMs) {
                 if (fileId == null || fileId.isEmpty() || blocks == null || blocks.isEmpty()) return;
                 Context appContext = context.getApplicationContext();
                 AppExecutors.HISTORY.execute(() -> {
@@ -1711,6 +1735,10 @@ jobs:
                                 JSONObject record = history.getJSONObject(i);
                                 String otherId = record.optString("file", "");
                                 if (fileId.equals(otherId)) {
+                                    if (elapsedMs >= 0L && record.optLong("elapsedMs", -1L) != elapsedMs) {
+                                        record.put("elapsedMs", elapsedMs);
+                                        changed = true;
+                                    }
                                     deduplicated.put(record);
                                     continue;
                                 }
@@ -2082,7 +2110,7 @@ jobs:
                         if (result == null || isInterruptRequested || destroyed) { finishInterrupted(); return; }
                         lastCorrectedText = result.cleanText;
                         MainActivity.pendingFloatBlocks = result.blocks; MainActivity.pendingFloatTimeMs = result.elapsedMs; MainActivity.pendingFloatFileId = fileId; MainActivity.hasNewFloatResult = true;
-                        HistoryStore.saveBlocks(this, fileId, result.blocks);
+                        HistoryStore.saveBlocks(this, fileId, result.blocks, result.elapsedMs);
                         AppExecutors.MAIN.post(() -> { if (MainActivity.instance != null && !MainActivity.instance.isFinishing()) MainActivity.instance.onFloatResultReady(); });
                         finishAfterLastErrorIsVisible(result);
                     } catch (Exception exception) {
@@ -2103,7 +2131,8 @@ jobs:
             private void finishSuccess(CorrectionCore.Result result) {
                 if (destroyed || isInterruptRequested) { finishInterrupted(); return; }
                 isChecking = false; btnFloatSwitch.setEnabled(true); circleSpin.setVisibility(View.INVISIBLE);
-                showStatus(result.errorCount == 0 ? "未检测到错误" : "已完成，共修正 " + result.errorCount + " 处", true);
+                String elapsed = String.format(Locale.getDefault(), "%.2f", result.elapsedMs / 1000.0);
+                showStatus((result.errorCount == 0 ? "未发现错误" : "共更正 " + result.errorCount + " 处错误") + "，耗时 " + elapsed + " 秒", true);
                 ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                 if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("Corrected", result.cleanText));
             }
@@ -2520,8 +2549,8 @@ jobs:
                     addRule("(" + particleListItem + ")([ 　]*)(、)(?=[ 　]*" + particleListItem + "(?=[、，,。；;！？!?：:\\n]|$))", new String[][]{{null, "，", "带语气助词的并列项应用逗号，不用顿号"}});
 
                     // 冲突标点串优先于“重复标点”处理，保证“，，。”这类输入能在一轮内归一。
-                    addRule("([，、]+)()([。；：])", new String[][]{{"", null, "删除逗号或顿号"}});
-                    addRule("([。；：])()([，、]+)", new String[][]{{null, "", "删除逗号或顿号"}});
+                    addRule("([，、]+)()([。；：])", new String[][]{{"", null, "标点多余"}, {null, "", "标点多余"}});
+                    addRule("([。；：])()([，、]+)", new String[][]{{"", null, "标点多余"}, {null, "", "标点多余"}});
                     // 明显重复标点：问号/叹号的修辞性叠用不在此列。
                     addRule("(，)()(，+)", new String[][]{{null, "", "逗号重复"}});
                     // 中文聊天中“。。。/。。。。…”常用于表达无语、停顿等语气，保留三连及以上；
@@ -2931,11 +2960,7 @@ jobs:
                         else if ("IgnoredInCopySpan".equals(type)) span = new IgnoredInCopySpan();
                         else if ("JumpSpan".equals(type)) {
                             int target = object.getInt("target");
-                            span = new JumpSpan() {
-                                @Override public int getTargetOffset(Spanned text) { return target; }
-                                @Override public void onClick(View view) { jumpAndFlash((TextView) view, target, null); }
-                                @Override public void updateDrawState(TextPaint paint) { paint.setColor(0xFF2196F3); paint.setUnderlineText(true); paint.setFakeBoldText(true); }
-                            };
+                            span = createPortableJumpSpan(target);
                         }
                         if (span != null && start >= 0 && start <= end && end <= value.length()) result.setSpan(span, start, end, flags);
                     }
@@ -2943,12 +2968,40 @@ jobs:
                 } catch (Exception ignored) { return null; }
             }
 
+            private static JumpSpan createPortableJumpSpan(int target) {
+                return new JumpSpan() {
+                    @Override public int getTargetOffset(Spanned text) { return target; }
+                    @Override public void onClick(View view) { if (view instanceof TextView) jumpAndFlash((TextView) view, target, null); }
+                    @Override public void updateDrawState(TextPaint paint) { paint.setColor(0xFF2196F3); paint.setUnderlineText(true); paint.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0)); }
+                };
+            }
+
+            private static void normalizePortableJumpSpans(SpannableStringBuilder text) {
+                if (text == null) return;
+                JumpSpan[] spans = text.getSpans(0, text.length(), JumpSpan.class);
+                for (JumpSpan old : spans) {
+                    int start = text.getSpanStart(old), end = text.getSpanEnd(old), flags = text.getSpanFlags(old);
+                    int target = old.getTargetOffset(text);
+                    text.removeSpan(old);
+                    if (start >= 0 && end >= start && end <= text.length() && target >= 0 && target <= text.length())
+                        text.setSpan(createPortableJumpSpan(target), start, end, flags);
+                }
+            }
+
             private static void jumpAndFlash(TextView textView, int offset, ScrollView preferred) {
                 try {
                     Spannable text = (Spannable) textView.getText(); if (offset < 0 || offset > text.length()) return; Layout layout = textView.getLayout(); if (layout == null) return;
                     int line = layout.getLineForOffset(offset), lineStart = layout.getLineStart(line), lineEnd = layout.getLineEnd(line), y = layout.getLineTop(line);
                     ScrollView scroll = preferred;
-                    if (scroll == null && textView.getContext() instanceof android.app.Activity) scroll = ((android.app.Activity) textView.getContext()).findViewById(R.id.scrollView);
+                    if (scroll == null) {
+                        android.content.Context context = textView.getContext();
+                        while (context instanceof android.content.ContextWrapper && !(context instanceof android.app.Activity))
+                            context = ((android.content.ContextWrapper) context).getBaseContext();
+                        if (context instanceof android.app.Activity) {
+                            android.app.Activity activity = (android.app.Activity) context;
+                            scroll = activity.findViewById(textView.getId() == R.id.expandedEditText ? R.id.editorScrollView : R.id.scrollView);
+                        }
+                    }
                     if (scroll != null) scroll.scrollTo(0, Math.max(0, y - scroll.getHeight() / 3));
                     BackgroundColorSpan flash = new BackgroundColorSpan(0x609E9E9E); Handler handler = AppExecutors.MAIN;
                     Runnable add = () -> { if (lineStart >= 0 && lineEnd <= text.length()) { text.setSpan(flash, lineStart, lineEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); textView.invalidate(); } };
@@ -4082,14 +4135,18 @@ jobs:
             }
 
             private void openEditor() {
-                originalIsManuallyEdited = isManuallyEditedOut; if (isManuallyEditedOut) lastEditorSpannable = new SpannableStringBuilder(outputText.getText()); if (lastEditorSpannable == null) return;
+                originalIsManuallyEdited = isManuallyEditedOut; if (isManuallyEditedOut) { lastEditorSpannable = new SpannableStringBuilder(outputText.getText()); normalizePortableJumpSpans(lastEditorSpannable); } if (lastEditorSpannable == null) return;
                 originalEditorText = lastEditorSpannable.toString(); isEditorSelfModifying = true; expandedEditText.setText(lastEditorSpannable); isEditorSelfModifying = false; editorUndoStack.clear(); editorRedoStack.clear(); firstEditorCursorTapPending = true; drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
                 expandedEditorOverlay.setAlpha(0); expandedEditorOverlay.setTranslationY(150); expandedEditorOverlay.setVisibility(View.VISIBLE); expandedEditorOverlay.animate().alpha(1).translationY(0).setDuration(250).start(); Toast.makeText(this, "进入编辑模式：波浪线为系统或你修改过的文字。", Toast.LENGTH_SHORT).show(); isEditorOpen = true;
             }
 
             private void applyEditorChanges() {
                 if (!expandedEditText.getText().toString().equals(originalEditorText)) {
-                    isManuallyEditedOut = true; SpannableStringBuilder snapshot = new SpannableStringBuilder(expandedEditText.getText()); outputText.setText(snapshot);
+                    isManuallyEditedOut = true;
+                    SpannableStringBuilder snapshot = new SpannableStringBuilder(expandedEditText.getText());
+                    normalizePortableJumpSpans(snapshot);
+                    lastEditorSpannable = new SpannableStringBuilder(snapshot);
+                    outputText.setText(snapshot); outputText.setMovementMethod(MyLinkMovementMethod.getInstance()); outputText.setHighlightColor(Color.TRANSPARENT);
                     if (lastSavedHistoryFileId != null) { HistoryStore.saveManual(this, lastSavedHistoryFileId, snapshot); saveHistory(extractCleanTextFromSpanned(snapshot), lastSavedHistoryFileId); }
                 }
                 closeEditor();
@@ -4351,7 +4408,7 @@ jobs:
             }
 
             private void showHelp() {
-                String text = "【模式介绍】\n极速：不调用神经网络检查“的/地/得”；仅运行系统内置的错词库和规则。速度最快（毫秒级），适合只想快速检查其他错别字与语病的场景。\n\n专业（RoFormerV2）：不仅检查错别字和语病，还专门纠错“的地得”，推理速度较快（秒级）。\n注：不同手机的速度会有差异；模型也可能出现极少量误判，这是神经网络的通病，在所难免。\n\n通常建议始终使用专业模式，除非你对“的地得”运用得如火纯青。\n\n【温度参数（仅专业模式）】\n控制AI判断的自信（果断）程度。\n• 允许范围：0.5～2.0；默认1.2。\n• 值越低（如0.5）：概率分布越尖锐，模型更激进，修改量可能上升。\n• 值越高（如2.0）：概率分布越平缓，模型更保守，修改量可能下降。\n举例：温度调到0.8时，AI通常更敢改；调到1.5时，AI通常会更保守。\n• 温度不得低于0.5或高于2.0。\n\n【置信度拦截阈值（仅专业模式）】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n• 推荐默认值：的0.76、地0.74、得0.78。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查完毕后，点击带下划线的字词即可手动修改或还原。\n• 输入框展开：点击输入框右上角的展开按钮，可进入全屏输入编辑，支持可拖动滚动条、撤销、还原和首行缩进；完成后内容会自动同步回主输入框。\n• 便签模式：长按底部纠错结果区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 字体大小与皮肤：点击标题栏“A”进入字体设置，可调节字体大小。底部彩色衣服可切换不同的界面皮肤。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，可能导致使用卡顿。也不建议导入带有特定格式和排版（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可跳转至系统进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：\n1.白名单：\n在“原始文本”框输入例如“慢慢地”或“张三”，直接提交。等效于白名单，系统在遇到该词后不会再修改。\n  2.改错：在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义规则优先级高于本系统。\n\n【悬浮窗】\n开启后支持后台随时随地纠错。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
+                String text = "【模式介绍】\n极速：不调用神经网络检查“的/地/得”；仅运行系统内置的错词库和规则。速度最快（毫秒级），适合只想快速检查其他错别字与语病的场景。\n\n专业（RoFormerV2）：不仅检查错别字和语病，还专门纠错“的地得”，推理速度较快（秒级）。\n注：不同手机的速度会有差异；模型也可能出现极少量误判，这是神经网络的通病，在所难免。\n\n通常建议始终使用专业模式，除非你对“的地得”运用得如火纯青。\n\n【温度参数（仅专业模式）】\n控制AI判断的自信（果断）程度。\n• 允许范围：0.5～2.0；默认1.2。\n• 值越低（如0.5）：概率分布越尖锐，模型更激进，修改量可能上升。\n• 值越高（如2.0）：概率分布越平缓，模型更保守，修改量可能下降。\n举例：温度调到0.8时，AI通常更敢改；调到1.5时，AI通常会更保守。\n• 温度不得低于0.5或高于2.0。\n\n【置信度拦截阈值（仅专业模式）】\n只有AI的置信度 ≥ 阈值时才修改，否则保留原字，防止过度纠错。\n• 推荐默认值：的0.76、地0.74、得0.78。\n举例：设置为0.9时，模型修改的置信度超过0.9才会被保留，否则忽略。\n\n【交互与拓展功能】\n• 手动修改：检查后，点击带下划线的字词即可手动修改或还原。\n• 输入框展开：点击输入框右上角的展开按钮，可进入全屏输入编辑，支持可拖动滚动条、撤销、还原和首行缩进；完成后内容会自动同步回主输入框。\n• 便签模式：长按底部纠错结果区域，即可展开便签编辑器进行全局修改，完成后支持直接导出。绿色的波浪线为系统或你修改过的文本（原在输出框中呈现红色）。\n• 字体大小与皮肤：点击标题栏“A”进入字体设置，可调节字体大小。底部彩色衣服可切换不同的界面皮肤。\n• 快速跳转：点击纠错清单中的序号 [1]，可以自动滚动定位至全文对应段落。\n• 一键粘贴：点击按钮快速读取剪贴板内容。（不建议一次性粘贴超过20万字，可能导致闪退）\n• 导入文件：支持txt、md、docx、pdf及图片格式(支持直接OCR识图)。\n  不建议一次导入多个过大的文件，可能导致使用卡顿。也不建议导入带有特定格式和排版（如表格类）的文件，会破坏原有排版。\n\n• 系统分享：在其他App中选中文本，点击分享并选择本App，即可跳转至系统进行纠错。\n• 历史记录：最多保存近50条。\n\n 【错词库】\n  手动定义规则，这些规则会在纠错中自动应用。\n  使用方法：\n1.白名单：\n在“原始文本”框输入例如“慢慢地”或“张三”，直接提交。等效于白名单，系统在遇到该词后不会再修改。\n  2.改错：在“修改后”里再添加文本（如：慢慢的），纠错时原始文本就会被自动修改。\n• 自定义规则优先级高于本系统。\n\n【悬浮窗】\n开启后支持后台随时随地纠错。长按悬浮球或点击面板右上角可同步至应用内继续操作。点击面板外可自动收起。\n\n【标点清理：】\n  当检测到包含复制残留的垃圾标点时会触发弹窗，允许自由清理提纯文本。\n\n• 其他：本App和模型均由 奇 制作与训练。免费使用。想与作者私聊？公众号搜索：Li的信箱";
                 int ui = Math.max(-2, Math.min(2, sp.getInt("font_offset_sys", 0))); TextView view = new TextView(this); view.setText(text); view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 + ui); view.setTextColor(0xFF333333); view.setLineSpacing(0, 1.2f); int padding = (int) (20 * getResources().getDisplayMetrics().density); view.setPadding(padding, padding / 2, padding, 0); ScrollView scroll = new ScrollView(this); scroll.addView(view); new AlertDialog.Builder(this).setTitle("使用说明").setView(scroll).setPositiveButton("知道了", null).show();
             }
 
@@ -4485,7 +4542,7 @@ jobs:
                         if (!manual.isEmpty()) {
                             if (restored != null) { isManuallyEditedOut = true; outputText.setText(restored); outputText.setMovementMethod(MyLinkMovementMethod.getInstance()); outputText.setHighlightColor(Color.TRANSPARENT); btnCheck.setText("继续纠错"); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true); }
                         } else if (!blocks.isEmpty()) {
-                            isManuallyEditedOut = false; allSentencesBlocks = restoredBlocks; lastTimeMs = 0; renderFinalBlocks(); btnCheck.setText("继续纠错"); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true);
+                            isManuallyEditedOut = false; allSentencesBlocks = restoredBlocks; lastTimeMs = Math.max(0L, record.optLong("elapsedMs", 0L)); renderFinalBlocks(); btnCheck.setText("继续纠错"); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true);
                         } else { isManuallyEditedOut = false; allSentencesBlocks.clear(); outputText.setText(""); btnCheck.setText("开始纠错"); }
                         progressBar.setVisibility(View.INVISIBLE); progressBar.setIndeterminate(false);
                     });
@@ -4677,15 +4734,15 @@ jobs:
                                     }
                                 }
                                 if (!previewPending.compareAndSet(false, true)) return;
-                                StringBuilder htmlBuilder = new StringBuilder(liveErrors.length() + liveText.length() + 256).append("<b>AI 正在审查中...</b><br>已耗时 ").append(String.format(Locale.getDefault(), "%.1f", elapsed / 1000.0)).append(" 秒<br>进度：").append(current).append(" / ").append(total).append("<br><br>");
-                                if (liveErrors.length() > 0) htmlBuilder.append("<b><font color='#757575'>【发现错误】：</font></b><br>").append(liveErrors);
+                                StringBuilder htmlBuilder = new StringBuilder(liveErrors.length() + liveText.length() + 256).append("<b>正在纠错...</b><br>已耗时 ").append(String.format(Locale.getDefault(), "%.1f", elapsed / 1000.0)).append(" 秒<br>进度：").append(current).append(" / ").append(total).append("<br><br>");
+                                if (liveErrors.length() > 0) htmlBuilder.append("<b><font color='#757575'>【纠错记录】：</font></b><br>").append(liveErrors);
                                 String html = htmlBuilder.append("<br><b><font color='#757575'>【全文预览】：</font></b><br>").append(liveText).toString();
                                 Spanned preview = Html.fromHtml(html, Html.FROM_HTML_MODE_COMPACT);
                                 final int displayedErrors = liveErrorCount[0];
                                 AppExecutors.MAIN.post(() -> {
                                     previewPending.set(false);
                                     if (!isCheckingMain || generation != inferenceGeneration || isFinishing() || isDestroyed()) return; progressBar.setMax(total); progressBar.setProgress(current); outputText.setText(preview);
-                                    if (autoScrollEnabled) scrollView.post(() -> { if (generation != inferenceGeneration || isDestroyed()) return; if (displayedErrors > 0) { Layout layout = outputText.getLayout(); int offset = outputText.getText().toString().indexOf("【发现错误】："); if (layout != null && offset >= 0) scrollView.scrollTo(0, Math.max(0, layout.getLineTop(layout.getLineForOffset(offset)) - scrollView.getHeight() + 150)); } else scrollView.scrollTo(0, 0); });
+                                    if (autoScrollEnabled) scrollView.post(() -> { if (generation != inferenceGeneration || isDestroyed()) return; if (displayedErrors > 0) { Layout layout = outputText.getLayout(); int offset = outputText.getText().toString().indexOf("【纠错记录】："); if (layout != null && offset >= 0) scrollView.scrollTo(0, Math.max(0, layout.getLineTop(layout.getLineForOffset(offset)) - scrollView.getHeight() + 150)); } else scrollView.scrollTo(0, 0); });
                                 });
                             }
                         });
@@ -4694,7 +4751,7 @@ jobs:
                             return;
                         }
                         if (generation != inferenceGeneration || isDestroyed()) return;
-                        HistoryStore.saveBlocks(this, historyFileId, result.blocks);
+                        HistoryStore.saveBlocks(this, historyFileId, result.blocks, result.elapsedMs);
                         AppExecutors.MAIN.post(() -> { if (generation != inferenceGeneration || isDestroyed()) return; isCheckingMain = false; btnCheck.setText("开始纠错"); allSentencesBlocks = result.blocks; lastTimeMs = result.elapsedMs; renderFinalBlocks(); btnCheck.setEnabled(true); btnCopy.setEnabled(true); btnSaveTxt.setEnabled(true); scrollView.post(() -> scrollView.fullScroll(View.FOCUS_UP)); });
                     } catch (Exception exception) {
                         String message = exception.getMessage(); AppExecutors.MAIN.post(() -> { if (generation != inferenceGeneration || isDestroyed()) return; isCheckingMain = false; btnCheck.setText("开始纠错"); outputText.setText("推理运行中断: " + message); btnCheck.setEnabled(true); btnSaveTxt.setEnabled(true); });
@@ -4777,10 +4834,11 @@ jobs:
                 }
 
                 SpannableStringBuilder main = new SpannableStringBuilder(), editor = new SpannableStringBuilder(); int[] baseOffset = {0};
+                String elapsedText = lastTimeMs > 0L ? "耗时 " + String.format(Locale.getDefault(), "%.2f", lastTimeMs / 1000.0) + " 秒。" : "";
                 if (currentErrors == 0) {
-                    String header = "检查完毕！未检测到错误。耗时 " + String.format(Locale.getDefault(), "%.2f", lastTimeMs / 1000.0) + " 秒。\n\n"; int start = main.length(); main.append(header); main.setSpan(new ForegroundColorSpan(0xFF4CAF50), start, main.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    String header = "未发现错误。" + (elapsedText.isEmpty() ? "" : " " + elapsedText) + "\n\n"; int start = main.length(); main.append(header); main.setSpan(new ForegroundColorSpan(0xFF4CAF50), start, main.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 } else {
-                    String header = "检查完毕！共更正 " + currentErrors + " 处。耗时 " + String.format(Locale.getDefault(), "%.2f", lastTimeMs / 1000.0) + " 秒。\n（点击序号可快速跳转）\n\n"; int start = main.length(); main.append(header); main.setSpan(new ForegroundColorSpan(0xFF757575), start, main.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    String header = "共更正 " + currentErrors + " 处错误。" + (elapsedText.isEmpty() ? "" : " " + elapsedText) + "\n（点击序号可快速跳转）\n\n"; int start = main.length(); main.append(header); main.setSpan(new ForegroundColorSpan(0xFF757575), start, main.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     appendSectionHeader(main, "【纠错清单：】\n"); appendSectionHeader(editor, "【纠错清单：】\n");
                     int errorIndex = 0;
                     for (List<TextBlock> sentence : allSentencesBlocks) {
@@ -4802,7 +4860,11 @@ jobs:
                             ClauseLink link = new ClauseLink(); int editorMarkerStart = editor.length(); appendNumbers(editor, errorIndex - errors.size(), errors.size()); int editorMarkerEnd = editor.length(); ListMarkerSpan marker = new ListMarkerSpan(); link.listMarkerSpan = marker;
                             editor.setSpan(marker, editorMarkerStart, editorMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); editor.setSpan(new ForegroundColorSpan(0xFF2196F3), editorMarkerStart, editorMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); editor.setSpan(new android.text.style.TypefaceSpan("sans-serif-medium"), editorMarkerStart, editorMarkerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                             JumpSpan editorJump = new JumpSpan() {
-                                @Override public int getTargetOffset(Spanned text) { return !link.isDead && link.targetOffset >= 0 && link.targetOffset <= text.length() ? link.targetOffset : -1; }
+                                @Override public int getTargetOffset(Spanned text) {
+                                    if (link.isDead) return -1;
+                                    for (TargetSpan target : link.targetSpans) { int start = text.getSpanStart(target); if (start >= 0 && start <= text.length()) return start; }
+                                    return -1;
+                                }
                                 @Override public void onClick(View view) { TextView textView = (TextView) view; int target = getTargetOffset((Spanned) textView.getText()); if (target >= 0) jumpEditorToOffset(textView, target); }
                                 @Override public void updateDrawState(TextPaint paint) { paint.setColor(0xFF2196F3); paint.setUnderlineText(true); paint.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0)); }
                             };
