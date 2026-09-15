@@ -2989,6 +2989,70 @@ jobs:
                 }
             }
 
+            // 普通输出框需要固定偏移的便携 JumpSpan；重新进入便签后再恢复为会随正文编辑移动的动态锚点。
+            // 这样“编辑 -> 收起 -> 再打开 -> 再编辑”时，前方增删文字不会让序号仍跳到上一次的旧坐标。
+            private void rebindPortableJumpsForEditor(Editable text) {
+                if (text == null) return;
+                JumpSpan[] jumps = text.getSpans(0, text.length(), JumpSpan.class);
+                if (jumps.length == 0) { currentClauseLinks.clear(); return; }
+
+                // 旧的动态标记可能来自上一次便签会话；便携 JumpSpan 已保存了当时的正确绝对位置，
+                // 因此以它为唯一基准重建，避免重复锚点或旧 ClauseLink 干扰。
+                for (TargetSpan target : text.getSpans(0, text.length(), TargetSpan.class)) text.removeSpan(target);
+                for (ListMarkerSpan marker : text.getSpans(0, text.length(), ListMarkerSpan.class)) text.removeSpan(marker);
+                currentClauseLinks.clear();
+
+                for (JumpSpan old : jumps) {
+                    int markerStart = text.getSpanStart(old), markerEnd = text.getSpanEnd(old), flags = text.getSpanFlags(old);
+                    int targetOffset = old.getTargetOffset(text);
+                    text.removeSpan(old);
+                    if (markerStart < 0 || markerEnd < markerStart || markerEnd > text.length() || targetOffset < 0 || targetOffset > text.length()) continue;
+
+                    // 正常纠错目标都指向正文中的实际字符。极端情况下若目标正好在末尾，锚定前一个字符。
+                    int anchorStart = targetOffset;
+                    if (anchorStart == text.length() && anchorStart > 0) anchorStart--;
+                    if (anchorStart < 0 || anchorStart >= text.length()) {
+                        // 空文本等极端情况仍保留可点击序号，但没有可跟随的正文锚点。
+                        text.setSpan(createPortableJumpSpan(targetOffset), markerStart, markerEnd, flags);
+                        continue;
+                    }
+                    int anchorEnd = Math.min(text.length(), anchorStart + Character.charCount(Character.codePointAt(text, anchorStart)));
+                    String expected = text.subSequence(anchorStart, anchorEnd).toString();
+
+                    ClauseLink link = new ClauseLink();
+                    ListMarkerSpan marker = new ListMarkerSpan();
+                    TargetSpan target = new TargetSpan(expected);
+                    link.listMarkerSpan = marker;
+                    link.targetSpans.add(target);
+                    text.setSpan(marker, markerStart, markerEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    text.setSpan(target, anchorStart, anchorEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                    JumpSpan dynamic = new JumpSpan() {
+                        @Override public int getTargetOffset(Spanned current) {
+                            if (link.isDead) return -1;
+                            for (TargetSpan target : link.targetSpans) {
+                                int start = current.getSpanStart(target);
+                                if (start >= 0 && start <= current.length()) return start;
+                            }
+                            return -1;
+                        }
+                        @Override public void onClick(View view) {
+                            if (!(view instanceof TextView)) return;
+                            TextView textView = (TextView) view;
+                            CharSequence value = textView.getText();
+                            if (!(value instanceof Spanned)) return;
+                            int target = getTargetOffset((Spanned) value);
+                            if (target >= 0) jumpEditorToOffset(textView, target);
+                        }
+                        @Override public void updateDrawState(TextPaint paint) {
+                            paint.setColor(0xFF2196F3); paint.setUnderlineText(true); paint.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
+                        }
+                    };
+                    text.setSpan(dynamic, markerStart, markerEnd, flags);
+                    currentClauseLinks.add(link);
+                }
+            }
+
             private static void jumpAndFlash(TextView textView, int offset, ScrollView preferred) {
                 try {
                     Spannable text = (Spannable) textView.getText(); if (offset < 0 || offset > text.length()) return; Layout layout = textView.getLayout(); if (layout == null) return;
@@ -4137,7 +4201,9 @@ jobs:
 
             private void openEditor() {
                 originalIsManuallyEdited = isManuallyEditedOut; if (isManuallyEditedOut) { lastEditorSpannable = new SpannableStringBuilder(outputText.getText()); normalizePortableJumpSpans(lastEditorSpannable); } if (lastEditorSpannable == null) return;
-                originalEditorText = lastEditorSpannable.toString(); isEditorSelfModifying = true; expandedEditText.setText(lastEditorSpannable); isEditorSelfModifying = false; editorUndoStack.clear(); editorRedoStack.clear(); firstEditorCursorTapPending = true; drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+                originalEditorText = lastEditorSpannable.toString(); isEditorSelfModifying = true; expandedEditText.setText(lastEditorSpannable);
+                if (isManuallyEditedOut) rebindPortableJumpsForEditor(expandedEditText.getText());
+                isEditorSelfModifying = false; editorUndoStack.clear(); editorRedoStack.clear(); firstEditorCursorTapPending = true; drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
                 expandedEditorOverlay.setAlpha(0); expandedEditorOverlay.setTranslationY(150); expandedEditorOverlay.setVisibility(View.VISIBLE); expandedEditorOverlay.animate().alpha(1).translationY(0).setDuration(250).start(); Toast.makeText(this, "进入编辑模式：波浪线为系统或你修改过的文字。", Toast.LENGTH_SHORT).show(); isEditorOpen = true;
             }
 
